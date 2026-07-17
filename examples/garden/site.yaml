@@ -1,0 +1,10 @@
+# Site-level identity for the Garden repository.
+# This is the only place Garden names itself to the engine. The engine reads it;
+# it contains no layout or styling.
+name: Garden
+tagline: A space for living, not managing life.
+description: >-
+  Garden is a personal digital space for rituals, meaningful places, lived
+  experiences, and the slow recovery of attention. It is a place to keep a
+  careful relationship with your own life.
+lang: en

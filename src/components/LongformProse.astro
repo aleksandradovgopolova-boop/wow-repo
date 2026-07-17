@@ -1,0 +1,78 @@
+---
+/**
+ * longform-prose — sustained, readable body text with optional sub-headings.
+ *
+ * WHEN TO USE: explanation and narrative that needs to be read as continuous
+ * prose at a comfortable measure (concept pages, "what X is").
+ * WHEN NOT TO USE: for lists of discrete principles or steps — those have their
+ * own components and should not be flattened into paragraphs.
+ */
+import type { LongformProseContent } from '@engine/content-types.ts';
+
+interface Props {
+  content?: unknown;
+}
+
+const { content } = Astro.props;
+const c = (content ?? { passages: [] }) as LongformProseContent;
+---
+
+<section class="prose">
+  <div class="wr-shell prose__inner">
+    {c.eyebrow && <p class="wr-label" data-reveal>{c.eyebrow}</p>}
+    {
+      c.passages.map((passage) => (
+        <div class="prose__passage" data-reveal>
+          {passage.heading && <h2 class="prose__heading">{passage.heading}</h2>}
+          {passage.paragraphs.map((p) => (
+            <p class="prose__p">{p}</p>
+          ))}
+        </div>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  .prose {
+    padding-block: var(--space-l);
+  }
+
+  .prose__inner {
+    display: grid;
+    gap: var(--space-xl);
+  }
+
+  .prose__passage {
+    max-width: var(--measure);
+    display: grid;
+    gap: var(--space-s);
+  }
+
+  .prose__heading {
+    font-size: var(--step-2);
+    color: var(--color-text);
+    margin-bottom: var(--space-3xs);
+    max-width: 24ch;
+  }
+
+  /* A quiet leaf-mark before each heading, tying prose to the visual system. */
+  .prose__heading::before {
+    content: '';
+    display: block;
+    inline-size: 1.6rem;
+    block-size: 2px;
+    background: var(--color-accent);
+    margin-block-end: var(--space-s);
+  }
+
+  .prose__p {
+    font-size: var(--step-1);
+    line-height: var(--leading-loose);
+    color: var(--color-text-soft);
+  }
+
+  .prose__p:first-of-type:not(.prose__heading + .prose__p) {
+    color: var(--color-text);
+  }
+</style>

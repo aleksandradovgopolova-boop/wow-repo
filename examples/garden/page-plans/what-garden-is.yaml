@@ -1,0 +1,74 @@
+version: 1
+page:
+  id: what-garden-is
+  type: concept-explanation
+  path: /what-garden-is
+  title: What Garden is
+  order: 1
+  purpose: explain-plainly-what-garden-is-and-is-not-without-jargon
+  audience: someone-deciding-whether-garden-is-for-them
+  primary_message: >-
+    Garden is a personal space for rituals, places, and lived experience — not a
+    tool for organising information.
+  summary: A plain explanation of what Garden holds, and what it deliberately is not.
+  density: medium
+  tone:
+    - calm
+    - grounded
+    - clear
+    - honest
+
+# Rhythm: orient, explain in prose, lift one clarifying line, walk through the
+# shape of a return, rest, then move on. Distinct from the manifesto's slow creed.
+narrative:
+  - orientation
+  - what-it-is-in-prose
+  - a-clarifying-line
+  - the-shape-of-a-return
+  - a-pause
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: high
+
+  - component: longform-prose
+    source: body
+    intent: Two passages — what Garden is, and what it deliberately is not.
+
+  - component: pull-quote
+    source: clarity
+    intent: One line that resolves the most common misunderstanding.
+
+  - component: narrative-steps
+    source: return
+    intent: The felt shape of using Garden, as movement rather than features.
+
+  - component: spatial-break
+    variant: ambient
+    source: pause
+    intent: A held word before leaving the page.
+
+  - component: next-path
+    source: onward
+
+  - component: related-links
+    source: related
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+accessibility:
+  motion_optional: true
+  notes:
+    - Steps must read as an ordered list to assistive tech.
+    - Prose held to a comfortable measure on all viewports.
+
+relationships:
+  next: principles
+  related:
+    - garden-manifesto
+    - safety

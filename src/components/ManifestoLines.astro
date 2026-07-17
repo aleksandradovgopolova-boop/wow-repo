@@ -1,0 +1,98 @@
+---
+/**
+ * manifesto-lines — a sequence of belief statements, each given room to land.
+ *
+ * WHEN TO USE: core beliefs / a creed where each line is a complete thought and
+ * should be read slowly, one at a time.
+ * WHEN NOT TO USE: for ordinary prose (use longform-prose) or for a list of
+ * named principles with explanations (use principle-statement).
+ */
+import type { ManifestoLinesContent } from '@engine/content-types.ts';
+
+interface Props {
+  content?: unknown;
+}
+
+const { content } = Astro.props;
+const c = (content ?? { lines: [] }) as ManifestoLinesContent;
+---
+
+<section class="manifesto">
+  <div class="wr-shell">
+    <ol class="manifesto__list">
+      {
+        c.lines.map((line, i) => (
+          <li class="manifesto__line" data-reveal>
+            <span class="manifesto__index" aria-hidden="true">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <span class="manifesto__text">{line}</span>
+          </li>
+        ))
+      }
+    </ol>
+    {c.coda && <p class="manifesto__coda" data-reveal>{c.coda}</p>}
+  </div>
+</section>
+
+<style>
+  .manifesto {
+    padding-block: var(--space-xl);
+  }
+
+  .manifesto__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-l);
+    max-width: var(--width-wide);
+  }
+
+  .manifesto__line {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-s);
+    align-items: baseline;
+    padding-block-end: var(--space-l);
+    border-block-end: var(--border-hairline);
+  }
+
+  .manifesto__line:last-of-type {
+    border-block-end: 0;
+  }
+
+  .manifesto__index {
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    color: var(--color-accent);
+    letter-spacing: var(--tracking-wide);
+    padding-block-start: 0.35em;
+  }
+
+  .manifesto__text {
+    font-family: var(--font-display);
+    font-size: var(--step-3);
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+    text-wrap: balance;
+  }
+
+  .manifesto__coda {
+    margin-top: var(--space-xl);
+    max-width: var(--measure-narrow);
+    margin-inline-start: auto;
+    text-align: end;
+    font-style: italic;
+    color: var(--color-text-soft);
+    font-size: var(--step-1);
+  }
+
+  @media (max-width: 40rem) {
+    .manifesto__line {
+      grid-template-columns: 1fr;
+      gap: var(--space-2xs);
+    }
+  }
+</style>

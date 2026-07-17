@@ -1,0 +1,54 @@
+---
+/**
+ * The single page shell. Owns <head>, global styles, skip link, site chrome,
+ * and the reveal script. It knows nothing about any specific page's meaning —
+ * the composed sections are slotted in by the renderer.
+ */
+import '../styles/tokens.css';
+import '../styles/base.css';
+import '../styles/reveal.css';
+import SiteHeader from '../components/site/SiteHeader.astro';
+import SiteFooter from '../components/site/SiteFooter.astro';
+import type { ResolvedRepo } from '@engine/load.ts';
+import type { PagePlan } from '@engine/page-plan.ts';
+
+interface Props {
+  repo: ResolvedRepo;
+  plan: PagePlan;
+}
+
+const { repo, plan } = Astro.props;
+const { site } = repo;
+const title = `${plan.page.title} · ${site.name}`;
+---
+
+<!doctype html>
+<html lang={site.lang} class="no-js" data-page-type={plan.page.type}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{title}</title>
+    <meta name="description" content={plan.page.summary} />
+    <meta name="generator" content="WowRepo" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={plan.page.summary} />
+    <meta property="og:type" content="website" />
+    <meta name="color-scheme" content="light" />
+    <script is:inline>
+      // Swap the no-js flag as early as possible so reveal styles behave.
+      document.documentElement.classList.remove('no-js');
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <SiteHeader repo={repo} currentPath={plan.page.path} />
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <SiteFooter repo={repo} />
+    <script>
+      import '../scripts/reveal.ts';
+    </script>
+  </body>
+</html>

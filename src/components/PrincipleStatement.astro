@@ -1,0 +1,121 @@
+---
+/**
+ * principle-statement — named principles, each a title plus a short explanation.
+ *
+ * WHEN TO USE: a set of guiding principles that each deserve a name and a
+ * sentence or two. Rendered as a calm vertical list, not a card grid.
+ * WHEN NOT TO USE: for a sequence/process (use narrative-steps) or for a
+ * two-sided comparison (use boundary-comparison).
+ */
+import type { PrincipleStatementContent } from '@engine/content-types.ts';
+
+interface Props {
+  content?: unknown;
+}
+
+const { content } = Astro.props;
+const c = (content ?? { principles: [] }) as PrincipleStatementContent;
+---
+
+<section class="principles">
+  <div class="wr-shell principles__inner">
+    <div class="principles__head">
+      {c.eyebrow && <p class="wr-label" data-reveal>{c.eyebrow}</p>}
+      {c.intro && <p class="principles__intro" data-reveal>{c.intro}</p>}
+    </div>
+    <ol class="principles__list">
+      {
+        c.principles.map((principle, i) => (
+          <li class="principle" data-reveal>
+            <span class="principle__marker" aria-hidden="true">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <div class="principle__body">
+              <h2 class="principle__title">{principle.title}</h2>
+              <p class="principle__text">{principle.body}</p>
+            </div>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .principles {
+    padding-block: var(--space-l);
+  }
+
+  .principles__inner {
+    display: grid;
+    gap: var(--space-xl);
+  }
+
+  .principles__intro {
+    font-size: var(--step-2);
+    font-family: var(--font-display);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+    max-width: 24ch;
+    margin-top: var(--space-s);
+  }
+
+  .principles__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-l);
+    counter-reset: principle;
+  }
+
+  .principle {
+    display: grid;
+    grid-template-columns: 3.5rem 1fr;
+    gap: var(--space-m);
+    align-items: start;
+    padding-block-end: var(--space-l);
+    border-block-end: var(--border-hairline);
+    max-width: var(--width-wide);
+  }
+
+  .principle:last-child {
+    border-block-end: 0;
+  }
+
+  .principle__marker {
+    font-family: var(--font-mono);
+    font-size: var(--step-1);
+    color: var(--color-accent);
+    line-height: 1;
+    padding-block-start: 0.15em;
+  }
+
+  .principle__body {
+    display: grid;
+    gap: var(--space-2xs);
+  }
+
+  .principle__title {
+    font-size: var(--step-2);
+    color: var(--color-text);
+    max-width: 26ch;
+  }
+
+  .principle__text {
+    font-size: var(--step-0);
+    line-height: var(--leading-normal);
+    color: var(--color-text-soft);
+    max-width: var(--measure);
+  }
+
+  @media (max-width: 40rem) {
+    .principle {
+      grid-template-columns: 1fr;
+      gap: var(--space-2xs);
+    }
+    .principle__marker {
+      font-size: var(--step-0);
+    }
+  }
+</style>

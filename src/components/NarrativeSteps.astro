@@ -1,0 +1,115 @@
+---
+/**
+ * narrative-steps — an ordered sequence read as a path, not a checklist.
+ *
+ * WHEN TO USE: a process, ritual, or unfolding explanation where order carries
+ * meaning. A connecting line ties the steps into one continuous movement.
+ * WHEN NOT TO USE: for unordered principles (use principle-statement) or a
+ * two-sided contrast (use boundary-comparison).
+ */
+import type { NarrativeStepsContent } from '@engine/content-types.ts';
+
+interface Props {
+  content?: unknown;
+}
+
+const { content } = Astro.props;
+const c = (content ?? { steps: [] }) as NarrativeStepsContent;
+---
+
+<section class="steps">
+  <div class="wr-shell steps__inner">
+    <div class="steps__head">
+      {c.eyebrow && <p class="wr-label" data-reveal>{c.eyebrow}</p>}
+      {c.intro && <p class="steps__intro" data-reveal>{c.intro}</p>}
+    </div>
+    <ol class="steps__list">
+      {
+        c.steps.map((step) => (
+          <li class="step" data-reveal>
+            <span class="step__node" aria-hidden="true" />
+            <div class="step__body">
+              <h3 class="step__title">{step.title}</h3>
+              <p class="step__text">{step.body}</p>
+            </div>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  .steps {
+    padding-block: var(--space-l);
+  }
+
+  .steps__inner {
+    display: grid;
+    gap: var(--space-xl);
+  }
+
+  .steps__intro {
+    font-size: var(--step-2);
+    font-family: var(--font-display);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+    max-width: 26ch;
+    margin-top: var(--space-s);
+  }
+
+  .steps__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-l);
+    max-width: var(--measure);
+  }
+
+  .step {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-m);
+    padding-inline-start: var(--space-2xs);
+  }
+
+  /* The connecting stem between nodes. */
+  .step:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    inset-block: 1.4rem calc(var(--space-l) * -1);
+    inset-inline-start: calc(var(--space-2xs) + 0.34rem);
+    inline-size: 1.5px;
+    background: var(--color-border);
+  }
+
+  .step__node {
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    margin-block-start: 0.5rem;
+    background: var(--color-bg);
+    border: 2px solid var(--color-accent);
+    border-radius: 50%;
+    position: relative;
+    z-index: 1;
+  }
+
+  .step__body {
+    display: grid;
+    gap: var(--space-3xs);
+  }
+
+  .step__title {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    color: var(--color-text);
+  }
+
+  .step__text {
+    font-size: var(--step-0);
+    line-height: var(--leading-normal);
+    color: var(--color-text-soft);
+  }
+</style>

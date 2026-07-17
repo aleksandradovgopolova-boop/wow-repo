@@ -1,0 +1,118 @@
+---
+/**
+ * Quiet site header. Deliberately understated — a wordmark and a short reading
+ * path, not a SaaS navigation bar. Driven entirely by repo data so it carries
+ * no Garden-specific content.
+ */
+import type { ResolvedRepo } from '@engine/load.ts';
+
+interface Props {
+  repo: ResolvedRepo;
+  currentPath: string;
+}
+
+const { repo, currentPath } = Astro.props;
+const nav = repo.pages.map((p) => ({
+  title: p.plan.page.title,
+  path: p.plan.page.path,
+}));
+---
+
+<header class="site-header">
+  <div class="wr-shell site-header__inner">
+    <a class="wordmark" href="/" aria-label={`${repo.site.name}, home`}>
+      <span class="wordmark__mark" aria-hidden="true"></span>
+      <span class="wordmark__name">{repo.site.name}</span>
+    </a>
+    <nav class="site-nav" aria-label="Reading path">
+      <ul>
+        {
+          nav.map((item) => (
+            <li>
+              <a
+                href={item.path}
+                aria-current={item.path === currentPath ? 'page' : undefined}
+              >
+                {item.title}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    padding-block: var(--space-s);
+    position: relative;
+    z-index: 2;
+  }
+
+  .site-header__inner {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-m);
+    flex-wrap: wrap;
+  }
+
+  .wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    text-decoration: none;
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    letter-spacing: var(--tracking-tight);
+  }
+
+  /* A small living seed/leaf mark drawn in CSS — no image, no generic logo. */
+  .wordmark__mark {
+    inline-size: 0.7em;
+    block-size: 0.7em;
+    background: var(--color-accent);
+    border-start-start-radius: 60% 60%;
+    border-start-end-radius: 20% 20%;
+    border-end-end-radius: 60% 60%;
+    border-end-start-radius: 20% 20%;
+    transform: rotate(45deg);
+    transition: transform var(--dur-calm) var(--ease-standard);
+  }
+
+  .wordmark:hover .wordmark__mark {
+    transform: rotate(45deg) scale(1.12);
+  }
+
+  .site-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-s) var(--space-m);
+  }
+
+  .site-nav a {
+    color: var(--color-text-soft);
+    text-decoration: none;
+    font-size: var(--step--1);
+    letter-spacing: 0.01em;
+    padding-block: var(--space-3xs);
+    border-bottom: 1.5px solid transparent;
+    transition: color var(--dur-quick) var(--ease-standard),
+      border-color var(--dur-quick) var(--ease-standard);
+  }
+
+  .site-nav a:hover {
+    color: var(--color-text);
+    border-color: var(--color-border);
+  }
+
+  .site-nav a[aria-current='page'] {
+    color: var(--color-accent-strong);
+    border-color: var(--color-accent);
+  }
+</style>

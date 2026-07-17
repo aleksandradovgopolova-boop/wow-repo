@@ -1,0 +1,25 @@
+---
+/**
+ * The one route. Every page in the ingested repository is generated statically
+ * from its validated plan. There is no per-page hand-written route and no
+ * runtime rendering — `npm run build` produces plain HTML for each plan.
+ */
+import type { GetStaticPaths } from 'astro';
+import { loadRepo } from '@engine/load.ts';
+import PageLayout from '@layouts/PageLayout.astro';
+import PageRenderer from '@components/PageRenderer.astro';
+
+export const getStaticPaths = (async () => {
+  const repo = loadRepo();
+  return repo.pages.map((page) => {
+    const slug = page.plan.page.path.replace(/^\//, '') || undefined;
+    return { params: { slug }, props: { page, repo } };
+  });
+}) satisfies GetStaticPaths;
+
+const { page, repo } = Astro.props;
+---
+
+<PageLayout repo={repo} plan={page.plan}>
+  <PageRenderer page={page} repo={repo} />
+</PageLayout>

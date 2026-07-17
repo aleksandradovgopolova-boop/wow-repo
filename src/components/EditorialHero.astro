@@ -1,0 +1,111 @@
+---
+/**
+ * editorial-hero — an asymmetric, typographic opening.
+ *
+ * WHEN TO USE: the first section of a page that benefits from a clear title and
+ * a short lede (concept pages, principles, safety). It sets the reading, not a
+ * marketing pitch.
+ * WHEN NOT TO USE: for a purely atmospheric opening with no title — use
+ * immersive-opening instead. Do not stack two heroes.
+ */
+import type { HeroContent } from '@engine/content-types.ts';
+
+interface Props {
+  content?: unknown;
+  emphasis?: 'low' | 'medium' | 'high';
+}
+
+const { content, emphasis = 'high' } = Astro.props;
+const c = (content ?? {}) as HeroContent;
+---
+
+<section class={`hero hero--${emphasis}`} data-reveal>
+  <div class="wr-shell hero__inner">
+    {c.eyebrow && <p class="wr-label hero__eyebrow">{c.eyebrow}</p>}
+    <h1 class="hero__title">{c.title}</h1>
+    {c.lede && <p class="hero__lede">{c.lede}</p>}
+    {
+      c.meta && c.meta.length > 0 && (
+        <ul class="hero__meta">
+          {c.meta.map((m) => (
+            <li>{m}</li>
+          ))}
+        </ul>
+      )
+    }
+  </div>
+</section>
+
+<style>
+  .hero {
+    padding-block: var(--space-2xl) var(--space-xl);
+  }
+
+  .hero__inner {
+    display: grid;
+    gap: var(--space-m);
+  }
+
+  .hero__eyebrow {
+    margin-bottom: var(--space-2xs);
+  }
+
+  .hero__title {
+    font-size: var(--step-5);
+    max-width: 18ch;
+    color: var(--color-text);
+  }
+
+  .hero--medium .hero__title {
+    font-size: var(--step-4);
+  }
+
+  .hero--low .hero__title {
+    font-size: var(--step-3);
+  }
+
+  .hero__lede {
+    font-size: var(--step-1);
+    line-height: var(--leading-snug);
+    color: var(--color-text-soft);
+    max-width: var(--measure-narrow);
+    /* Offset the lede to create an intentional, asymmetric relationship with
+       the title rather than a centred stack. */
+    margin-inline-start: clamp(0rem, -1rem + 6vw, 6rem);
+  }
+
+  .hero__meta {
+    list-style: none;
+    margin: var(--space-s) 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs) var(--space-m);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  .hero__meta li {
+    position: relative;
+    padding-inline-start: var(--space-s);
+  }
+
+  .hero__meta li::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: 0.55em;
+    inline-size: 0.4em;
+    block-size: 0.4em;
+    background: var(--color-accent);
+    transform: rotate(45deg);
+  }
+
+  @media (min-width: 40rem) {
+    .hero__lede {
+      margin-inline-start: clamp(2rem, 8vw, 8rem);
+    }
+  }
+</style>

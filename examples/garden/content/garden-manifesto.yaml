@@ -1,0 +1,39 @@
+# Content sources for the Garden manifesto.
+# CANON: lines drawn directly from Garden's confirmed context.
+# DRAFT: phrasing extended for the MVP is marked below and is not approved
+#        Garden canon — it is placeholder voice, to be reviewed.
+
+opening:
+  eyebrow: Garden
+  # CANON: the core framing.
+  lines:
+    - A space for living,
+    - not for managing
+    - your life.
+  # DRAFT: supporting line.
+  footnote: >-
+    Not a system to keep. A place to return to — for rituals, for the places
+    that matter to you, for the experiences you have actually lived.
+
+beliefs:
+  # Each line is a belief. All are grounded in the confirmed Garden context.
+  lines:
+    - Your life is not a project to be optimised. It is yours to live.
+    - Attention is worth recovering slowly, without being told how.
+    - Rituals, places, and experiences deserve a space of their own.
+    - Memory here exists to hold what matters, not to build a second brain.
+    - You stay in charge. Garden holds space; it never decides for you.
+  # DRAFT: closing coda.
+  coda: These are not rules for you. They are promises Garden makes.
+
+refrain:
+  # CANON refrain, the page's centre of gravity.
+  quote: Garden is a space for living, not managing life.
+
+ending:
+  # DRAFT ending copy.
+  line: When you are ready, come in slowly.
+  sub: There is nothing here to finish.
+
+onward:
+  label: Next

@@ -1,0 +1,167 @@
+---
+/**
+ * spatial-break — intentional empty space between passages, sometimes holding a
+ * single word or an optional, opt-in breathing pause.
+ *
+ * WHEN TO USE: to give the reader room, mark a shift in the narrative, or offer
+ * a moment of rest. Space here is content, not padding.
+ * WHEN NOT TO USE: as filler to make a page look longer, or repeatedly in a row.
+ *
+ * VARIANTS:
+ *   'ambient' (default) — quiet space with an optional word/caption.
+ *   'breath'            — mounts the opt-in BreathPacer island.
+ */
+import type { SpatialBreakContent } from '@engine/content-types.ts';
+import BreathPacer from './islands/BreathPacer.tsx';
+
+interface Props {
+  content?: unknown;
+  variant?: string;
+}
+
+const { content, variant = 'ambient' } = Astro.props;
+const c = (content ?? {}) as SpatialBreakContent;
+const isBreath = variant === 'breath';
+---
+
+<section class={`spatial spatial--${isBreath ? 'breath' : 'ambient'}`}>
+  <div class="wr-shell spatial__inner">
+    {
+      isBreath ? (
+        <BreathPacer client:visible />
+      ) : (
+        <div class="spatial__ambient" data-reveal>
+          {c.word && <p class="spatial__word">{c.word}</p>}
+          {c.caption && <p class="spatial__caption">{c.caption}</p>}
+          {!c.word && !c.caption && (
+            <span class="spatial__glyph" aria-hidden="true" />
+          )}
+        </div>
+      )
+    }
+  </div>
+</section>
+
+<style>
+  .spatial {
+    padding-block: var(--space-2xl);
+    display: flex;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .spatial--breath {
+    padding-block: var(--space-3xl);
+  }
+
+  .spatial__word {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    font-style: italic;
+    color: var(--color-text-soft);
+    letter-spacing: var(--tracking-tight);
+  }
+
+  .spatial__caption {
+    margin-top: var(--space-xs);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  /* A small dot-and-line glyph — a seed on a stem, breathing room made visible. */
+  .spatial__glyph {
+    display: inline-block;
+    inline-size: 1px;
+    block-size: var(--space-xl);
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--color-border) 30%,
+      var(--color-border)
+    );
+    position: relative;
+  }
+
+  .spatial__glyph::after {
+    content: '';
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 50%;
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    background: var(--color-accent);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  /* --- Breath island styles (global so they reach the React island DOM) --- */
+  :global(.breath) {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-m);
+  }
+
+  :global(.breath__circle) {
+    inline-size: clamp(6rem, 20vw, 9rem);
+    block-size: clamp(6rem, 20vw, 9rem);
+    border-radius: 50%;
+    background: radial-gradient(
+      circle at 50% 45%,
+      color-mix(in srgb, var(--color-accent) 22%, transparent),
+      color-mix(in srgb, var(--color-accent) 6%, transparent)
+    );
+    border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+    transform: scale(0.72);
+    transition: transform var(--dur-slow) var(--ease-standard);
+  }
+
+  :global(.breath__circle[data-phase='in']) {
+    transform: scale(1);
+    transition-duration: 4000ms;
+  }
+  :global(.breath__circle[data-phase='hold']) {
+    transform: scale(1);
+    transition-duration: 2000ms;
+  }
+  :global(.breath__circle[data-phase='out']) {
+    transform: scale(0.72);
+    transition-duration: 6000ms;
+  }
+
+  :global(.breath__cue) {
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    color: var(--color-text-soft);
+    min-block-size: 1.4em;
+  }
+
+  :global(.breath__btn) {
+    font-family: var(--font-body);
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-accent-strong);
+    background: transparent;
+    border: 1.5px solid var(--color-accent);
+    border-radius: var(--radius-m);
+    padding: var(--space-2xs) var(--space-m);
+    cursor: pointer;
+    transition:
+      background var(--dur-quick) var(--ease-standard),
+      color var(--dur-quick) var(--ease-standard);
+  }
+
+  :global(.breath__btn:hover) {
+    background: var(--color-accent);
+    color: var(--color-surface);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.breath__circle) {
+      transition: none;
+      transform: scale(0.9);
+    }
+  }
+</style>

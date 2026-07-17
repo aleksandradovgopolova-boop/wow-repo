@@ -1,0 +1,64 @@
+version: 1
+page:
+  id: principles
+  type: principles
+  path: /principles
+  title: Principles
+  order: 2
+  purpose: state-the-principles-that-shape-every-decision-in-garden
+  audience: someone-who-wants-to-know-what-garden-values
+  primary_message: >-
+    Garden is built on a small set of principles that keep it calm, honest, and
+    in the reader's control.
+  summary: The values that shape how Garden behaves, stated plainly.
+  density: medium
+  tone:
+    - grounded
+    - honest
+    - quietly-confident
+    - clear
+
+# Rhythm: a firm, plain opening, then the principles as a calm numbered list,
+# a single reassurance, a breath, and one step onward. No creed, no prose essay.
+narrative:
+  - a-plain-title
+  - the-principles
+  - a-reassurance
+  - a-pause
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: medium
+
+  - component: principle-statement
+    source: principles
+    intent: The core principles, each named and briefly explained.
+
+  - component: quiet-callout
+    source: reassurance
+    intent: A gentle reminder that these are commitments, not conditions.
+
+  - component: spatial-break
+    variant: ambient
+    intent: Empty room before moving to how these become concrete in safety.
+
+  - component: next-path
+    source: onward
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+accessibility:
+  motion_optional: true
+  notes:
+    - Principles are an ordered list with real headings for navigation.
+    - Numbers are decorative and hidden from assistive tech.
+
+relationships:
+  next: safety
+  related:
+    - garden-manifesto

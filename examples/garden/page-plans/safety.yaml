@@ -1,0 +1,69 @@
+version: 1
+page:
+  id: safety
+  type: safety-boundaries
+  path: /safety
+  title: Safety & autonomy
+  order: 3
+  purpose: make-the-safety-boundaries-concrete-and-reassuring
+  audience: someone-who-needs-to-trust-garden-with-something-personal
+  primary_message: >-
+    Garden protects your autonomy with clear, concrete boundaries on what it
+    will and will never do.
+  summary: The concrete promises Garden makes to keep you safe and in control.
+  density: medium
+  tone:
+    - protective
+    - tender
+    - honest
+    - calm
+
+# Rhythm: a warm, direct opening; a short grounding passage; the concrete
+# will / will-never boundary held side by side; a caring reassurance; then a
+# soft close. This page ends the reading path, so it rests rather than pushes on.
+narrative:
+  - a-warm-opening
+  - why-this-matters
+  - the-boundary
+  - a-hand-on-the-shoulder
+  - a-soft-close
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: medium
+
+  - component: longform-prose
+    source: intro
+    intent: One short passage grounding why autonomy is treated as safety.
+
+  - component: boundary-comparison
+    source: boundary
+    intent: The concrete promises — what Garden will do, and will never do.
+
+  - component: quiet-callout
+    source: care
+    intent: A tender, direct reassurance using the care tone.
+
+  - component: closing-reflection
+    source: close
+    intent: A resting endpoint — the reading path ends here on purpose.
+
+  - component: related-links
+    source: related
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+accessibility:
+  motion_optional: true
+  notes:
+    - Boundary columns stack in a sensible reading order on mobile.
+    - The care callout must never read as an alarm or urgent warning.
+
+relationships:
+  related:
+    - principles
+    - garden-manifesto

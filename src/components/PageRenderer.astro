@@ -1,0 +1,78 @@
+---
+/**
+ * PageRenderer — deterministic composition.
+ *
+ * Given a validated page plan and its resolved content, it renders each section
+ * by looking the component up in the approved registry and handing it the named
+ * content source plus a few declarative options. This is the ONLY place plans
+ * become pixels. There is no path from a plan to arbitrary HTML.
+ */
+import type { ResolvedPage, ResolvedRepo } from '@engine/load.ts';
+import type { ComponentName } from '@engine/page-plan.ts';
+
+import EditorialHero from './EditorialHero.astro';
+import ImmersiveOpening from './ImmersiveOpening.astro';
+import ManifestoLines from './ManifestoLines.astro';
+import LongformProse from './LongformProse.astro';
+import PrincipleStatement from './PrincipleStatement.astro';
+import PullQuote from './PullQuote.astro';
+import SpatialBreak from './SpatialBreak.astro';
+import NarrativeSteps from './NarrativeSteps.astro';
+import BoundaryComparison from './BoundaryComparison.astro';
+import QuietCallout from './QuietCallout.astro';
+import ClosingReflection from './ClosingReflection.astro';
+import NextPath from './NextPath.astro';
+import RelatedLinks from './RelatedLinks.astro';
+
+interface Props {
+  page: ResolvedPage;
+  repo: ResolvedRepo;
+}
+
+const { page, repo } = Astro.props;
+const { plan, content } = page;
+
+// The approved composition surface. A plan can only name keys that exist here;
+// the page-plan schema's COMPONENT_NAMES list is kept in lockstep with this map.
+const registry: Record<ComponentName, unknown> = {
+  'editorial-hero': EditorialHero,
+  'immersive-opening': ImmersiveOpening,
+  'manifesto-lines': ManifestoLines,
+  'longform-prose': LongformProse,
+  'principle-statement': PrincipleStatement,
+  'pull-quote': PullQuote,
+  'spatial-break': SpatialBreak,
+  'narrative-steps': NarrativeSteps,
+  'boundary-comparison': BoundaryComparison,
+  'quiet-callout': QuietCallout,
+  'closing-reflection': ClosingReflection,
+  'next-path': NextPath,
+  'related-links': RelatedLinks,
+};
+
+// Resolve every section to a concrete component + its props in the frontmatter,
+// so the template stays a simple, deterministic map.
+type AstroComponent = (_props: Record<string, unknown>) => unknown;
+const resolved = plan.sections.map((section) => ({
+  Component: registry[section.component] as AstroComponent,
+  props: {
+    content: section.source !== undefined ? content[section.source] : undefined,
+    emphasis: section.emphasis,
+    variant: section.variant,
+    plan,
+    repo,
+  },
+}));
+---
+
+<article class="page" data-page-type={plan.page.type}>
+  {resolved.map(({ Component, props }) => <Component {...props} />)}
+</article>
+
+<style>
+  .page {
+    /* Sections own their vertical rhythm; the article only bounds width via
+       each section's own .wr-shell. No global card wrapper. */
+    display: block;
+  }
+</style>
