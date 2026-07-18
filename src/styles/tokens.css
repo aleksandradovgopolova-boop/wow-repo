@@ -96,6 +96,12 @@
   --width-full: 78rem; /* page maximum */
   --gutter: clamp(1.25rem, 0.9rem + 1.75vw, 2.5rem);
 
+  /* The single asymmetric column. Offset ledes and footnotes are indented by
+     THIS shared value — never a one-off vw — so every offset block lines up on
+     one deliberate axis instead of floating to its own position. Collapses on
+     narrow screens (see the max-width override below). */
+  --lede-indent: 6rem;
+
   /* --- Surfaces & lines --- */
   --radius-none: 0;
   --radius-s: 3px; /* deliberately small — we avoid pill/card aesthetics */
@@ -130,6 +136,14 @@
      --bp-laptop: 60rem;      960px  — laptops
      --bp-wide:   80rem;     1280px  — large screens
 */
+
+/* On narrow screens the asymmetric column would push offset text uncomfortably
+   inward, so it collapses to a small, quiet indent. */
+@media (max-width: 40rem) {
+  :root {
+    --lede-indent: 1.25rem;
+  }
+}
 
 /* Respect the user's explicit wish for less motion. Every animated component
    must ALSO neutralise its own transitions under this query. */

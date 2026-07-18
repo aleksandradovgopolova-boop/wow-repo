@@ -69,9 +69,9 @@ const c = (content ?? {}) as HeroContent;
     line-height: var(--leading-snug);
     color: var(--color-text-soft);
     max-width: var(--measure-narrow);
-    /* Offset the lede to create an intentional, asymmetric relationship with
-       the title rather than a centred stack. */
-    margin-inline-start: clamp(0rem, -1rem + 6vw, 6rem);
+    /* Offset the lede onto the shared asymmetric column, so it lines up with
+       every other offset block rather than a one-off position. */
+    margin-inline-start: var(--lede-indent);
   }
 
   .hero__meta {
@@ -101,11 +101,5 @@ const c = (content ?? {}) as HeroContent;
     block-size: 0.4em;
     background: var(--color-accent);
     transform: rotate(45deg);
-  }
-
-  @media (min-width: 40rem) {
-    .hero__lede {
-      margin-inline-start: clamp(2rem, 8vw, 8rem);
-    }
   }
 </style>

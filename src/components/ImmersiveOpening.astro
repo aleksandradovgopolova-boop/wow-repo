@@ -74,6 +74,7 @@ const c = (content ?? { lines: [] }) as ImmersiveOpeningContent;
     max-width: var(--measure-narrow);
     color: var(--color-text-faint);
     font-size: var(--step-0);
-    margin-inline-start: clamp(0rem, 6vw, 6rem);
+    /* Same shared asymmetric column as the editorial-hero lede. */
+    margin-inline-start: var(--lede-indent);
   }
 </style>
