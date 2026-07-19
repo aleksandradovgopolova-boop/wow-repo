@@ -1,0 +1,66 @@
+version: 1
+page:
+  id: world
+  type: concept-explanation
+  path: /world
+  title: The World
+  order: 2
+  purpose: introduce-the-parts-of-garden-as-a-place-to-walk-through
+  audience: someone-ready-to-move-from-what-garden-is-to-how-it-feels
+  primary_message: >-
+    Garden is made of a few kinds of things — a place, its atmosphere, and the
+    return to it — met best by walking through them one at a time.
+  summary: The parts Garden is made of, entered like rooms rather than features.
+  density: medium
+  tone:
+    - calm
+    - spacious
+    - grounded
+    - warm
+
+# Rhythm: open the world, say plainly what it is made of, then hand the reader a
+# quiet table of contents and let them walk in. A threshold, not a catalogue.
+narrative:
+  - arrive-in-the-world
+  - what-it-is-made-of
+  - the-way-through
+  - walk-in
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: high
+
+  - component: longform-prose
+    source: body
+    intent: One short passage — the world as a place with parts, not a feature list.
+
+  - component: chapter-index
+    source: chapters
+    intent: The reader's way in — each part is a page walked through in order.
+
+  - component: spatial-break
+    variant: ambient
+    source: pause
+
+  - component: next-path
+    source: onward
+
+  - component: related-links
+    source: related
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+accessibility:
+  motion_optional: true
+  notes:
+    - The chapter index must read as an ordered list to assistive tech.
+
+relationships:
+  next: principles
+  related:
+    - what-garden-is

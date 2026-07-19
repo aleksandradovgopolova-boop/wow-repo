@@ -98,3 +98,18 @@ export interface NextPathContent {
 export interface RelatedLinksContent {
   intro?: string;
 }
+
+export interface ChapterEntry {
+  /** Page id of the chapter's target; title + summary are pulled from it so
+   *  content is never duplicated. Entries whose target is hidden for the
+   *  current viewer are skipped. */
+  id: string;
+  /** Optional short word framing the entry (e.g. "Where", "How"). */
+  kicker?: string;
+}
+
+export interface ChapterIndexContent {
+  eyebrow?: string;
+  intro?: string;
+  chapters: ChapterEntry[];
+}

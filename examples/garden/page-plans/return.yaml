@@ -1,0 +1,60 @@
+version: 1
+page:
+  id: return
+  type: process-ritual
+  path: /world/return
+  title: Return
+  order: 22
+  nav: false
+  purpose: describe-the-act-of-coming-back-as-the-heart-of-garden
+  audience: a-reader-finishing-the-world-of-garden
+  primary_message: >-
+    Garden is defined less by what you put in and more by the return you make to
+    it.
+  summary: Coming back — the act Garden is really built around.
+  density: low
+  tone:
+    - calm
+    - warm
+    - tender
+    - grounded
+
+narrative:
+  - arrive
+  - what-return-is
+  - a-clarifying-line
+  - a-closing-reflection
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: medium
+
+  - component: longform-prose
+    source: body
+
+  - component: pull-quote
+    source: line
+
+  - component: closing-reflection
+    source: closing
+
+  - component: next-path
+    source: onward
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+accessibility:
+  motion_optional: true
+  notes:
+    - Prose held to an intimate measure.
+
+relationships:
+  next: principles
+  related:
+    - world
+    - what-garden-is

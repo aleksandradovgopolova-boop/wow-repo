@@ -4,7 +4,7 @@ page:
   type: safety-boundaries
   path: /safety
   title: Safety & autonomy
-  order: 3
+  order: 4
   purpose: make-the-safety-boundaries-concrete-and-reassuring
   audience: someone-who-needs-to-trust-garden-with-something-personal
   primary_message: >-

@@ -13,10 +13,14 @@ interface Props {
 }
 
 const { repo, currentPath } = Astro.props;
-const nav = repo.pages.map((p) => ({
-  title: p.plan.page.title,
-  path: p.plan.page.path,
-}));
+// The top nav is a short reading path, not a sitemap: pages that opt out with
+// `nav: false` (chapter entries reached by walking the journey) are excluded.
+const nav = repo.pages
+  .filter((p) => p.plan.page.nav !== false)
+  .map((p) => ({
+    title: p.plan.page.title,
+    path: p.plan.page.path,
+  }));
 
 // Audience switcher: only shown when the repo is projected for more than one
 // audience. Each link points at that audience's home, so switching view is a

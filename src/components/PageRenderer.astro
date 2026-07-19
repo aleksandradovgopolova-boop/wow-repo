@@ -23,6 +23,7 @@ import QuietCallout from './QuietCallout.astro';
 import ClosingReflection from './ClosingReflection.astro';
 import NextPath from './NextPath.astro';
 import RelatedLinks from './RelatedLinks.astro';
+import ChapterIndex from './ChapterIndex.astro';
 
 interface Props {
   page: ResolvedPage;
@@ -48,6 +49,7 @@ const registry: Record<ComponentName, unknown> = {
   'closing-reflection': ClosingReflection,
   'next-path': NextPath,
   'related-links': RelatedLinks,
+  'chapter-index': ChapterIndex,
 };
 
 // Resolve every section to a concrete component + its props in the frontmatter,

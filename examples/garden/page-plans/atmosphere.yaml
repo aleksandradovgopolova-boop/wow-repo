@@ -1,0 +1,59 @@
+version: 1
+page:
+  id: atmosphere
+  type: place-environment
+  path: /world/atmosphere
+  title: Atmosphere
+  order: 21
+  nav: false
+  purpose: describe-the-felt-quality-a-place-keeps
+  audience: a-reader-walking-the-world-of-garden
+  primary_message: >-
+    Atmosphere is the calm a place keeps — the quiet that lets attention
+    recover.
+  summary: The calm a place keeps, and why the quiet matters.
+  density: low
+  tone:
+    - calm
+    - tender
+    - spacious
+
+narrative:
+  - arrive
+  - what-atmosphere-is
+  - one-clear-line
+  - a-pause
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: medium
+
+  - component: longform-prose
+    source: body
+
+  - component: pull-quote
+    source: line
+
+  - component: spatial-break
+    variant: ambient
+    source: pause
+
+  - component: next-path
+    source: onward
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+accessibility:
+  motion_optional: true
+  notes:
+    - Prose held to an intimate measure.
+
+relationships:
+  next: return
+  related:
+    - world

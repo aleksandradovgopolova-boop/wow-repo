@@ -1,0 +1,30 @@
+# Content sources for "Place" — first room in the World of Garden.
+
+hero:
+  eyebrow: The World · Place
+  title: A space that is yours.
+  lede: >-
+    Before anything else, Garden is a place. Not a feed, not an inbox — a small
+    space you can keep, and return to, that belongs to you.
+
+body:
+  passages:
+    - heading: What a place is
+      paragraphs:
+        - >-
+          A place holds the things that matter to you: a ritual you keep, a
+          spot that means something, an experience you have lived. It does not
+          ask you to sort them, rank them, or explain why they belong.
+        - >-
+          A place is small on purpose. It is not trying to hold your whole life
+          — only the few things you have chosen to keep close, with quiet around
+          them.
+
+line:
+  quote: A place asks nothing of you. It simply holds what you leave in it.
+
+pause:
+  word: Yours.
+
+onward:
+  label: Next

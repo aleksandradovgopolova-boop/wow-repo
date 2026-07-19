@@ -1,0 +1,31 @@
+# Content sources for "Atmosphere" — second room in the World of Garden.
+
+hero:
+  eyebrow: The World · Atmosphere
+  title: The calm a place keeps.
+  lede: >-
+    A place has a feeling as much as contents. In Garden, that feeling is quiet:
+    nothing is competing for your attention, so your attention can come back to
+    you.
+
+body:
+  passages:
+    - heading: What atmosphere is
+      paragraphs:
+        - >-
+          Atmosphere is everything Garden chooses not to do. No badges, no
+          counts, no streaks, no notifications pulling you back. The absence is
+          the design — it is what makes the space restful instead of demanding.
+        - >-
+          This is why Garden stays slow and uneven. A calm place cannot also be
+          an engine for engagement; it has to be willing to be quiet, and to let
+          you leave.
+
+line:
+  quote: The quiet is not empty. It is room for your attention to return.
+
+pause:
+  word: Quiet.
+
+onward:
+  label: Next

@@ -45,6 +45,7 @@ export const COMPONENT_NAMES = [
   'closing-reflection',
   'next-path',
   'related-links',
+  'chapter-index',
 ] as const;
 export type ComponentName = (typeof COMPONENT_NAMES)[number];
 
@@ -116,6 +117,10 @@ export const pagePlanSchema = z
       summary: z.string().min(1),
       /** Ordering hint for site-level navigation. */
       order: z.number().int().nonnegative().default(0),
+      /** Whether the page appears in the top site navigation. Set false for
+       *  pages reached by walking the journey (e.g. entries inside a chapter)
+       *  so the nav stays a short reading path, not a sitemap. */
+      nav: z.boolean().default(true),
     }),
     /** The intended reading rhythm, named beat by beat. Guides review; the
      *  renderer does not enforce a mapping to sections 1:1. */
