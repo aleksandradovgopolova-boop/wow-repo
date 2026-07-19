@@ -45,6 +45,13 @@ sections:
     source: return
     intent: The felt shape of using Garden, as movement rather than features.
 
+  # Internal-only: how this concept is actually built. A visitor never receives
+  # this section; an engineer (cleared for `internal`) sees it in place.
+  - component: quiet-callout
+    source: implementation-note
+    visibility: internal
+    intent: Bridge from the public concept to its internal implementation.
+
   - component: spatial-break
     variant: ambient
     source: pause
@@ -72,3 +79,5 @@ relationships:
   related:
     - garden-manifesto
     - safety
+    # Resolves only for viewers cleared to see it (engineer); pruned for visitors.
+    - implementation

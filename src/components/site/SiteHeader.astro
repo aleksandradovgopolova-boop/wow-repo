@@ -5,6 +5,7 @@
  * no Garden-specific content.
  */
 import type { ResolvedRepo } from '@engine/load.ts';
+import { pageHref } from '@engine/load.ts';
 
 interface Props {
   repo: ResolvedRepo;
@@ -16,11 +17,24 @@ const nav = repo.pages.map((p) => ({
   title: p.plan.page.title,
   path: p.plan.page.path,
 }));
+
+// Audience switcher: only shown when the repo is projected for more than one
+// audience. Each link points at that audience's home, so switching view is a
+// visible demonstration of "one repo, many projections". A non-default audience
+// lives under a "/<key>" prefix.
+const audiences = repo.site.audiences;
+const showSwitcher = audiences.length > 1 && repo.viewer !== undefined;
+const homeFor = (key: string, isDefault: boolean): string =>
+  isDefault ? '/' : `/${key}`;
 ---
 
 <header class="site-header">
   <div class="wr-shell site-header__inner">
-    <a class="wordmark" href="/" aria-label={`${repo.site.name}, home`}>
+    <a
+      class="wordmark"
+      href={pageHref(repo, '/')}
+      aria-label={`${repo.site.name}, home`}
+    >
       <span class="wordmark__mark" aria-hidden="true"></span>
       <span class="wordmark__name">{repo.site.name}</span>
     </a>
@@ -30,7 +44,7 @@ const nav = repo.pages.map((p) => ({
           nav.map((item) => (
             <li>
               <a
-                href={item.path}
+                href={pageHref(repo, item.path)}
                 aria-current={item.path === currentPath ? 'page' : undefined}
               >
                 {item.title}
@@ -41,6 +55,27 @@ const nav = repo.pages.map((p) => ({
       </ul>
     </nav>
   </div>
+  {
+    showSwitcher && (
+      <div class="wr-shell site-view">
+        <span class="site-view__label">Viewing as</span>
+        <ul class="site-view__list">
+          {audiences.map((a) => (
+            <li>
+              <a
+                href={homeFor(a.key, a.default)}
+                aria-current={
+                  a.key === repo.viewer?.audience ? 'true' : undefined
+                }
+              >
+                {a.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
 </header>
 
 <style>
@@ -112,6 +147,48 @@ const nav = repo.pages.map((p) => ({
   }
 
   .site-nav a[aria-current='page'] {
+    color: var(--color-accent-strong);
+    border-color: var(--color-accent);
+  }
+
+  /* Audience switcher — a quiet strip, not a prominent control. It exists to
+     make the projection visible, so it stays understated. */
+  .site-view {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    margin-top: var(--space-2xs);
+    font-size: var(--step--1);
+  }
+
+  .site-view__label {
+    color: var(--color-text-faint);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  .site-view__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: var(--space-xs);
+  }
+
+  .site-view__list a {
+    color: var(--color-text-soft);
+    text-decoration: none;
+    padding-block: var(--space-3xs);
+    border-bottom: 1.5px solid transparent;
+    transition: color var(--dur-quick) var(--ease-standard),
+      border-color var(--dur-quick) var(--ease-standard);
+  }
+
+  .site-view__list a:hover {
+    color: var(--color-text);
+  }
+
+  .site-view__list a[aria-current='true'] {
     color: var(--color-accent-strong);
     border-color: var(--color-accent);
   }

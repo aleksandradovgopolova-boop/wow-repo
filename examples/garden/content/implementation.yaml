@@ -1,0 +1,47 @@
+# Content sources for the internal "Implementation" page.
+# This whole file is only ever rendered for a viewer cleared for `internal`
+# content in the `engineer` audience — it is part of the same repository as the
+# public pages, just a different projection of it.
+
+hero:
+  eyebrow: Internal · Engineering
+  title: How the return is actually built.
+  lede: >-
+    The public page describes the feeling of returning to Garden. Here is the
+    pattern that produces it, the decision behind it, and the tests that keep it
+    honest.
+  meta:
+    - preview pattern
+    - ADR-012
+    - tests
+
+body:
+  passages:
+    - heading: The Preview Pattern
+      paragraphs:
+        - >-
+          A “return” is rendered from a lightweight preview projection of an
+          entity — place, ritual, or experience — never the full record. The
+          preview carries only what the room needs to feel present: a title, an
+          atmosphere, and the last time it was tended.
+        - >-
+          Loading the full entity is deferred until the visitor acts on it. This
+          keeps arrival instant and keeps Garden from demanding attention before
+          it is given.
+    - heading: ADR-012 — previews over full loads
+      paragraphs:
+        - >-
+          We considered loading complete entities on arrival for simplicity.
+          ADR-012 rejected it: full loads make the home view heavier the more a
+          person tends their garden, which punishes exactly the people we most
+          want to protect. Previews keep arrival constant-cost.
+    - heading: What the tests guarantee
+      paragraphs:
+        - >-
+          Tests assert that a preview never contains fields beyond the approved
+          preview shape, that no full entity is fetched on the home projection,
+          and that an uncleared viewer receives no internal section at all —
+          the projection boundary itself is covered.
+
+related:
+  intro: The public concept this implements

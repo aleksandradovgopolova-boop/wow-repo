@@ -81,6 +81,11 @@ export const sectionSchema = z.object({
   /** Optional human-readable note explaining the art-direction intent for this
    *  section. Never rendered; kept for review + provenance. */
   intent: z.string().optional(),
+  /** Section-level projection, same two axes as a page. Lets a single page be
+   *  mostly public while gating one section (e.g. "See implementation") to a
+   *  cleared audience. Absent visibility = public. */
+  visibility: z.enum(['public', 'internal']).default('public'),
+  audiences: z.array(z.string().min(1)).optional(),
 });
 export type PlanSection = z.infer<typeof sectionSchema>;
 
@@ -92,6 +97,14 @@ export const pagePlanSchema = z
       type: z.enum(PAGE_TYPES),
       purpose: z.string().min(1),
       audience: z.string().min(1),
+      /** Projection axis 1 — clearance. A viewer sees the page only if their
+       *  clearances include this level. `internal` never reaches a viewer
+       *  without the matching clearance. */
+      visibility: z.enum(['public', 'internal']).default('public'),
+      /** Projection axis 2 — audience. If present, only viewers whose audience
+       *  is listed may see the page. Absent = every audience (subject to
+       *  visibility). Both axes must pass. */
+      audiences: z.array(z.string().min(1)).optional(),
       primary_message: z.string().min(1),
       density: densitySchema,
       tone: z.array(z.enum(TONES)).min(1),

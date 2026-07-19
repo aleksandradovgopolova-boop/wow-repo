@@ -67,6 +67,14 @@ return:
         You go when you are done. Garden does not try to keep you longer than
         you meant to stay.
 
+# INTERNAL: only rendered for viewers cleared to see internal content.
+implementation-note:
+  label: Internal
+  tone: plain
+  text: >-
+    Engineer view — this concept is realised through the Preview Pattern.
+    See the Implementation page for the pattern, ADR-012, and its tests.
+
 pause:
   word: Room to grow.
 
