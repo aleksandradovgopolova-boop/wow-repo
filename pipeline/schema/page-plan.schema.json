@@ -1,0 +1,270 @@
+{
+  "$ref": "#/definitions/WowRepoPagePlan",
+  "definitions": {
+    "WowRepoPagePlan": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "page": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "manifesto",
+                "concept-explanation",
+                "principles",
+                "safety-boundaries",
+                "process-ritual",
+                "place-environment",
+                "timeline",
+                "architecture-system"
+              ]
+            },
+            "purpose": {
+              "type": "string",
+              "minLength": 1
+            },
+            "audience": {
+              "type": "string",
+              "minLength": 1
+            },
+            "visibility": {
+              "type": "string",
+              "enum": [
+                "public",
+                "internal"
+              ],
+              "default": "public"
+            },
+            "audiences": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "primary_message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "density": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "tone": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "calm",
+                  "intimate",
+                  "quietly-confident",
+                  "warm",
+                  "grounded",
+                  "honest",
+                  "spacious",
+                  "tender",
+                  "clear",
+                  "protective"
+                ]
+              },
+              "minItems": 1
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^\\/"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "order": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "nav": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": [
+            "id",
+            "type",
+            "purpose",
+            "audience",
+            "primary_message",
+            "density",
+            "tone",
+            "path",
+            "title",
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "narrative": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "component": {
+                "type": "string",
+                "enum": [
+                  "editorial-hero",
+                  "immersive-opening",
+                  "manifesto-lines",
+                  "longform-prose",
+                  "principle-statement",
+                  "pull-quote",
+                  "spatial-break",
+                  "narrative-steps",
+                  "boundary-comparison",
+                  "quiet-callout",
+                  "closing-reflection",
+                  "next-path",
+                  "related-links",
+                  "chapter-index"
+                ]
+              },
+              "source": {
+                "type": "string"
+              },
+              "emphasis": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "variant": {
+                "type": "string"
+              },
+              "intent": {
+                "type": "string"
+              },
+              "visibility": {
+                "type": "string",
+                "enum": [
+                  "public",
+                  "internal"
+                ],
+                "default": "public"
+              },
+              "audiences": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "component"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "motion": {
+          "type": "object",
+          "properties": {
+            "intensity": {
+              "type": "string",
+              "enum": [
+                "none",
+                "subtle",
+                "expressive"
+              ],
+              "default": "subtle"
+            },
+            "purpose": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "intensity": "subtle",
+            "purpose": []
+          }
+        },
+        "accessibility": {
+          "type": "object",
+          "properties": {
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            },
+            "motion_optional": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "notes": [],
+            "motion_optional": true
+          }
+        },
+        "relationships": {
+          "type": "object",
+          "properties": {
+            "next": {
+              "type": "string"
+            },
+            "related": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "related": []
+          }
+        }
+      },
+      "required": [
+        "version",
+        "page",
+        "narrative",
+        "sections"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

@@ -8,60 +8,15 @@ description: >-
 
 # content-analyst
 
-You are the first stage of the WowRepo pipeline:
+This skill is the **Claude Code binding** of WowRepo pipeline stage 1. The
+pipeline is provider-neutral, so the full specification lives once, outside this
+tool, and every binding defers to it:
 
-```
-repository content → [content analysis] → page plan → composition → render → QA
-```
+> **Follow [`pipeline/stages/01-content-analyst.md`](../../../pipeline/stages/01-content-analyst.md) exactly.**
 
-Your job is to **understand** source content, not to design or write it. You
-produce a structured analysis that `page-director` turns into a page plan.
+That document is the single source of truth for inputs, the absolute
+"never invent facts" rule, the analysis fields to produce, and the definition of
+done. Do not restate or diverge from it here.
 
-## Absolute rule
-
-**Never invent factual content.** You may summarise, classify, and quote what is
-present in the source. You may flag gaps ("no audience stated"). You must not
-fabricate copy, claims, names, dates, or features. If content is missing, say so.
-
-## Inputs
-
-- Source files for one page (Markdown/MDX/YAML in the target repository, e.g.
-  `examples/garden/content/*` and the repository's own docs).
-- The site-level art direction (e.g. `examples/garden/docs/art-direction.md`).
-- Any canon/draft markers in the source. Preserve them.
-
-## What to produce
-
-Output a single analysis object (YAML or Markdown) with:
-
-1. **purpose** — what this page is for, in one line.
-2. **audience** — who it is for; note if unstated.
-3. **primary_message** — the one thing the reader should leave with.
-4. **information_types** — classify the material: thesis, principle, process,
-   boundary, definition, example, reassurance, risk, relationship, metadata.
-5. **hierarchy** — what is primary, secondary, supporting.
-6. **relationships** — links to other pages/ideas (by id where known).
-7. **processes** — any ordered sequences present.
-8. **risks / sensitivities** — anything requiring care (safety, autonomy,
-   emotional weight). For Garden: autonomy, no diagnosis, no pressure.
-9. **stays_text** — what must remain prose and must NOT be turned into a diagram
-   or decorative visual.
-10. **may_be_visual** — what could genuinely benefit from spatial/visual
-    treatment (a real sequence, a real comparison). Be conservative.
-11. **density** — low / medium / high, argued from the content.
-12. **tone** — emotional register evidenced by the content.
-13. **open_questions** — missing information the author must supply.
-
-## How to work
-
-- Read every source file for the page fully before analysing.
-- Prefer the author's own words for message and tone; cite them.
-- Distinguish **canon** (approved) from **draft** content and carry the labels
-  forward — downstream stages rely on them.
-- Do not choose components or layouts. That is `page-director`'s job.
-- Keep the analysis short and decision-useful, not a book report.
-
-## Definition of done
-
-A downstream page-director could plan the page from your analysis alone, without
-re-reading the source, and without you having invented anything.
+See [`pipeline/README.md`](../../../pipeline/README.md) for how the stages fit
+together and how the same pipeline runs on other models (Kimi, OpenAI, …).
