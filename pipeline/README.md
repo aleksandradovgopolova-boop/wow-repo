@@ -66,6 +66,39 @@ npm run validate:plan -- path/to/plan.yaml
 This validate-and-repair loop is identical for every provider — it is where
 model-independence actually lives.
 
+## Automated runner (Moonshot-Kimi / OpenAI-compatible)
+
+The validate-and-repair loop above is automated by a small runner. It runs
+stage 1 → stage 2 against a provider and repairs until the plan validates. The
+model is a swappable part; Moonshot (Kimi) is the default because it exposes an
+OpenAI-compatible API — the same adapter serves OpenAI and other compatible
+endpoints.
+
+```
+export MOONSHOT_API_KEY=sk-...
+npm run generate:plan -- \
+  --content examples/garden/content/place.yaml \
+  --site examples/garden \
+  --out page-plans/place.yaml
+```
+
+Flags: `--provider moonshot|openai|mock` (default `moonshot`), `--max-repairs N`
+(default 3), `--out <path>` (omit to print).
+
+Environment:
+
+| var | default | notes |
+| --- | --- | --- |
+| `MOONSHOT_API_KEY` | — | required for `--provider moonshot` |
+| `MOONSHOT_BASE_URL` | `https://api.moonshot.ai/v1` | use `…moonshot.cn` for the China endpoint |
+| `MOONSHOT_MODEL` | `kimi-k2-0711-preview` | any model your key supports |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | — / `https://api.openai.com/v1` / `gpt-4o` | for `--provider openai` |
+
+No key or network? `--provider mock` runs the whole loop offline (it even fails
+once on purpose to exercise the repair step). Adding another provider is one
+function in `scripts/providers.ts` — everything else stays the same, which is the
+point.
+
 ## Regenerating the contract
 
 The JSON Schema is generated, never hand-edited:

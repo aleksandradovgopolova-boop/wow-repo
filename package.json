@@ -15,6 +15,7 @@
     "test:visual": "playwright test",
     "schema:export": "tsx scripts/export-schema.ts",
     "validate:plan": "tsx scripts/validate-plan.ts",
+    "generate:plan": "tsx scripts/generate-plan.ts",
     "validate": "npm run check && npm run lint"
   },
   "dependencies": {
