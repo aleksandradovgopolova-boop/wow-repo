@@ -1,0 +1,59 @@
+version: 1
+page:
+  id: place
+  type: place-environment
+  path: /world/place
+  title: Place
+  order: 20
+  nav: false
+  purpose: describe-the-idea-of-a-place-that-is-genuinely-yours
+  audience: a-reader-walking-the-world-of-garden
+  primary_message: >-
+    A place in Garden is a small space that belongs to you and asks nothing of
+    you.
+  summary: A space that is yours, and asks nothing of you.
+  density: low
+  tone:
+    - calm
+    - intimate
+    - spacious
+
+narrative:
+  - arrive
+  - what-a-place-is
+  - one-clear-line
+  - a-pause
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: medium
+
+  - component: longform-prose
+    source: body
+
+  - component: pull-quote
+    source: line
+
+  - component: spatial-break
+    variant: ambient
+    source: pause
+
+  - component: next-path
+    source: onward
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+accessibility:
+  motion_optional: true
+  notes:
+    - Prose held to an intimate measure.
+
+relationships:
+  next: atmosphere
+  related:
+    - world

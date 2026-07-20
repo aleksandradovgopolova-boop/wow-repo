@@ -1,0 +1,73 @@
+---
+/**
+ * pull-quote — a single line lifted out for emphasis and pause.
+ *
+ * WHEN TO USE: to let one important sentence breathe between denser sections.
+ * WHEN NOT TO USE: more than once or twice per page, or as decoration. A pull
+ * quote must carry real meaning, not fill space.
+ */
+import type { PullQuoteContent } from '@engine/content-types.ts';
+
+interface Props {
+  content?: unknown;
+}
+
+const { content } = Astro.props;
+const c = (content ?? { quote: '' }) as PullQuoteContent;
+---
+
+<figure class="pullquote" data-reveal>
+  <div class="wr-shell pullquote__inner">
+    <span class="pullquote__mark" aria-hidden="true"></span>
+    <blockquote class="pullquote__quote">{c.quote}</blockquote>
+    {c.attribution && <figcaption class="pullquote__by">{c.attribution}</figcaption>}
+  </div>
+</figure>
+
+<style>
+  .pullquote {
+    margin: 0;
+    padding-block: var(--space-xl);
+  }
+
+  .pullquote__inner {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-m);
+    text-align: center;
+  }
+
+  .pullquote__quote {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--step-3);
+    line-height: var(--leading-snug);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+    max-width: 26ch;
+    text-wrap: balance;
+  }
+
+  /* A small growing mark above the quote — part of the seed/sprout family,
+     never a giant decorative quotation glyph. */
+  .pullquote__mark {
+    inline-size: 0.6rem;
+    block-size: 0.6rem;
+    background: var(--color-accent);
+    border-start-start-radius: 60% 60%;
+    border-start-end-radius: 20% 20%;
+    border-end-end-radius: 60% 60%;
+    border-end-start-radius: 20% 20%;
+    transform: rotate(45deg);
+    opacity: 0.85;
+  }
+
+  .pullquote__by {
+    margin-top: var(--space-m);
+    text-align: center;
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+</style>

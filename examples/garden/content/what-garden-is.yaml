@@ -1,0 +1,85 @@
+# Content sources for "What Garden is".
+# CANON: drawn from Garden's confirmed context (what it is / is not).
+# DRAFT: extended explanatory phrasing, marked and not yet approved canon.
+
+hero:
+  eyebrow: What Garden is
+  title: A place you return to, not a system you maintain.
+  # DRAFT lede.
+  lede: >-
+    Garden holds a few things closely: your rituals, the places that hold
+    meaning for you, and the experiences you have actually lived.
+  meta:
+    - personal space
+    - rituals & places
+    - lived experience
+
+body:
+  passages:
+    - heading: A place, not a product
+      # DRAFT prose, grounded in canon.
+      paragraphs:
+        - >-
+          Garden is a personal digital space. Its whole purpose is to support a
+          careful relationship with your own life — the rituals you keep, the
+          places that matter to you, the experiences you have lived, and the
+          slow recovery of your attention.
+        - >-
+          It is small on purpose. Garden does not try to capture everything you
+          know or everything you do. It keeps room for a few things that are
+          genuinely yours, and it protects the quiet around them.
+    - heading: What Garden is not
+      # CANON: the explicit "is not" list from Garden's definition.
+      paragraphs:
+        - >-
+          Garden is not a second brain, a knowledge graph, a note-taking app, or
+          a personal knowledge-management tool. It is not a way to organise
+          information, and it is not a replacement or extension of the separate
+          project called “Нити”.
+        - >-
+          Connections, memory, and navigation may exist here — but only ever in
+          service of your spaces, rituals, places, and experiences. They are
+          never allowed to become the point.
+
+clarity:
+  # CANON distinction, lifted for emphasis.
+  quote: Memory here is in service of your life — never a system to be kept for its own sake.
+
+return:
+  eyebrow: The shape of a return
+  # DRAFT: an illustrative rhythm of use, marked as draft voice.
+  intro: Using Garden feels less like opening an app and more like coming back to a room.
+  steps:
+    - title: Arrive
+      body: >-
+        You come in slowly. Nothing is demanding your attention; there are no
+        badges, counters, or unfinished tasks waiting to be cleared.
+    - title: Notice
+      body: >-
+        You sit with a ritual, a place, or an experience — whatever you came
+        back for. Garden holds it plainly, without asking you to categorise it.
+    - title: Tend
+      body: >-
+        You add, revisit, or simply re-read. The space grows a little, the way a
+        garden does: unevenly, at your pace, without a finish line.
+    - title: Leave
+      body: >-
+        You go when you are done. Garden does not try to keep you longer than
+        you meant to stay.
+
+# INTERNAL: only rendered for viewers cleared to see internal content.
+implementation-note:
+  label: Internal
+  tone: plain
+  text: >-
+    Engineer view — this concept is realised through the Preview Pattern.
+    See the Implementation page for the pattern, ADR-012, and its tests.
+
+pause:
+  word: Room to grow.
+
+onward:
+  label: Then
+
+related:
+  intro: Nearby

@@ -1,0 +1,100 @@
+---
+/**
+ * next-path — a single, clear onward step at the end of a page.
+ *
+ * WHEN TO USE: to offer the reader one meaningful place to go next, drawn from
+ * the page plan's `relationships.next`. One path, not a menu.
+ * WHEN NOT TO USE: for several links (use related-links) or when the page is a
+ * true endpoint with nowhere onward to go.
+ */
+import type { NextPathContent } from '@engine/content-types.ts';
+import type { ResolvedRepo } from '@engine/load.ts';
+import type { PagePlan } from '@engine/page-plan.ts';
+import { findPage, pageHref } from '@engine/load.ts';
+
+interface Props {
+  content?: unknown;
+  plan: PagePlan;
+  repo: ResolvedRepo;
+}
+
+const { content, plan, repo } = Astro.props;
+const c = (content ?? {}) as NextPathContent;
+const nextId = plan.relationships.next;
+const next = nextId ? findPage(repo, nextId) : undefined;
+---
+
+{
+  next && (
+    <nav class="next" aria-label="Continue reading" data-reveal>
+      <a class="next__link" href={pageHref(repo, next.plan.page.path)}>
+        <span class="next__label">{c.label ?? 'Continue'}</span>
+        <span class="next__title">{next.plan.page.title}</span>
+        <span class="next__summary">{next.plan.page.summary}</span>
+        <span class="next__arrow" aria-hidden="true">→</span>
+      </a>
+    </nav>
+  )
+}
+
+<style>
+  .next {
+    padding-block: var(--space-l) var(--space-2xl);
+  }
+
+  .next__link {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'label arrow'
+      'title arrow'
+      'summary arrow';
+    align-items: center;
+    gap: var(--space-3xs) var(--space-m);
+    width: min(100% - var(--gutter) * 2, var(--width-full));
+    margin-inline: auto;
+    padding: var(--space-l) 0;
+    border-block: var(--border-hairline);
+    text-decoration: none;
+    color: var(--color-text);
+    transition: padding-inline var(--dur-calm) var(--ease-standard);
+  }
+
+  .next__link:hover {
+    padding-inline-start: var(--space-s);
+  }
+
+  .next__label {
+    grid-area: label;
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+
+  .next__title {
+    grid-area: title;
+    font-family: var(--font-display);
+    font-size: var(--step-3);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+  }
+
+  .next__summary {
+    grid-area: summary;
+    color: var(--color-text-soft);
+    max-width: 44ch;
+    margin-top: var(--space-2xs);
+  }
+
+  .next__arrow {
+    grid-area: arrow;
+    font-size: var(--step-3);
+    color: var(--color-accent);
+    transition: transform var(--dur-calm) var(--ease-standard);
+  }
+
+  .next__link:hover .next__arrow {
+    transform: translateX(0.35rem);
+  }
+</style>

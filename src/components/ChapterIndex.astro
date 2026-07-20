@@ -1,0 +1,159 @@
+---
+/**
+ * chapter-index — a book-like table of contents for a chapter of the journey.
+ *
+ * WHEN TO USE: to open a section that the reader walks through as a sequence of
+ * pages (e.g. "The World of Garden" → Place, Atmosphere, Return). Each entry
+ * links to a real page; its title and summary are pulled from that page, never
+ * duplicated in content.
+ * WHEN NOT TO USE: for a couple of loosely-connected siblings (use
+ * related-links) or a single onward step (use next-path).
+ *
+ * Projection-aware: entries whose target page is not visible to the current
+ * viewer are silently skipped, so an internal entry never leaks into a public
+ * chapter.
+ */
+import type { ChapterIndexContent } from '@engine/content-types.ts';
+import type { ResolvedRepo } from '@engine/load.ts';
+import type { PagePlan } from '@engine/page-plan.ts';
+import { findPage, pageHref } from '@engine/load.ts';
+
+interface Props {
+  content?: unknown;
+  plan: PagePlan;
+  repo: ResolvedRepo;
+}
+
+const { content, repo } = Astro.props;
+const c = (content ?? { chapters: [] }) as ChapterIndexContent;
+
+const entries = c.chapters
+  .map((entry) => ({ entry, page: findPage(repo, entry.id) }))
+  .filter((e): e is { entry: typeof e.entry; page: NonNullable<typeof e.page> } =>
+    Boolean(e.page),
+  );
+---
+
+{
+  entries.length > 0 && (
+    <section class="chapters" data-reveal>
+      <div class="wr-shell chapters__inner">
+        {c.eyebrow && <p class="wr-label chapters__eyebrow">{c.eyebrow}</p>}
+        {c.intro && <p class="chapters__intro">{c.intro}</p>}
+        <ol class="chapters__list">
+          {entries.map(({ entry, page }, i) => (
+            <li class="chapters__item">
+              <a class="chapters__link" href={pageHref(repo, page.plan.page.path)}>
+                <span class="chapters__num" aria-hidden="true">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span class="chapters__text">
+                  {entry.kicker && (
+                    <span class="chapters__kicker">{entry.kicker}</span>
+                  )}
+                  <span class="chapters__title">{page.plan.page.title}</span>
+                  <span class="chapters__summary">{page.plan.page.summary}</span>
+                </span>
+                <span class="chapters__arrow" aria-hidden="true">
+                  →
+                </span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  )
+}
+
+<style>
+  .chapters {
+    padding-block: var(--space-l);
+  }
+
+  .chapters__inner {
+    display: grid;
+    gap: var(--space-m);
+    max-width: var(--measure);
+  }
+
+  .chapters__intro {
+    font-size: var(--step-1);
+    line-height: var(--leading-snug);
+    color: var(--color-text-soft);
+    max-width: var(--measure-narrow);
+  }
+
+  .chapters__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+  }
+
+  .chapters__link {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    gap: var(--space-s) var(--space-m);
+    padding-block: var(--space-m);
+    border-block-start: var(--border-hairline);
+    text-decoration: none;
+    color: var(--color-text);
+    transition: padding-inline-start var(--dur-calm) var(--ease-standard);
+  }
+
+  .chapters__item:last-child .chapters__link {
+    border-block-end: var(--border-hairline);
+  }
+
+  .chapters__link:hover {
+    padding-inline-start: var(--space-s);
+  }
+
+  .chapters__num {
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    color: var(--color-accent);
+    padding-top: 0.35em;
+  }
+
+  .chapters__text {
+    display: grid;
+    gap: var(--space-3xs);
+  }
+
+  .chapters__kicker {
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+
+  .chapters__title {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+  }
+
+  .chapters__link:hover .chapters__title {
+    color: var(--color-accent-strong);
+  }
+
+  .chapters__summary {
+    color: var(--color-text-soft);
+    max-width: 46ch;
+  }
+
+  .chapters__arrow {
+    font-size: var(--step-2);
+    color: var(--color-accent);
+    align-self: center;
+    transition: transform var(--dur-calm) var(--ease-standard);
+  }
+
+  .chapters__link:hover .chapters__arrow {
+    transform: translateX(0.35rem);
+  }
+</style>

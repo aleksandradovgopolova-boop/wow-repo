@@ -1,0 +1,199 @@
+---
+/**
+ * Quiet site header. Deliberately understated — a wordmark and a short reading
+ * path, not a SaaS navigation bar. Driven entirely by repo data so it carries
+ * no Garden-specific content.
+ */
+import type { ResolvedRepo } from '@engine/load.ts';
+import { pageHref } from '@engine/load.ts';
+
+interface Props {
+  repo: ResolvedRepo;
+  currentPath: string;
+}
+
+const { repo, currentPath } = Astro.props;
+// The top nav is a short reading path, not a sitemap: pages that opt out with
+// `nav: false` (chapter entries reached by walking the journey) are excluded.
+const nav = repo.pages
+  .filter((p) => p.plan.page.nav !== false)
+  .map((p) => ({
+    title: p.plan.page.title,
+    path: p.plan.page.path,
+  }));
+
+// Audience switcher: only shown when the repo is projected for more than one
+// audience. Each link points at that audience's home, so switching view is a
+// visible demonstration of "one repo, many projections". A non-default audience
+// lives under a "/<key>" prefix.
+const audiences = repo.site.audiences;
+const showSwitcher = audiences.length > 1 && repo.viewer !== undefined;
+const homeFor = (key: string, isDefault: boolean): string =>
+  isDefault ? '/' : `/${key}`;
+---
+
+<header class="site-header">
+  <div class="wr-shell site-header__inner">
+    <a
+      class="wordmark"
+      href={pageHref(repo, '/')}
+      aria-label={`${repo.site.name}, home`}
+    >
+      <span class="wordmark__mark" aria-hidden="true"></span>
+      <span class="wordmark__name">{repo.site.name}</span>
+    </a>
+    <nav class="site-nav" aria-label="Reading path">
+      <ul>
+        {
+          nav.map((item) => (
+            <li>
+              <a
+                href={pageHref(repo, item.path)}
+                aria-current={item.path === currentPath ? 'page' : undefined}
+              >
+                {item.title}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </div>
+  {
+    showSwitcher && (
+      <div class="wr-shell site-view">
+        <span class="site-view__label">Viewing as</span>
+        <ul class="site-view__list">
+          {audiences.map((a) => (
+            <li>
+              <a
+                href={homeFor(a.key, a.default)}
+                aria-current={
+                  a.key === repo.viewer?.audience ? 'true' : undefined
+                }
+              >
+                {a.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+</header>
+
+<style>
+  .site-header {
+    padding-block: var(--space-s);
+    position: relative;
+    z-index: 2;
+  }
+
+  .site-header__inner {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-m);
+    flex-wrap: wrap;
+  }
+
+  .wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    text-decoration: none;
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    letter-spacing: var(--tracking-tight);
+  }
+
+  /* A small living seed/leaf mark drawn in CSS — no image, no generic logo. */
+  .wordmark__mark {
+    inline-size: 0.7em;
+    block-size: 0.7em;
+    background: var(--color-accent);
+    border-start-start-radius: 60% 60%;
+    border-start-end-radius: 20% 20%;
+    border-end-end-radius: 60% 60%;
+    border-end-start-radius: 20% 20%;
+    transform: rotate(45deg);
+    transition: transform var(--dur-calm) var(--ease-standard);
+  }
+
+  .wordmark:hover .wordmark__mark {
+    transform: rotate(45deg) scale(1.12);
+  }
+
+  .site-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-s) var(--space-m);
+  }
+
+  .site-nav a {
+    color: var(--color-text-soft);
+    text-decoration: none;
+    font-size: var(--step--1);
+    letter-spacing: 0.01em;
+    padding-block: var(--space-3xs);
+    border-bottom: 1.5px solid transparent;
+    transition: color var(--dur-quick) var(--ease-standard),
+      border-color var(--dur-quick) var(--ease-standard);
+  }
+
+  .site-nav a:hover {
+    color: var(--color-text);
+    border-color: var(--color-border);
+  }
+
+  .site-nav a[aria-current='page'] {
+    color: var(--color-accent-strong);
+    border-color: var(--color-accent);
+  }
+
+  /* Audience switcher — a quiet strip, not a prominent control. It exists to
+     make the projection visible, so it stays understated. */
+  .site-view {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    margin-top: var(--space-2xs);
+    font-size: var(--step--1);
+  }
+
+  .site-view__label {
+    color: var(--color-text-faint);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+  }
+
+  .site-view__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: var(--space-xs);
+  }
+
+  .site-view__list a {
+    color: var(--color-text-soft);
+    text-decoration: none;
+    padding-block: var(--space-3xs);
+    border-bottom: 1.5px solid transparent;
+    transition: color var(--dur-quick) var(--ease-standard),
+      border-color var(--dur-quick) var(--ease-standard);
+  }
+
+  .site-view__list a:hover {
+    color: var(--color-text);
+  }
+
+  .site-view__list a[aria-current='true'] {
+    color: var(--color-accent-strong);
+    border-color: var(--color-accent);
+  }
+</style>

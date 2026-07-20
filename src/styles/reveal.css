@@ -1,0 +1,29 @@
+/* Reveal animation styles, paired with src/scripts/reveal.ts.
+   Elements start slightly lowered and transparent, settle when shown. */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity var(--dur-slow) var(--ease-enter),
+    transform var(--dur-slow) var(--ease-enter);
+  will-change: opacity, transform;
+}
+
+[data-reveal='shown'] {
+  opacity: 1;
+  transform: none;
+}
+
+/* Belt-and-braces: if JS never runs or motion is reduced, content is visible. */
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+.no-js [data-reveal] {
+  opacity: 1;
+  transform: none;
+}

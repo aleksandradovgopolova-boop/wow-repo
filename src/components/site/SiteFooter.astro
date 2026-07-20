@@ -1,0 +1,62 @@
+---
+/**
+ * Quiet closing footer / colophon. Names the engine honestly (built with
+ * WowRepo) without turning into marketing. Content comes from repo data.
+ */
+import type { ResolvedRepo } from '@engine/load.ts';
+
+interface Props {
+  repo: ResolvedRepo;
+}
+
+const { repo } = Astro.props;
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="wr-shell site-footer__inner">
+    <p class="site-footer__name">{repo.site.name}</p>
+    <p class="site-footer__note">
+      {repo.site.tagline}
+    </p>
+    <p class="site-footer__colophon">
+      A living site composed with <span class="engine">WowRepo</span> · {year}
+    </p>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    margin-top: var(--space-3xl);
+    padding-block: var(--space-xl) var(--space-2xl);
+    border-top: var(--border-hairline);
+  }
+
+  .site-footer__inner {
+    display: grid;
+    gap: var(--space-2xs);
+    max-width: var(--measure);
+  }
+
+  .site-footer__name {
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    color: var(--color-text);
+  }
+
+  .site-footer__note {
+    color: var(--color-text-soft);
+    max-width: 40ch;
+  }
+
+  .site-footer__colophon {
+    margin-top: var(--space-xs);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    letter-spacing: 0.01em;
+  }
+
+  .engine {
+    color: var(--color-accent-strong);
+  }
+</style>

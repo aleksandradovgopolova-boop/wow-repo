@@ -1,0 +1,38 @@
+---
+/**
+ * The one route. Every page in the ingested repository is generated statically
+ * from its validated plan. There is no per-page hand-written route and no
+ * runtime rendering — `npm run build` produces plain HTML for each plan.
+ */
+import type { GetStaticPaths } from 'astro';
+import {
+  loadRepo,
+  resolveForViewer,
+  viewersFor,
+  pageHref,
+} from '@engine/load.ts';
+import PageLayout from '@layouts/PageLayout.astro';
+import PageRenderer from '@components/PageRenderer.astro';
+
+export const getStaticPaths = (async () => {
+  const source = loadRepo();
+
+  // One repository, projected once per audience. The default audience is served
+  // at the root; each other audience gets its own prefixed projection built from
+  // the very same source — this is the "one repo, many views" thesis in code.
+  return viewersFor(source.site).flatMap((viewer) => {
+    const repo = resolveForViewer(source, viewer);
+    return repo.pages.map((page) => {
+      const slug =
+        pageHref(repo, page.plan.page.path).replace(/^\//, '') || undefined;
+      return { params: { slug }, props: { page, repo } };
+    });
+  });
+}) satisfies GetStaticPaths;
+
+const { page, repo } = Astro.props;
+---
+
+<PageLayout repo={repo} plan={page.plan}>
+  <PageRenderer page={page} repo={repo} />
+</PageLayout>

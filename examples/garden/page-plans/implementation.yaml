@@ -1,0 +1,56 @@
+version: 1
+page:
+  id: implementation
+  type: architecture-system
+  path: /implementation
+  title: Implementation
+  order: 9
+  # Two-axis projection: internal clearance AND the engineer audience. A visitor
+  # fails both; only a cleared engineer ever receives this page.
+  visibility: internal
+  audiences:
+    - engineer
+  purpose: show-how-the-preview-pattern-is-actually-built
+  audience: an-engineer-with-internal-clearance
+  primary_message: >-
+    The public "return" concept is implemented by the Preview Pattern, recorded
+    in ADR-012 and guarded by tests.
+  summary: How Garden's public concepts are actually built — pattern, ADR, tests.
+  density: high
+  tone:
+    - clear
+    - grounded
+    - honest
+
+narrative:
+  - orient-the-engineer
+  - the-pattern
+  - the-decision
+  - the-guarantees
+  - back-to-the-public-concept
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: medium
+
+  - component: longform-prose
+    source: body
+    intent: The Preview Pattern, the ADR behind it, and the tests that hold it.
+
+  - component: related-links
+    source: related
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+accessibility:
+  motion_optional: true
+  notes:
+    - Reads as ordered technical prose; no diagram is required to understand it.
+
+relationships:
+  related:
+    - what-garden-is

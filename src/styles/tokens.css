@@ -1,0 +1,157 @@
+/**
+ * WowRepo design tokens.
+ *
+ * These are the ONLY colours, type sizes, spacing steps, and motion values a
+ * component may use. Individual pages and components must never introduce raw
+ * hex values, pixel sizes, or one-off timings. The design-system-guardian skill
+ * enforces this.
+ *
+ * The palette below is the Garden art direction (see
+ * examples/garden/docs/art-direction.md): warm paper, botanical ink, daylight.
+ * A different repository would ship a different token file; the *names* stay
+ * the same so components remain reusable. Nothing here is Garden-specific in
+ * structure — only in value.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* --- Base palette (raw, private — do not use directly in components) --- */
+  --_paper: #f6f1e7; /* warm off-white, like uncoated paper */
+  --_paper-deep: #efe8da; /* a recessed paper surface */
+  --_paper-raised: #fbf8f1; /* a lifted, slightly brighter surface */
+  --_ink: #26221d; /* warm near-black, never pure #000 */
+  --_ink-soft: #4b4640; /* secondary reading colour */
+  --_ink-faint: #7c766c; /* captions, labels, metadata */
+  --_leaf: #4d7358; /* living botanical green — the accent */
+  --_leaf-deep: #35533d; /* pressed/active green */
+  --_clay: #b9694a; /* warm terracotta, used sparingly for care/warmth */
+  --_dawn: #e7c9a9; /* soft dawn light, for gentle highlights */
+  --_hairline: #ded4c2; /* quiet separators */
+
+  /* --- Semantic colours (use THESE) --- */
+  --color-bg: var(--_paper);
+  --color-surface: var(--_paper-raised);
+  --color-surface-sunken: var(--_paper-deep);
+  --color-text: var(--_ink);
+  --color-text-soft: var(--_ink-soft);
+  --color-text-faint: var(--_ink-faint);
+  --color-accent: var(--_leaf);
+  --color-accent-strong: var(--_leaf-deep);
+  --color-care: var(--_clay); /* reserved for warmth/safety, never decoration */
+  --color-glow: var(--_dawn);
+  --color-border: var(--_hairline);
+  --color-focus: var(--_leaf-deep);
+
+  /* --- Typography --- */
+  --font-display:
+    'Iowan Old Style', 'Palatino Linotype', 'Palatino', 'Book Antiqua',
+    'Georgia', serif;
+  --font-body:
+    system-ui, -apple-system, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono:
+    'SFMono-Regular', 'SF Mono', 'Menlo', 'Consolas', monospace;
+
+  /* Fluid type scale (minor third-ish, breathing on large screens). */
+  --step--1: clamp(0.83rem, 0.79rem + 0.20vw, 0.94rem);
+  --step-0: clamp(1rem, 0.95rem + 0.28vw, 1.15rem);
+  --step-1: clamp(1.2rem, 1.11rem + 0.45vw, 1.5rem);
+  --step-2: clamp(1.44rem, 1.28rem + 0.8vw, 2rem);
+  --step-3: clamp(1.73rem, 1.45rem + 1.4vw, 2.75rem);
+  --step-4: clamp(2.07rem, 1.6rem + 2.35vw, 3.75rem);
+  --step-5: clamp(2.49rem, 1.7rem + 3.95vw, 5rem);
+  --step-6: clamp(2.99rem, 1.6rem + 6.9vw, 6.5rem);
+
+  --leading-tight: 1.08;
+  --leading-snug: 1.25;
+  --leading-normal: 1.6;
+  --leading-loose: 1.8;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.08em;
+  --tracking-label: 0.16em;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* --- Spacing (fluid, consistent rhythm) --- */
+  --space-3xs: clamp(0.25rem, 0.24rem + 0.05vw, 0.3rem);
+  --space-2xs: clamp(0.5rem, 0.47rem + 0.14vw, 0.6rem);
+  --space-xs: clamp(0.75rem, 0.71rem + 0.2vw, 0.9rem);
+  --space-s: clamp(1rem, 0.95rem + 0.28vw, 1.2rem);
+  --space-m: clamp(1.5rem, 1.42rem + 0.42vw, 1.8rem);
+  --space-l: clamp(2rem, 1.85rem + 0.75vw, 2.6rem);
+  --space-xl: clamp(3rem, 2.7rem + 1.5vw, 4.2rem);
+  --space-2xl: clamp(4.5rem, 3.9rem + 3vw, 7rem);
+  --space-3xl: clamp(6rem, 4.8rem + 6vw, 11rem);
+
+  /* --- Layout --- */
+  --measure: 62ch; /* comfortable reading line length */
+  --measure-narrow: 46ch; /* intimate, manifesto-like passages */
+  --width-content: 44rem; /* default column */
+  --width-wide: 66rem; /* wider compositions */
+  --width-full: 78rem; /* page maximum */
+  --gutter: clamp(1.25rem, 0.9rem + 1.75vw, 2.5rem);
+
+  /* The single asymmetric column. Offset ledes and footnotes are indented by
+     THIS shared value — never a one-off vw — so every offset block lines up on
+     one deliberate axis instead of floating to its own position. Collapses on
+     narrow screens (see the max-width override below). */
+  --lede-indent: 6rem;
+
+  /* --- Surfaces & lines --- */
+  --radius-none: 0;
+  --radius-s: 3px; /* deliberately small — we avoid pill/card aesthetics */
+  --radius-m: 6px;
+  --border-hairline: 1px solid var(--color-border);
+  --border-emphasis: 1.5px solid var(--color-text);
+
+  /* Shadows are used almost never; when present they are soft daylight, not
+     material elevation. */
+  --shadow-soft: 0 1px 2px rgba(38, 34, 29, 0.04),
+    0 8px 24px rgba(38, 34, 29, 0.05);
+
+  /* --- Motion --- */
+  --dur-instant: 80ms;
+  --dur-quick: 180ms;
+  --dur-calm: 420ms;
+  --dur-slow: 800ms;
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* --- Focus --- */
+  --focus-ring: 2px solid var(--color-focus);
+  --focus-offset: 3px;
+}
+
+/* Breakpoints are documented here for reference; media queries use these px
+   values directly (custom media queries need a build plugin we intentionally
+   avoid):
+     --bp-narrow: 26.25rem;   420px  — narrow phones
+     --bp-mobile: 40rem;      640px  — phones / small tablets
+     --bp-laptop: 60rem;      960px  — laptops
+     --bp-wide:   80rem;     1280px  — large screens
+*/
+
+/* On narrow screens the asymmetric column would push offset text uncomfortably
+   inward, so it collapses to a small, quiet indent. */
+@media (max-width: 40rem) {
+  :root {
+    --lede-indent: 1.25rem;
+  }
+}
+
+/* Respect the user's explicit wish for less motion. Every animated component
+   must ALSO neutralise its own transitions under this query. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-quick: 0ms;
+    --dur-calm: 0ms;
+    --dur-slow: 0ms;
+  }
+}

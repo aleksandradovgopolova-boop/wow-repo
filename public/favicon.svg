@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Garden">
+  <rect width="32" height="32" rx="6" fill="#f6f1e7"/>
+  <path d="M16 6c5 3 6.5 7 6.5 10.5A6.5 6.5 0 0 1 16 23a6.5 6.5 0 0 1-6.5-6.5C9.5 13 11 9 16 6Z" fill="#4d7358"/>
+  <path d="M16 23V10" stroke="#35533d" stroke-width="1.4" stroke-linecap="round"/>
+</svg>

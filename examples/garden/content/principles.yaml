@@ -1,0 +1,59 @@
+# Content sources for "Principles".
+# CANON: every principle below is drawn directly from Garden's confirmed
+# autonomy and design constraints. Only the surrounding phrasing is DRAFT.
+
+hero:
+  eyebrow: Principles
+  title: A few commitments Garden keeps to.
+  # DRAFT lede.
+  lede: >-
+    These are not features. They are the boundaries that keep Garden calm,
+    honest, and yours.
+
+principles:
+  eyebrow: What shapes every decision
+  # DRAFT intro.
+  intro: Each of these is a promise about how Garden will and will not behave.
+  principles:
+    - title: Your autonomy comes first
+      # CANON.
+      body: >-
+        Garden supports your choices; it does not make meaningful personal
+        decisions on your behalf. You stay the author of your own life.
+    - title: No pressure, ever
+      # CANON.
+      body: >-
+        No shame, no fear of loss, no artificial urgency, and no manipulative
+        engagement mechanics. Garden has nothing to sell you back to yourself.
+    - title: It will not diagnose you
+      # CANON.
+      body: >-
+        Garden does not label your state or present assumptions as facts about
+        who you are. What is yours to interpret stays yours.
+    - title: Care without dependency
+      # CANON.
+      body: >-
+        Garden is built to leave you more settled and more free — never to make
+        itself hard to leave.
+    - title: Memory serves the space
+      # CANON.
+      body: >-
+        Connections, memory, and navigation exist only to support your rituals,
+        places, and experiences. They are never allowed to become a
+        knowledge-management system.
+    - title: Calm over engagement
+      # CANON / art-direction.
+      body: >-
+        Garden is measured by whether it feels alive and human, not by how long
+        it keeps you. Quiet is a feature, not a failure.
+
+reassurance:
+  tone: plain
+  label: A note
+  # DRAFT phrasing of a canon idea.
+  text: >-
+    These principles are commitments Garden makes to you — not conditions you
+    have to meet. You do not need to earn a calm, honest space.
+
+onward:
+  label: In practice

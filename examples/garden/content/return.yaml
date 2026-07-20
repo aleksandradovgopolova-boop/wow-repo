@@ -1,0 +1,31 @@
+# Content sources for "Return" — the closing room in the World of Garden.
+
+hero:
+  eyebrow: The World · Return
+  title: The coming back.
+  lede: >-
+    A place and its atmosphere are only half of Garden. The other half is the
+    return — the small, repeated act of coming back to what is yours.
+
+body:
+  passages:
+    - heading: What return is
+      paragraphs:
+        - >-
+          Return is not a feature to complete; it is the whole point. Garden
+          grows the way a real garden does — through unhurried, repeated tending,
+          not a single burst of setup.
+        - >-
+          Because return matters more than accumulation, Garden never pressures
+          you to come back. It waits. When you return, it is because you wanted
+          to, and the place is exactly as you left it.
+
+line:
+  quote: What you return to is what a place is for.
+
+closing:
+  line: Garden can wait for you.
+  sub: A private digital place that asks nothing, and keeps what is yours.
+
+onward:
+  label: Continue

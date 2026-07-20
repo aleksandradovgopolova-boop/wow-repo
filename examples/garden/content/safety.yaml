@@ -1,0 +1,66 @@
+# Content sources for "Safety & autonomy".
+# CANON: every "will never" below is one of Garden's explicit autonomy
+# constraints. The "will" column and surrounding phrasing are DRAFT voice
+# consistent with canon.
+
+hero:
+  eyebrow: Safety & autonomy
+  title: You stay in charge. Always.
+  # DRAFT lede.
+  lede: >-
+    In Garden, safety and autonomy are the same thing. Keeping you free is how
+    Garden keeps you safe.
+
+intro:
+  passages:
+    # DRAFT prose grounded in canon.
+    - paragraphs:
+        - >-
+          A personal space only works if it is genuinely safe to be honest in.
+          For Garden, that means never turning your openness against you — no
+          nudging, no scoring, no quiet pressure to keep coming back.
+        - >-
+          So the boundaries below are not fine print. They are the design.
+          Garden is built around them, and it would rather do less than cross
+          any of them.
+
+boundary:
+  eyebrow: The promises
+  # DRAFT intro.
+  intro: What Garden will do for you, and what it will never do to you.
+  affirm:
+    title: Garden will
+    # DRAFT affirmations, consistent with canon.
+    items:
+      - Hold space for your rituals, places, and experiences.
+      - Leave decisions about your life to you.
+      - Stay calm and quiet by default.
+      - Let you arrive, tend, and leave on your own terms.
+      - Keep memory in service of your spaces — nothing more.
+  refuse:
+    title: Garden will never
+    # CANON: these are Garden's explicit autonomy prohibitions.
+    items:
+      - Diagnose you or label your state.
+      - Pressure you, or manufacture urgency.
+      - Use shame or fear of loss to hold your attention.
+      - Present assumptions as facts about who you are.
+      - Make meaningful personal decisions on your behalf.
+      - Create dependency or make itself hard to leave.
+
+care:
+  tone: care
+  label: Plainly
+  # DRAFT, tender reassurance grounded in canon (no urgency, no alarm).
+  text: >-
+    You do not owe Garden your time, your consistency, or your progress. If you
+    step away for a season, nothing here will punish you for it. The door stays
+    open, and the space stays yours.
+
+close:
+  # DRAFT closing.
+  line: A space that keeps you free is a space you can trust.
+  sub: That is the whole promise.
+
+related:
+  intro: Return to

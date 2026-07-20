@@ -1,0 +1,68 @@
+version: 1
+page:
+  id: garden-manifesto
+  type: manifesto
+  path: /
+  title: Manifesto
+  order: 0
+  purpose: help-a-first-time-visitor-feel-the-core-idea-before-explaining-it
+  audience: a-curious-first-time-visitor
+  primary_message: Garden is a space for living, not for managing life.
+  summary: The feeling Garden is built around, in a few plain lines.
+  density: low
+  tone:
+    - calm
+    - intimate
+    - quietly-confident
+
+# Rhythm: arrive slowly, state the beliefs one at a time, pause to breathe,
+# let one line land, then leave on a gentle open door.
+narrative:
+  - immersive-arrival
+  - the-beliefs
+  - a-breath
+  - one-line-that-stays
+  - a-quiet-ending
+  - a-way-onward
+
+sections:
+  - component: immersive-opening
+    source: opening
+    intent: Feeling before information — three quiet lines, the last taking root.
+
+  - component: manifesto-lines
+    source: beliefs
+    intent: The creed, one complete thought per line, each given room.
+
+  - component: spatial-break
+    variant: breath
+    intent: An opt-in pause — the reader may breathe, or not. Never auto-plays.
+
+  - component: pull-quote
+    source: refrain
+    intent: A single line lifted out, the heart of the page.
+
+  - component: closing-reflection
+    source: ending
+    intent: End on rest, not a call to action.
+
+  - component: next-path
+    source: onward
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+    - continuity
+
+accessibility:
+  motion_optional: true
+  notes:
+    - Breath pacer is opt-in and fully usable with reduced motion.
+    - Opening lines must be legible before reveal completes.
+
+relationships:
+  next: what-garden-is
+  related:
+    - principles
+    - safety

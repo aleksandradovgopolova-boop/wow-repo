@@ -1,0 +1,138 @@
+---
+/**
+ * boundary-comparison — two honest columns: what something is / will do, and
+ * what it is not / will never do.
+ *
+ * WHEN TO USE: to draw a clear, calm boundary (safety pages, "what X is not").
+ * The two sides are held side by side without pitting them as good vs. bad —
+ * both are affirmations of care.
+ * WHEN NOT TO USE: for a sequence (narrative-steps) or a single list of
+ * principles (principle-statement).
+ */
+import type { BoundaryComparisonContent } from '@engine/content-types.ts';
+
+interface Props {
+  content?: unknown;
+}
+
+const { content } = Astro.props;
+const c = (content ?? {
+  affirm: { title: '', items: [] },
+  refuse: { title: '', items: [] },
+}) as BoundaryComparisonContent;
+---
+
+<section class="boundary">
+  <div class="wr-shell boundary__inner">
+    <div class="boundary__head">
+      {c.eyebrow && <p class="wr-label" data-reveal>{c.eyebrow}</p>}
+      {c.intro && <p class="boundary__intro" data-reveal>{c.intro}</p>}
+    </div>
+    <div class="boundary__cols">
+      <div class="boundary__col boundary__col--affirm" data-reveal>
+        <h3 class="boundary__title">{c.affirm.title}</h3>
+        <ul class="boundary__items">
+          {c.affirm.items.map((item) => <li>{item}</li>)}
+        </ul>
+      </div>
+      <div class="boundary__col boundary__col--refuse" data-reveal>
+        <h3 class="boundary__title">{c.refuse.title}</h3>
+        <ul class="boundary__items boundary__items--refuse">
+          {c.refuse.items.map((item) => <li>{item}</li>)}
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .boundary {
+    padding-block: var(--space-l);
+  }
+
+  .boundary__inner {
+    display: grid;
+    gap: var(--space-xl);
+  }
+
+  .boundary__intro {
+    font-size: var(--step-2);
+    font-family: var(--font-display);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+    max-width: 28ch;
+    margin-top: var(--space-s);
+  }
+
+  .boundary__cols {
+    display: grid;
+    gap: var(--space-l);
+  }
+
+  @media (min-width: 48rem) {
+    .boundary__cols {
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-xl);
+    }
+  }
+
+  .boundary__col {
+    padding: var(--space-l);
+    background: var(--color-surface);
+    border: var(--border-hairline);
+    border-radius: var(--radius-m);
+  }
+
+  /* The two sides are distinguished by a quiet left edge, not loud colour. */
+  .boundary__col--affirm {
+    border-inline-start: 3px solid var(--color-accent);
+  }
+
+  .boundary__col--refuse {
+    border-inline-start: 3px solid var(--color-care);
+    background: color-mix(in srgb, var(--color-care) 4%, var(--color-surface));
+  }
+
+  .boundary__title {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    color: var(--color-text);
+    margin-bottom: var(--space-m);
+  }
+
+  .boundary__items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-s);
+  }
+
+  .boundary__items li {
+    position: relative;
+    padding-inline-start: var(--space-m);
+    font-size: var(--step-0);
+    line-height: var(--leading-normal);
+    color: var(--color-text-soft);
+  }
+
+  .boundary__items li::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: 0.62em;
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    background: var(--color-accent);
+    transform: rotate(45deg);
+  }
+
+  /* The "refuse" side uses a subtracted mark (a small dash) — never a scary X. */
+  .boundary__items--refuse li::before {
+    background: var(--color-care);
+    block-size: 2px;
+    inset-block-start: 0.85em;
+    transform: none;
+    inline-size: 0.7rem;
+  }
+</style>

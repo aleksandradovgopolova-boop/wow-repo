@@ -1,0 +1,48 @@
+# Content sources for "The World of Garden".
+# Grounded in Garden canon: a personal place made of spaces, atmosphere, and
+# return. No new features are invented here — only the shape of what already is.
+
+hero:
+  eyebrow: The World of Garden
+  title: A place made of a few quiet parts.
+  lede: >-
+    Garden is easier to feel than to define. So rather than list what it does,
+    here is what it is made of — met one part at a time, the way you would walk
+    through rooms.
+  meta:
+    - a place
+    - its atmosphere
+    - the return
+
+body:
+  passages:
+    - heading: Not features — parts of a place
+      paragraphs:
+        - >-
+          The parts below are not modules or screens. They are the few things
+          Garden holds: a place that is yours, the atmosphere that place keeps,
+          and the return you make to it. Each one is small, and each one is
+          allowed to stay small.
+        - >-
+          You do not need to read them in order, but they are laid out as a
+          walk. Take them slowly. Nothing here is trying to be finished.
+
+chapters:
+  eyebrow: The way through
+  intro: Three parts, entered like rooms. Begin wherever you like.
+  chapters:
+    - id: place
+      kicker: Where
+    - id: atmosphere
+      kicker: What it feels like
+    - id: return
+      kicker: Coming back
+
+pause:
+  word: Walk in.
+
+onward:
+  label: Or continue
+
+related:
+  intro: Nearby
