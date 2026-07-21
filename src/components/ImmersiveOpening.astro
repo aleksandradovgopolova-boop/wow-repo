@@ -20,7 +20,7 @@ const c = (content ?? { lines: [] }) as ImmersiveOpeningContent;
 <section class="opening">
   <div class="wr-shell opening__inner">
     {c.eyebrow && <p class="wr-label opening__eyebrow" data-reveal>{c.eyebrow}</p>}
-    <p class="opening__lines">
+    <h1 class="opening__lines">
       {
         c.lines.map((line, i) => (
           <span
@@ -32,7 +32,7 @@ const c = (content ?? { lines: [] }) as ImmersiveOpeningContent;
           </span>
         ))
       }
-    </p>
+    </h1>
     {c.footnote && <p class="opening__footnote" data-reveal>{c.footnote}</p>}
   </div>
 </section>

@@ -49,6 +49,19 @@ export const COMPONENT_NAMES = [
 ] as const;
 export type ComponentName = (typeof COMPONENT_NAMES)[number];
 
+/** Approved page "atmospheres" — the generative, motion-led background a page
+ *  may carry. An atmosphere is chosen by art direction to fit the page's
+ *  meaning; it is purely decorative and every page remains fully readable and
+ *  usable without it (and with motion disabled). Extend by adding a name here
+ *  and a matching case in src/scripts/atmosphere.ts. */
+export const ATMOSPHERES = [
+  'canopy-light', // dappled daylight + a plant growing on scroll (life taking root)
+  'sunbeam', // a shaft of light and drifting dust (a quiet, returned-to room)
+  'light-columns', // luminous columns that light as each item is read (order, alive)
+  'sheltering-glow', // a warm glow that breathes (held, protected, unhurried)
+] as const;
+export type Atmosphere = (typeof ATMOSPHERES)[number];
+
 /** Emotional tones a page may carry. Free-ish but constrained to a vocabulary
  *  so the art direction stays coherent across pages. */
 export const TONES = [
@@ -132,6 +145,14 @@ export const pagePlanSchema = z
         purpose: z.array(z.string()).default([]),
       })
       .default({ intensity: 'subtle', purpose: [] }),
+    /** Optional generative background. Chosen by art direction to match the
+     *  page's meaning; always decorative and never required for comprehension. */
+    atmosphere: z
+      .object({
+        variant: z.enum(ATMOSPHERES),
+        intensity: z.enum(['subtle', 'present', 'immersive']).default('present'),
+      })
+      .optional(),
     accessibility: z
       .object({
         /** Notes the page author must honour, surfaced to reviewers. */

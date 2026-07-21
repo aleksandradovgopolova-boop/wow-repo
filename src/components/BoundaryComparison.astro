@@ -4,8 +4,8 @@
  * what it is not / will never do.
  *
  * WHEN TO USE: to draw a clear, calm boundary (safety pages, "what X is not").
- * The two sides are held side by side without pitting them as good vs. bad —
- * both are affirmations of care.
+ * The two sides sit side by side, divided by a quiet rule — both are
+ * affirmations of care, never good-vs-bad. Editorial, not boxed cards.
  * WHEN NOT TO USE: for a sequence (narrative-steps) or a single list of
  * principles (principle-statement).
  */
@@ -36,7 +36,7 @@ const c = (content ?? {
         </ul>
       </div>
       <div class="boundary__col boundary__col--refuse" data-reveal>
-        <h3 class="boundary__title">{c.refuse.title}</h3>
+        <h3 class="boundary__title boundary__title--refuse">{c.refuse.title}</h3>
         <ul class="boundary__items boundary__items--refuse">
           {c.refuse.items.map((item) => <li>{item}</li>)}
         </ul>
@@ -66,31 +66,22 @@ const c = (content ?? {
 
   .boundary__cols {
     display: grid;
-    gap: var(--space-l);
+    gap: var(--space-xl);
   }
 
   @media (min-width: 48rem) {
     .boundary__cols {
       grid-template-columns: 1fr 1fr;
-      gap: var(--space-xl);
+      gap: 0;
     }
-  }
-
-  .boundary__col {
-    padding: var(--space-l);
-    background: var(--color-surface);
-    border: var(--border-hairline);
-    border-radius: var(--radius-m);
-  }
-
-  /* The two sides are distinguished by a quiet left edge, not loud colour. */
-  .boundary__col--affirm {
-    border-inline-start: 3px solid var(--color-accent);
-  }
-
-  .boundary__col--refuse {
-    border-inline-start: 3px solid var(--color-care);
-    background: color-mix(in srgb, var(--color-care) 4%, var(--color-surface));
+    /* a single quiet rule divides the two sides — no boxes */
+    .boundary__col--affirm {
+      padding-inline-end: var(--space-xl);
+      border-inline-end: var(--border-hairline);
+    }
+    .boundary__col--refuse {
+      padding-inline-start: var(--space-xl);
+    }
   }
 
   .boundary__title {
@@ -98,6 +89,13 @@ const c = (content ?? {
     font-size: var(--step-2);
     color: var(--color-text);
     margin-bottom: var(--space-m);
+    padding-bottom: var(--space-xs);
+    border-bottom: 2px solid var(--color-accent);
+    display: inline-block;
+  }
+
+  .boundary__title--refuse {
+    border-bottom-color: var(--color-care);
   }
 
   .boundary__items {
@@ -127,7 +125,7 @@ const c = (content ?? {
     transform: rotate(45deg);
   }
 
-  /* The "refuse" side uses a subtracted mark (a small dash) — never a scary X. */
+  /* the "refuse" side uses a quiet dash — never a scary X */
   .boundary__items--refuse li::before {
     background: var(--color-care);
     block-size: 2px;
