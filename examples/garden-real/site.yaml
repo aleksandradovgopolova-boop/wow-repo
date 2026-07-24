@@ -1,0 +1,21 @@
+# Garden — the real repository, ingested by WowRepo.
+# Content here is drawn verbatim from the Garden product repository's public
+# surface (public/01-introduction, 04-world, ...). Nothing is invented.
+name: Garden
+tagline: A private digital place that can wait.
+description: >-
+  A place a person can shape, leave, and return to — without pressure, ranking,
+  or autonomous AI control. It remains yours.
+lang: en
+
+# One repository, projected for two audiences. Visitors walk the public
+# journey; engineers additionally see the internal surface (ADR, delivery,
+# AI OPS) — the same source, different clearance.
+audiences:
+  - key: visitor
+    label: Visitor
+    clearances: [public]
+    default: true
+  - key: engineer
+    label: Engineer
+    clearances: [public, internal]

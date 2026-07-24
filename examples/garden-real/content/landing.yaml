@@ -1,0 +1,13 @@
+# Content for the landing. Drawn from the Garden repository's public/README.md.
+opening:
+  eyebrow: Garden
+  lines:
+    - A private digital place
+    - that can
+    - wait.
+  footnote: >-
+    A place a person can shape, leave, and return to — without pressure,
+    ranking, or autonomous AI control. It remains yours.
+
+begin:
+  label: Begin

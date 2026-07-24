@@ -1,0 +1,40 @@
+# Content for "What Garden is".
+# Verbatim from Garden repository public/01-introduction/what-is-garden.md.
+hero:
+  eyebrow: What Garden is
+  title: A place you author, and return to.
+  lede: >-
+    Garden is a private digital environment made of Places, atmosphere, objects,
+    rituals, and selected memories.
+
+body:
+  passages:
+    - paragraphs:
+        - >-
+          A person can create a Place, shape how it feels, return later, and ask
+          AI to suggest changes. AI may propose — but only the person decides
+          what becomes part of Garden.
+
+flow:
+  eyebrow: The shape of use
+  intro: Using Garden is a small, unhurried loop — authored, returned to, reversible.
+  steps:
+    - title: Create a Place
+      body: A space authored by you.
+    - title: Shape its atmosphere
+      body: The light, sound, and motion it holds.
+    - title: Add objects, keep a ritual
+      body: The things that form it — a practice without streaks or missed states.
+    - title: Leave, and return
+      body: On your own time. Absence creates no debt.
+    - title: Preview a suggestion
+      body: AI proposes a change that has not been applied.
+    - title: Apply, reject, or undo
+      body: Only you decide. Everything is reversible.
+
+foundation:
+  line: Built around authorship, return, privacy, and reversibility.
+  sub: The place remains yours.
+
+onward:
+  label: Explore

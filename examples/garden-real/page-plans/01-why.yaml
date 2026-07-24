@@ -1,0 +1,45 @@
+version: 1
+page:
+  id: why-garden-exists
+  type: manifesto
+  path: /why
+  title: Why Garden exists
+  order: 1
+  purpose: give-context-before-features-so-the-reader-understands-the-premise
+  audience: a-visitor-deciding-whether-garden-is-for-them
+  primary_message: A digital place may be valuable even when nothing is being completed.
+  summary: The premise Garden begins from, before any feature.
+  density: low
+  tone:
+    - quietly-confident
+    - grounded
+    - honest
+
+narrative:
+  - the-common-demand
+  - the-other-premise
+  - what-garden-explores
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: high
+  - component: pull-quote
+    source: premise
+    intent: The canonical premise, lifted out as the heart of the page.
+  - component: manifesto-lines
+    source: explores
+    intent: The five things Garden explores, one complete thought per line.
+  - component: next-path
+    source: onward
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+relationships:
+  next: what-is-garden
+  related:
+    - landing

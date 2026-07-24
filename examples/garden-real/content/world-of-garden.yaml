@@ -1,0 +1,36 @@
+# Content for "The world of Garden".
+# Verbatim from Garden repository public/04-world/world-of-garden.md.
+hero:
+  eyebrow: The world of Garden
+  title: A small vocabulary, so the place has words of its own.
+
+entities:
+  principles:
+    - title: Garden
+      body: The whole user-owned environment.
+    - title: Place
+      body: A space authored by the person.
+    - title: Atmosphere
+      body: Light, sound, and motion chosen for a Place.
+    - title: Object
+      body: Something that helps form the Place.
+    - title: Ritual
+      body: A meaningful practice — without streaks or missed states.
+    - title: Memory
+      body: Something the person explicitly chose to preserve.
+    - title: Preview
+      body: A proposed change that has not been applied.
+    - title: History
+      body: Committed versions that can be inspected and undone.
+
+# INTERNAL: rendered only for the engineer audience (see the plan's section
+# visibility). This is the "See implementation" door, on real data.
+implementation:
+  tone: care
+  label: Engineer view · See implementation
+  text: >-
+    This model is realised through the Preview Pattern — see ADR-012, the formal
+    model in Garden entities, and the acceptance tests under internal/.
+
+related:
+  intro: Nearby
