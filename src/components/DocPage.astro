@@ -1,15 +1,22 @@
 ---
 /**
- * DocPage — renders one Markdown document (from a content repo ingested via
- * loadMarkdownRepo) as a full page in the WowRepo design: a quiet section
- * sidebar, an editorial reading column, rich prose, and a reading path.
+ * DocPage — renders one Markdown document (ingested via loadMarkdownRepo) as a
+ * full page in the WowRepo design.
+ *
+ * Two shapes share one visual system:
+ *  - the landing (path "/") is an *arrival*: the living canopy-light atmosphere
+ *    behind a hero, then a crafted "journey" index into the sections.
+ *  - every other page is an editorial reading column: quiet section sidebar,
+ *    a strong header, rich prose, and a reading path onward.
  *
  * This is "document mode": no hand-authored plan, but the same tokens, type,
- * and calm as the composed pages. It exists so WowRepo can dress an ordinary
- * Markdown repository — like Garden's public surface — in one coherent design.
+ * atmosphere, motion, and calm as the composed pages — so WowRepo can dress an
+ * ordinary Markdown repository (like Garden's public surface) as a living site.
  */
 import '../styles/tokens.css';
 import '../styles/base.css';
+import '../styles/reveal.css';
+import Atmosphere from './atmosphere/Atmosphere.astro';
 import type { MdRepo, MdPage } from '@engine/markdown-repo.ts';
 import { readingNeighbours } from '@engine/markdown-repo.ts';
 
@@ -22,32 +29,57 @@ interface Props {
 const { repo, page, base } = Astro.props;
 const href = (p: string) => (p === '/' ? base || '/' : `${base}${p}`);
 const { prev, next } = readingNeighbours(repo, page.path);
-const title = page.path === '/' ? repo.site.title : `${page.title} · ${repo.site.title}`;
+const isLanding = page.path === '/';
+const title = isLanding ? repo.site.title : `${page.title} · ${repo.site.title}`;
 
-// Group the reading order into its sections for the sidebar.
+// Sidebar: the reading order grouped into its sections, expanded at the
+// section the reader is currently in.
 const sections = repo.nav.map((n) => ({
   label: n.label,
   entry: n.path,
   pages: repo.pages.filter((p) => p.section === n.label),
 }));
+
+// Landing: the guided journey into each section (number, section, entry title).
+const journey = repo.nav.map((n, i) => {
+  const entry = repo.pages.find((p) => p.section === n.label);
+  return { n: i + 1, label: n.label, path: n.path, title: entry?.title ?? n.label };
+});
+
+// Landing lead = the homepage's opening prose, up to its first list/heading
+// (the hand-written link list is replaced by the journey index below).
+const landingIntro = isLanding
+  ? page.bodyHtml.split(/<(?:h1|h2|h3|ul|ol)[\s>]/i)[0]
+  : '';
 ---
 
 <!doctype html>
-<html lang={repo.site.lang}>
+<html lang={repo.site.lang} class="no-js">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={repo.site.description} />
     <meta name="generator" content="WowRepo" />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
+    <script is:inline>
+      document.documentElement.classList.remove('no-js');
+    </script>
   </head>
-  <body>
+  <body data-landing={isLanding ? 'true' : undefined}>
     <a class="skip-link" href="#doc">Перейти к содержанию</a>
-    <div class="doc">
+
+    {isLanding && <Atmosphere variant="canopy-light" intensity="present" />}
+
+    <div class="doc" class:list={[{ 'doc--landing': isLanding }]}>
       <aside class="doc__side">
         <a class="doc__brand" href={href('/')}>
-          <span class="doc__seed" aria-hidden="true"></span>{repo.site.title}
+          <span class="doc__seed" aria-hidden="true"></span>
+          <span>
+            {repo.site.title}
+            <span class="doc__brandsub">{repo.site.description}</span>
+          </span>
         </a>
         <nav class="doc__nav" aria-label="Разделы">
           {
@@ -56,9 +88,7 @@ const sections = repo.nav.map((n) => ({
                 <a
                   class="doc__section"
                   href={href(s.entry)}
-                  aria-current={
-                    page.section === s.label ? 'true' : undefined
-                  }
+                  aria-current={page.section === s.label ? 'true' : undefined}
                 >
                   {s.label}
                 </a>
@@ -83,41 +113,92 @@ const sections = repo.nav.map((n) => ({
       </aside>
 
       <main class="doc__main" id="doc" tabindex="-1">
-        <article class="doc__article">
-          {page.section && <p class="doc__eyebrow">{page.section}</p>}
-          <h1 class="doc__title">{page.title}</h1>
-          <div class="doc-prose" set:html={page.bodyHtml} />
+        {
+          isLanding ? (
+            <div class="landing">
+              <header class="hero">
+                <p class="hero__kicker" data-reveal>
+                  {repo.site.description}
+                </p>
+                <h1 class="hero__title" data-reveal>
+                  {repo.site.title}
+                </h1>
+                {landingIntro && (
+                  <div class="hero__lead doc-prose" data-reveal set:html={landingIntro} />
+                )}
+              </header>
 
-          <nav class="doc__reading" aria-label="Дальше">
-            {
-              prev && (
-                <a class="doc__step doc__step--prev" href={href(prev.path)}>
-                  <span class="doc__steplabel">Назад</span>
-                  <span class="doc__steptitle">{prev.title}</span>
-                </a>
-              )
-            }
-            {
-              next && (
-                <a class="doc__step doc__step--next" href={href(next.path)}>
-                  <span class="doc__steplabel">Дальше</span>
-                  <span class="doc__steptitle">{next.title}</span>
-                </a>
-              )
-            }
-          </nav>
-        </article>
+              <section class="journey" aria-label="С чего начать">
+                <p class="journey__eyebrow" data-reveal>
+                  Путь по саду
+                </p>
+                <ol class="journey__list">
+                  {journey.map((j) => (
+                    <li data-reveal style={`transition-delay:${j.n * 55}ms`}>
+                      <a class="journey__row" href={href(j.path)}>
+                        <span class="journey__num">
+                          {String(j.n).padStart(2, '0')}
+                        </span>
+                        <span class="journey__body">
+                          <span class="journey__label">{j.label}</span>
+                          <span class="journey__title">{j.title}</span>
+                        </span>
+                        <span class="journey__arrow" aria-hidden="true">
+                          →
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            </div>
+          ) : (
+            <article class="doc__article">
+              <header class="lede" data-reveal>
+                {page.section && <p class="doc__eyebrow">{page.section}</p>}
+                <h1 class="doc__title">{page.title}</h1>
+                {page.updated && (
+                  <p class="doc__meta">Обновлено {page.updated}</p>
+                )}
+              </header>
+
+              <div class="doc-prose" data-reveal set:html={page.bodyHtml} />
+
+              <nav class="doc__reading" aria-label="Дальше">
+                {prev && (
+                  <a class="doc__step doc__step--prev" href={href(prev.path)}>
+                    <span class="doc__steplabel">Назад</span>
+                    <span class="doc__steptitle">{prev.title}</span>
+                  </a>
+                )}
+                {next && (
+                  <a class="doc__step doc__step--next" href={href(next.path)}>
+                    <span class="doc__steplabel">Дальше</span>
+                    <span class="doc__steptitle">{next.title}</span>
+                  </a>
+                )}
+              </nav>
+            </article>
+          )
+        }
+
         <footer class="doc__foot">
           <span>{repo.site.title}</span>
           <span class="doc__colophon">Собрано с WowRepo</span>
         </footer>
       </main>
     </div>
+
+    <script>
+      import '../scripts/reveal.ts';
+    </script>
   </body>
 </html>
 
 <style>
   .doc {
+    position: relative;
+    z-index: 2;
     display: grid;
     grid-template-columns: minmax(15rem, 18rem) 1fr;
     min-height: 100vh;
@@ -135,26 +216,41 @@ const sections = repo.nav.map((n) => ({
     padding: var(--space-l) var(--space-m) var(--space-l) var(--gutter);
     border-inline-end: var(--border-hairline);
   }
+  .doc--landing .doc__side {
+    border-inline-end-color: transparent;
+  }
   .doc__brand {
     display: inline-flex;
-    align-items: center;
+    align-items: baseline;
     gap: var(--space-2xs);
     font-family: var(--font-display);
     font-size: var(--step-1);
     color: var(--color-text);
     text-decoration: none;
-    margin-bottom: var(--space-l);
+    margin-bottom: var(--space-xl);
+    line-height: var(--leading-snug);
+  }
+  .doc__brandsub {
+    display: block;
+    font-family: var(--font-body);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    letter-spacing: 0;
+    margin-top: var(--space-3xs);
+    max-width: 22ch;
   }
   .doc__seed {
-    inline-size: 0.7em;
-    block-size: 0.7em;
+    flex: none;
+    inline-size: 0.66em;
+    block-size: 0.66em;
+    margin-top: 0.15em;
     background: var(--color-accent);
     border-radius: 60% 20% 60% 20% / 60% 20% 60% 20%;
     transform: rotate(45deg);
   }
   .doc__nav {
     display: grid;
-    gap: var(--space-xs);
+    gap: var(--space-2xs);
   }
   .doc__section {
     display: block;
@@ -201,13 +297,80 @@ const sections = repo.nav.map((n) => ({
     min-width: 0;
     padding: var(--space-2xl) var(--gutter) var(--space-xl);
   }
-  .doc__article {
+  .doc__article,
+  .landing {
     width: 100%;
-    max-width: var(--measure);
-    margin-inline: auto;
     flex: 1;
   }
+  .doc__article {
+    max-width: var(--measure);
+    margin-inline: auto;
+  }
+
+  /* --- Content header --- */
+  .lede {
+    margin-bottom: var(--space-xl);
+  }
   .doc__eyebrow {
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-accent-strong);
+    font-weight: var(--weight-semibold);
+    margin: 0 0 var(--space-s);
+  }
+  .doc__title {
+    font-family: var(--font-display);
+    font-size: var(--step-4);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+    margin: 0;
+    max-width: 18ch;
+  }
+  .doc__meta {
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    margin: var(--space-s) 0 0;
+  }
+
+  /* --- Landing hero --- */
+  /* Kept within the paper-veiled left zone so text stays legible while the
+     living tree owns the right of the frame. */
+  .hero {
+    padding-block: var(--space-l) var(--space-2xl);
+    max-width: 26rem;
+  }
+  .hero__kicker {
+    font-size: var(--step-0);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-accent-strong);
+    font-weight: var(--weight-semibold);
+    margin: 0 0 var(--space-m);
+    max-width: 30ch;
+  }
+  .hero__title {
+    font-family: var(--font-display);
+    font-size: var(--step-6);
+    line-height: 0.95;
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+    margin: 0;
+  }
+  .hero__lead {
+    margin-top: var(--space-l);
+    font-size: var(--step-1);
+    max-width: 22ch;
+  }
+
+  /* --- Landing journey index --- */
+  .journey {
+    border-top: var(--border-hairline);
+    padding-top: var(--space-l);
+    max-width: 28rem;
+  }
+  .journey__eyebrow {
     font-size: var(--step--1);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
@@ -215,13 +378,64 @@ const sections = repo.nav.map((n) => ({
     font-weight: var(--weight-semibold);
     margin: 0 0 var(--space-s);
   }
-  .doc__title {
-    font-size: var(--step-4);
-    line-height: var(--leading-tight);
-    letter-spacing: var(--tracking-tight);
+  .journey__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .journey__row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-s);
+    margin-inline: calc(var(--space-s) * -1);
+    border-radius: var(--radius-m);
+    text-decoration: none;
+    border-bottom: var(--border-hairline);
+    transition:
+      background-color var(--dur-quick) var(--ease-standard),
+      transform var(--dur-quick) var(--ease-standard);
+  }
+  .journey__list li:last-child .journey__row {
+    border-bottom: 0;
+  }
+  .journey__row:hover {
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
+  .journey__num {
+    font-family: var(--font-mono);
+    font-size: var(--step-0);
+    color: var(--color-accent);
+    letter-spacing: var(--tracking-wide);
+  }
+  .journey__body {
+    display: grid;
+    gap: 0.15em;
+    min-width: 0;
+  }
+  .journey__label {
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+  .journey__title {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    line-height: var(--leading-snug);
     color: var(--color-text);
-    margin: 0 0 var(--space-l);
-    max-width: 20ch;
+  }
+  .journey__row:hover .journey__title {
+    color: var(--color-accent-strong);
+  }
+  .journey__arrow {
+    font-size: var(--step-1);
+    color: var(--color-accent);
+    transition: transform var(--dur-quick) var(--ease-standard);
+  }
+  .journey__row:hover .journey__arrow {
+    transform: translateX(0.35em);
   }
 
   /* --- Reading path --- */
@@ -278,21 +492,59 @@ const sections = repo.nav.map((n) => ({
       border-inline-end: 0;
       border-block-end: var(--border-hairline);
     }
-    .doc__nav {
-      grid-auto-flow: row;
+    .doc__brand {
+      margin-bottom: var(--space-m);
+    }
+    .doc__main {
+      padding-top: var(--space-xl);
+    }
+    .hero__title {
+      font-size: var(--step-5);
     }
   }
 </style>
 
 <style is:global>
+  /* On the landing, hold the left reading zone as calm paper so the hero and
+     journey stay legible over the bright canopy light; the tree lives right. */
+  body[data-landing] .atmos-veil {
+    background: linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--color-bg) 95%, transparent) 0%,
+      color-mix(in srgb, var(--color-bg) 86%, transparent) 34%,
+      color-mix(in srgb, var(--color-bg) 40%, transparent) 54%,
+      transparent 68%
+    );
+  }
+  @media (max-width: 48rem) {
+    body[data-landing] .atmos-veil {
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--color-bg) 82%, transparent) 40%,
+        color-mix(in srgb, var(--color-bg) 55%, transparent) 70%,
+        transparent 100%
+      );
+    }
+  }
+
   /* --- Prose: the Markdown body, styled with tokens only --- */
   .doc-prose {
     font-size: var(--step-1);
     line-height: var(--leading-loose);
     color: var(--color-text-soft);
   }
+  .hero__lead.doc-prose {
+    color: var(--color-text-soft);
+    line-height: var(--leading-normal);
+  }
   .doc-prose > * + * {
     margin-top: var(--space-m);
+  }
+  /* Opening paragraph of a content body reads as a lead. */
+  .doc__article .doc-prose > p:first-child {
+    font-size: var(--step-2);
+    line-height: var(--leading-normal);
+    color: var(--color-text);
   }
   .doc-prose h2 {
     font-family: var(--font-display);
@@ -321,6 +573,11 @@ const sections = repo.nav.map((n) => ({
   }
   .doc-prose a {
     color: var(--color-accent-strong);
+    text-underline-offset: 0.15em;
+    text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+  .doc-prose a:hover {
+    text-decoration-color: currentColor;
   }
   .doc-prose strong {
     color: var(--color-text);
