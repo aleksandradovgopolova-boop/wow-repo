@@ -160,7 +160,10 @@ export function loadMarkdownRepo(contentRoot: string): MdRepo {
     const title = data.title ?? firstHeading(body) ?? slugOf(file);
     // Drop a leading H1 that repeats the title — the page renders its own header.
     const bodyNoTitle = body.replace(/^#\s+.+\n+/, '');
-    const rendered = marked.parse(bodyNoTitle, { async: false }) as string;
+    // The page renders its own <h1>; demote any stray in-body H1 (some imported
+    // docs nest a second title) to <h2> so heading order stays valid.
+    const rendered = (marked.parse(bodyNoTitle, { async: false }) as string)
+      .replace(/<(\/?)h1(\s|>)/g, '<$1h2$2');
     return {
       path: urlPath,
       title,
