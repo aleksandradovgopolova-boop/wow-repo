@@ -55,6 +55,12 @@ motion:
     - reveal
     - continuity
 
+# Dappled daylight with a plant that grows as the reader descends — the core
+# idea taking root. The most immersive atmosphere, for the front door.
+atmosphere:
+  variant: canopy-light
+  intensity: immersive
+
 accessibility:
   motion_optional: true
   notes:

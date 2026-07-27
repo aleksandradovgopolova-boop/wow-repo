@@ -1,0 +1,52 @@
+version: 1
+page:
+  id: landing
+  type: manifesto
+  path: /
+  title: Garden
+  order: 0
+  nav: false
+  purpose: let-a-visitor-arrive-in-the-place-before-any-explanation
+  audience: someone-opening-the-repository-for-the-first-time
+  primary_message: A private digital place that can wait.
+  summary: The doorway into Garden — arrive, then begin the journey.
+  density: low
+  tone:
+    - calm
+    - intimate
+    - spacious
+
+# Rhythm: you do not land on files or a README — you land in the place itself.
+# One quiet line, one breath, one door.
+narrative:
+  - arrival
+  - a-single-door
+
+sections:
+  - component: immersive-opening
+    source: opening
+    intent: The place, felt before it is explained. The last line takes root.
+
+  - component: next-path
+    source: begin
+    intent: One door — "Begin" — into the journey, never a menu of files.
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+atmosphere:
+  variant: canopy-light
+  intensity: immersive
+
+accessibility:
+  motion_optional: true
+  notes:
+    - The tagline must be legible before the reveal completes.
+
+relationships:
+  next: why-garden-exists
+  related:
+    - what-is-garden
+    - world-of-garden

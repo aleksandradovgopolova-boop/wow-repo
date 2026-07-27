@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { validatePagePlan, type PagePlan } from './page-plan.ts';
@@ -77,10 +77,12 @@ export interface ResolvedRepo {
   viewer?: Viewer;
 }
 
-/** Absolute path to the default example repository (Garden). */
-export const GARDEN_REPO = fileURLToPath(
-  new URL('../../examples/garden', import.meta.url),
-);
+/** Absolute path to the repository the engine ingests. Defaults to the Garden
+ *  example; set WOWREPO_ROOT to point the same engine at any other repository
+ *  (e.g. the real Garden product repo under examples/garden-real). */
+export const GARDEN_REPO = process.env.WOWREPO_ROOT
+  ? resolve(process.env.WOWREPO_ROOT)
+  : fileURLToPath(new URL('../../examples/garden', import.meta.url));
 
 function readYaml<T>(path: string): T {
   return parseYaml(readFileSync(path, 'utf8')) as T;

@@ -1,0 +1,92 @@
+---
+/**
+ * Atmosphere — a fixed, generative background chosen by the page plan.
+ *
+ * Renders two stacked canvases (a WebGL light field + a 2D foreground) behind
+ * all content, plus a soft "reading veil" that keeps text legible over the
+ * light. It is decorative: it is aria-hidden, sits at a negative-intent z-index
+ * beneath content, and the page is fully usable if it never initialises (no
+ * WebGL, JS disabled, or reduced motion).
+ *
+ * The heavy lifting lives in src/scripts/atmosphere.ts, loaded once.
+ */
+import type { Atmosphere } from '@engine/page-plan.ts';
+
+interface Props {
+  variant: Atmosphere;
+  intensity?: 'subtle' | 'present' | 'immersive';
+}
+
+const { variant, intensity = 'present' } = Astro.props;
+---
+
+<div
+  id="wr-atmosphere"
+  class={`atmos atmos--${intensity}`}
+  data-variant={variant}
+  aria-hidden="true"
+>
+  <canvas data-layer="gl"></canvas>
+  <canvas data-layer="fx"></canvas>
+</div>
+<div class="atmos-veil" aria-hidden="true"></div>
+
+<script>
+  import '../../scripts/atmosphere.ts';
+</script>
+
+<style>
+  .atmos,
+  .atmos canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: none;
+  }
+  .atmos {
+    z-index: 0;
+  }
+  .atmos canvas[data-layer='gl'] {
+    z-index: 0;
+  }
+  .atmos canvas[data-layer='fx'] {
+    z-index: 1;
+  }
+  .atmos--subtle {
+    opacity: 0.7;
+  }
+
+  /* The reading veil: paper, strongest along the left reading edge, clearing
+     toward the right where the generative foreground lives. Keeps dark text
+     legible over the bright light without hiding the atmosphere. */
+  .atmos-veil {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--color-bg) 90%, transparent) 0%,
+      color-mix(in srgb, var(--color-bg) 62%, transparent) 28%,
+      transparent 60%
+    );
+  }
+
+  @media (max-width: 48rem) {
+    .atmos-veil {
+      background: linear-gradient(
+          180deg,
+          color-mix(in srgb, var(--color-bg) 72%, transparent) 45%,
+          transparent 100%
+        ),
+        linear-gradient(
+          100deg,
+          color-mix(in srgb, var(--color-bg) 84%, transparent) 0%,
+          color-mix(in srgb, var(--color-bg) 55%, transparent) 55%,
+          transparent 92%
+        );
+    }
+  }
+</style>

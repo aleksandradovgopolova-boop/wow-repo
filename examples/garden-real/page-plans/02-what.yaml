@@ -1,0 +1,51 @@
+version: 1
+page:
+  id: what-is-garden
+  type: concept-explanation
+  path: /what
+  title: What Garden is
+  order: 2
+  purpose: explain-plainly-what-garden-is-and-how-it-is-used
+  audience: a-visitor-ready-for-the-concept
+  primary_message: >-
+    A private digital environment made of Places, atmosphere, objects, rituals,
+    and selected memories — built around authorship and reversibility.
+  summary: What Garden is, and the shape of using it.
+  density: medium
+  tone:
+    - clear
+    - grounded
+    - calm
+
+narrative:
+  - orientation
+  - what-it-is
+  - the-shape-of-use
+  - what-it-is-built-around
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: medium
+  - component: longform-prose
+    source: body
+    intent: The plain definition, and who decides (the person, never the AI).
+  - component: narrative-steps
+    source: flow
+    intent: The felt shape of use — authored, returned to, reversible.
+  - component: closing-reflection
+    source: foundation
+    intent: The four things Garden is built around.
+  - component: next-path
+    source: onward
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+relationships:
+  next: world-of-garden
+  related:
+    - why-garden-exists
