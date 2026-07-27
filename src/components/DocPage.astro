@@ -1,0 +1,396 @@
+---
+/**
+ * DocPage — renders one Markdown document (from a content repo ingested via
+ * loadMarkdownRepo) as a full page in the WowRepo design: a quiet section
+ * sidebar, an editorial reading column, rich prose, and a reading path.
+ *
+ * This is "document mode": no hand-authored plan, but the same tokens, type,
+ * and calm as the composed pages. It exists so WowRepo can dress an ordinary
+ * Markdown repository — like Garden's public surface — in one coherent design.
+ */
+import '../styles/tokens.css';
+import '../styles/base.css';
+import type { MdRepo, MdPage } from '@engine/markdown-repo.ts';
+import { readingNeighbours } from '@engine/markdown-repo.ts';
+
+interface Props {
+  repo: MdRepo;
+  page: MdPage;
+  base: string; // site base path, e.g. "/garden"
+}
+
+const { repo, page, base } = Astro.props;
+const href = (p: string) => (p === '/' ? base || '/' : `${base}${p}`);
+const { prev, next } = readingNeighbours(repo, page.path);
+const title = page.path === '/' ? repo.site.title : `${page.title} · ${repo.site.title}`;
+
+// Group the reading order into its sections for the sidebar.
+const sections = repo.nav.map((n) => ({
+  label: n.label,
+  entry: n.path,
+  pages: repo.pages.filter((p) => p.section === n.label),
+}));
+---
+
+<!doctype html>
+<html lang={repo.site.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={repo.site.description} />
+    <meta name="generator" content="WowRepo" />
+    <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip-link" href="#doc">Перейти к содержанию</a>
+    <div class="doc">
+      <aside class="doc__side">
+        <a class="doc__brand" href={href('/')}>
+          <span class="doc__seed" aria-hidden="true"></span>{repo.site.title}
+        </a>
+        <nav class="doc__nav" aria-label="Разделы">
+          {
+            sections.map((s) => (
+              <div class="doc__group">
+                <a
+                  class="doc__section"
+                  href={href(s.entry)}
+                  aria-current={
+                    page.section === s.label ? 'true' : undefined
+                  }
+                >
+                  {s.label}
+                </a>
+                {page.section === s.label && s.pages.length > 1 && (
+                  <ul class="doc__pages">
+                    {s.pages.map((p) => (
+                      <li>
+                        <a
+                          href={href(p.path)}
+                          aria-current={p.path === page.path ? 'page' : undefined}
+                        >
+                          {p.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))
+          }
+        </nav>
+      </aside>
+
+      <main class="doc__main" id="doc" tabindex="-1">
+        <article class="doc__article">
+          {page.section && <p class="doc__eyebrow">{page.section}</p>}
+          <h1 class="doc__title">{page.title}</h1>
+          <div class="doc-prose" set:html={page.bodyHtml} />
+
+          <nav class="doc__reading" aria-label="Дальше">
+            {
+              prev && (
+                <a class="doc__step doc__step--prev" href={href(prev.path)}>
+                  <span class="doc__steplabel">Назад</span>
+                  <span class="doc__steptitle">{prev.title}</span>
+                </a>
+              )
+            }
+            {
+              next && (
+                <a class="doc__step doc__step--next" href={href(next.path)}>
+                  <span class="doc__steplabel">Дальше</span>
+                  <span class="doc__steptitle">{next.title}</span>
+                </a>
+              )
+            }
+          </nav>
+        </article>
+        <footer class="doc__foot">
+          <span>{repo.site.title}</span>
+          <span class="doc__colophon">Собрано с WowRepo</span>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
+
+<style>
+  .doc {
+    display: grid;
+    grid-template-columns: minmax(15rem, 18rem) 1fr;
+    min-height: 100vh;
+    max-width: var(--width-full);
+    margin-inline: auto;
+  }
+
+  /* --- Sidebar --- */
+  .doc__side {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: var(--space-l) var(--space-m) var(--space-l) var(--gutter);
+    border-inline-end: var(--border-hairline);
+  }
+  .doc__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    color: var(--color-text);
+    text-decoration: none;
+    margin-bottom: var(--space-l);
+  }
+  .doc__seed {
+    inline-size: 0.7em;
+    block-size: 0.7em;
+    background: var(--color-accent);
+    border-radius: 60% 20% 60% 20% / 60% 20% 60% 20%;
+    transform: rotate(45deg);
+  }
+  .doc__nav {
+    display: grid;
+    gap: var(--space-xs);
+  }
+  .doc__section {
+    display: block;
+    font-size: var(--step-0);
+    color: var(--color-text-soft);
+    text-decoration: none;
+    padding-block: var(--space-3xs);
+    border-inline-start: 2px solid transparent;
+    padding-inline-start: var(--space-s);
+    margin-inline-start: calc(var(--space-s) * -1);
+    transition: color var(--dur-quick) var(--ease-standard);
+  }
+  .doc__section:hover {
+    color: var(--color-text);
+  }
+  .doc__section[aria-current='true'] {
+    color: var(--color-accent-strong);
+    border-inline-start-color: var(--color-accent);
+    font-weight: var(--weight-semibold);
+  }
+  .doc__pages {
+    list-style: none;
+    margin: var(--space-2xs) 0 var(--space-xs);
+    padding-inline-start: var(--space-s);
+    display: grid;
+    gap: var(--space-3xs);
+  }
+  .doc__pages a {
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    text-decoration: none;
+  }
+  .doc__pages a:hover {
+    color: var(--color-text-soft);
+  }
+  .doc__pages a[aria-current='page'] {
+    color: var(--color-accent-strong);
+  }
+
+  /* --- Reading column --- */
+  .doc__main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--space-2xl) var(--gutter) var(--space-xl);
+  }
+  .doc__article {
+    width: 100%;
+    max-width: var(--measure);
+    margin-inline: auto;
+    flex: 1;
+  }
+  .doc__eyebrow {
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+    font-weight: var(--weight-semibold);
+    margin: 0 0 var(--space-s);
+  }
+  .doc__title {
+    font-size: var(--step-4);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+    margin: 0 0 var(--space-l);
+    max-width: 20ch;
+  }
+
+  /* --- Reading path --- */
+  .doc__reading {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-m);
+    flex-wrap: wrap;
+    margin-top: var(--space-2xl);
+    padding-top: var(--space-l);
+    border-top: var(--border-hairline);
+  }
+  .doc__step {
+    display: grid;
+    gap: var(--space-3xs);
+    text-decoration: none;
+    color: var(--color-text);
+    max-width: 22rem;
+  }
+  .doc__step--next {
+    text-align: end;
+    margin-inline-start: auto;
+  }
+  .doc__steplabel {
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+  .doc__steptitle {
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    color: var(--color-accent-strong);
+  }
+
+  .doc__foot {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-m);
+    margin-top: var(--space-2xl);
+    padding-top: var(--space-l);
+    border-top: var(--border-hairline);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+  }
+
+  @media (max-width: 52rem) {
+    .doc {
+      grid-template-columns: 1fr;
+    }
+    .doc__side {
+      position: static;
+      height: auto;
+      border-inline-end: 0;
+      border-block-end: var(--border-hairline);
+    }
+    .doc__nav {
+      grid-auto-flow: row;
+    }
+  }
+</style>
+
+<style is:global>
+  /* --- Prose: the Markdown body, styled with tokens only --- */
+  .doc-prose {
+    font-size: var(--step-1);
+    line-height: var(--leading-loose);
+    color: var(--color-text-soft);
+  }
+  .doc-prose > * + * {
+    margin-top: var(--space-m);
+  }
+  .doc-prose h2 {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+    margin-top: var(--space-2xl);
+    max-width: 26ch;
+  }
+  .doc-prose h2::before {
+    content: '';
+    display: block;
+    inline-size: 1.6rem;
+    block-size: 2px;
+    background: var(--color-accent);
+    margin-block-end: var(--space-s);
+  }
+  .doc-prose h3 {
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    color: var(--color-text);
+    margin-top: var(--space-xl);
+  }
+  .doc-prose p {
+    max-width: var(--measure);
+  }
+  .doc-prose a {
+    color: var(--color-accent-strong);
+  }
+  .doc-prose strong {
+    color: var(--color-text);
+    font-weight: var(--weight-semibold);
+  }
+  .doc-prose ul,
+  .doc-prose ol {
+    max-width: var(--measure);
+    padding-inline-start: var(--space-l);
+    display: grid;
+    gap: var(--space-2xs);
+  }
+  .doc-prose li {
+    padding-inline-start: var(--space-3xs);
+  }
+  .doc-prose li::marker {
+    color: var(--color-accent);
+  }
+  .doc-prose blockquote {
+    margin: var(--space-l) 0;
+    padding: var(--space-s) 0 var(--space-s) var(--space-l);
+    border-inline-start: 2px solid var(--color-accent);
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+  }
+  .doc-prose blockquote p {
+    margin: 0;
+  }
+  .doc-prose code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--color-surface-sunken);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius-s);
+  }
+  .doc-prose pre {
+    background: var(--color-surface-sunken);
+    border: var(--border-hairline);
+    border-radius: var(--radius-m);
+    padding: var(--space-m);
+    overflow-x: auto;
+    font-size: var(--step--1);
+    line-height: var(--leading-normal);
+  }
+  .doc-prose pre code {
+    background: none;
+    padding: 0;
+  }
+  .doc-prose hr {
+    border: 0;
+    border-top: var(--border-hairline);
+    margin: var(--space-xl) 0;
+  }
+  .doc-prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--step-0);
+    display: block;
+    overflow-x: auto;
+  }
+  .doc-prose th,
+  .doc-prose td {
+    text-align: start;
+    padding: var(--space-2xs) var(--space-s);
+    border-bottom: var(--border-hairline);
+  }
+  .doc-prose th {
+    color: var(--color-text);
+    font-weight: var(--weight-semibold);
+  }
+</style>
