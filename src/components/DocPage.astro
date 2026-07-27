@@ -15,7 +15,6 @@
  */
 import '../styles/tokens.css';
 import '../styles/base.css';
-import '../styles/reveal.css';
 import Atmosphere from './atmosphere/Atmosphere.astro';
 import type { MdRepo, MdPage } from '@engine/markdown-repo.ts';
 import { readingNeighbours } from '@engine/markdown-repo.ts';
@@ -54,7 +53,7 @@ const landingIntro = isLanding
 ---
 
 <!doctype html>
-<html lang={repo.site.lang} class="no-js">
+<html lang={repo.site.lang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -63,9 +62,6 @@ const landingIntro = isLanding
     <meta name="generator" content="WowRepo" />
     <meta name="color-scheme" content="light" />
     <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
-    <script is:inline>
-      document.documentElement.classList.remove('no-js');
-    </script>
   </head>
   <body data-landing={isLanding ? 'true' : undefined}>
     <a class="skip-link" href="#doc">Перейти к содержанию</a>
@@ -117,24 +113,24 @@ const landingIntro = isLanding
           isLanding ? (
             <div class="landing">
               <header class="hero">
-                <p class="hero__kicker" data-reveal>
+                <p class="hero__kicker">
                   {repo.site.description}
                 </p>
-                <h1 class="hero__title" data-reveal>
+                <h1 class="hero__title">
                   {repo.site.title}
                 </h1>
                 {landingIntro && (
-                  <div class="hero__lead doc-prose" data-reveal set:html={landingIntro} />
+                  <div class="hero__lead doc-prose" set:html={landingIntro} />
                 )}
               </header>
 
               <section class="journey" aria-label="С чего начать">
-                <p class="journey__eyebrow" data-reveal>
+                <p class="journey__eyebrow">
                   Путь по саду
                 </p>
                 <ol class="journey__list">
                   {journey.map((j) => (
-                    <li data-reveal style={`transition-delay:${j.n * 55}ms`}>
+                    <li>
                       <a class="journey__row" href={href(j.path)}>
                         <span class="journey__num">
                           {String(j.n).padStart(2, '0')}
@@ -154,7 +150,7 @@ const landingIntro = isLanding
             </div>
           ) : (
             <article class="doc__article">
-              <header class="lede" data-reveal>
+              <header class="lede">
                 {page.section && <p class="doc__eyebrow">{page.section}</p>}
                 <h1 class="doc__title">{page.title}</h1>
                 {page.updated && (
@@ -162,7 +158,7 @@ const landingIntro = isLanding
                 )}
               </header>
 
-              <div class="doc-prose" data-reveal set:html={page.bodyHtml} />
+              <div class="doc-prose" set:html={page.bodyHtml} />
 
               <nav class="doc__reading" aria-label="Дальше">
                 {prev && (
@@ -188,10 +184,6 @@ const landingIntro = isLanding
         </footer>
       </main>
     </div>
-
-    <script>
-      import '../scripts/reveal.ts';
-    </script>
   </body>
 </html>
 
