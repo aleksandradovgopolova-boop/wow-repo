@@ -1,8 +1,13 @@
 ---
 /**
- * The one route. Every page in the ingested repository is generated statically
- * from its validated plan. There is no per-page hand-written route and no
- * runtime rendering — `npm run build` produces plain HTML for each plan.
+ * The one route. It runs in one of two modes:
+ *
+ *  - composition mode (default): each page is generated from a validated,
+ *    hand-authored page plan and rendered from approved components.
+ *  - document mode (WOWREPO_MODE=markdown): each page is a Markdown file from an
+ *    ordinary content repo (with a wowrepo.yml), dressed in the WowRepo design.
+ *
+ * Both produce plain static HTML — no per-page route, no runtime rendering.
  */
 import type { GetStaticPaths } from 'astro';
 import {
@@ -10,29 +15,48 @@ import {
   resolveForViewer,
   viewersFor,
   pageHref,
+  GARDEN_REPO,
 } from '@engine/load.ts';
+import { loadMarkdownRepo } from '@engine/markdown-repo.ts';
 import PageLayout from '@layouts/PageLayout.astro';
 import PageRenderer from '@components/PageRenderer.astro';
+import DocPage from '@components/DocPage.astro';
 
 export const getStaticPaths = (async () => {
-  const source = loadRepo();
+  const markdownMode = process.env.WOWREPO_MODE === 'markdown';
+  if (markdownMode) {
+    // Document mode: ingest a Markdown content repository directly.
+    const repo = loadMarkdownRepo(GARDEN_REPO);
+    return repo.pages
+      .filter((p) => p.visibility === 'public')
+      .map((page) => ({
+        params: { slug: page.path.replace(/^\//, '') || undefined },
+        props: { mode: 'markdown' as const, repo, page },
+      }));
+  }
 
-  // One repository, projected once per audience. The default audience is served
-  // at the root; each other audience gets its own prefixed projection built from
-  // the very same source — this is the "one repo, many views" thesis in code.
+  // Composition mode: one repository, projected once per audience.
+  const source = loadRepo();
   return viewersFor(source.site).flatMap((viewer) => {
     const repo = resolveForViewer(source, viewer);
     return repo.pages.map((page) => {
       const slug =
         pageHref(repo, page.plan.page.path).replace(/^\//, '') || undefined;
-      return { params: { slug }, props: { page, repo } };
+      return { params: { slug }, props: { mode: 'composition' as const, page, repo } };
     });
   });
 }) satisfies GetStaticPaths;
 
-const { page, repo } = Astro.props;
+const props = Astro.props as Record<string, unknown>;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 ---
 
-<PageLayout repo={repo} plan={page.plan}>
-  <PageRenderer page={page} repo={repo} />
-</PageLayout>
+{
+  props.mode === 'markdown' ? (
+    <DocPage repo={props.repo as any} page={props.page as any} base={base} />
+  ) : (
+    <PageLayout repo={props.repo as any} plan={(props.page as any).plan}>
+      <PageRenderer page={props.page as any} repo={props.repo as any} />
+    </PageLayout>
+  )
+}
