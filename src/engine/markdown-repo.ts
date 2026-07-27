@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { join, basename, extname } from 'node:path';
+import { join, basename, extname, posix } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { marked } from 'marked';
 
@@ -82,6 +82,45 @@ function slugOf(file: string): string {
   return basename(file, extname(file));
 }
 
+/**
+ * Map a repo-relative Markdown path (no extension) to its page URL. The page
+ * tree mirrors the content directory tree, so this is a direct translation —
+ * except the root README, which is the landing at "/".
+ */
+function mdPathToUrl(repoRelNoExt: string): string {
+  if (repoRelNoExt === 'README' || repoRelNoExt === 'index' || repoRelNoExt === '') {
+    return '/';
+  }
+  return `/${repoRelNoExt}`;
+}
+
+/**
+ * Rewrite intra-repo links that point at source `.md` files into the real page
+ * URLs (with the site base path). Markdown authored for a plain file tree links
+ * doc-to-doc as `../section/page.md`; on the built site those must become
+ * `/base/section/page`. External links, anchors, and non-Markdown targets are
+ * left untouched. `currentDir` is the linking page's directory relative to the
+ * content root (""/root for the homepage).
+ */
+function rewriteMdLinks(html: string, currentDir: string, base: string): string {
+  return html.replace(/href="([^"]+)"/g, (whole, url: string) => {
+    if (/^(?:[a-z]+:|\/\/|#|\/)/i.test(url)) return whole; // external / anchor / already-absolute
+    const hashAt = url.indexOf('#');
+    const pathPart = hashAt === -1 ? url : url.slice(0, hashAt);
+    const hash = hashAt === -1 ? '' : url.slice(hashAt);
+    if (!/\.md$/i.test(pathPart)) return whole;
+    const repoRel = posix.normalize(posix.join(currentDir, pathPart)).replace(/\.md$/i, '');
+    const target = `${base}${mdPathToUrl(repoRel)}`;
+    return `href="${target}${hash}"`;
+  });
+}
+
+/** The linking page's directory relative to the content root, "" at the root. */
+function dirOfUrl(urlPath: string): string {
+  if (urlPath === '/') return '';
+  return urlPath.slice(1).split('/').slice(0, -1).join('/');
+}
+
 function listMarkdown(dir: string): string[] {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
   return readdirSync(dir)
@@ -108,6 +147,10 @@ export function loadMarkdownRepo(contentRoot: string): MdRepo {
     lang: (cfg.site?.language as string) ?? 'en',
   };
   const navigation = Array.isArray(cfg.navigation) ? cfg.navigation : [];
+  // Base path for the deployment (e.g. "/garden" for a GitHub Pages project
+  // site). Body links to other docs are rewritten to include it; must match
+  // the base Astro builds with (see astro.config.mjs).
+  const base = (process.env.WOWREPO_BASE ?? '').replace(/\/$/, '');
 
   const pages: MdPage[] = [];
 
@@ -117,12 +160,13 @@ export function loadMarkdownRepo(contentRoot: string): MdRepo {
     const title = data.title ?? firstHeading(body) ?? slugOf(file);
     // Drop a leading H1 that repeats the title — the page renders its own header.
     const bodyNoTitle = body.replace(/^#\s+.+\n+/, '');
+    const rendered = marked.parse(bodyNoTitle, { async: false }) as string;
     return {
       path: urlPath,
       title,
       section,
       order: data.wowrepo?.order ?? 999,
-      bodyHtml: marked.parse(bodyNoTitle, { async: false }) as string,
+      bodyHtml: rewriteMdLinks(rendered, dirOfUrl(urlPath), base),
       visibility: data.wowrepo?.visibility ?? 'public',
       source: file.replace(contentRoot, '').replace(/^\//, ''),
       updated: data.updated,
