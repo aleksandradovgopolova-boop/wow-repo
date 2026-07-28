@@ -1,17 +1,20 @@
 ---
 /**
- * DocPage — renders one Markdown document (ingested via loadMarkdownRepo) as a
- * full page in the WowRepo design.
+ * DocPage — renders one Markdown document (ingested via loadMarkdownRepo) in
+ * the WowRepo design, art-directed per section.
  *
- * Two shapes share one visual system:
- *  - the landing (path "/") is an *arrival*: the living canopy-light atmosphere
- *    behind a hero, then a crafted "journey" index into the sections.
- *  - every other page is an editorial reading column: quiet section sidebar,
- *    a strong header, rich prose, and a reading path onward.
+ * One visual grammar runs through the whole site: meaning on the left (text),
+ * a living botanical form on the right. On the landing that form is the
+ * generative canopy (WebGL); on every chapter it is a hand-drawn motif chosen
+ * for the section's place in the journey — a day/growth arc from first sprout
+ * to evening leaves. Sub-pages inherit their chapter's scene, so a section
+ * reads as one room.
  *
- * This is "document mode": no hand-authored plan, but the same tokens, type,
- * atmosphere, motion, and calm as the composed pages — so WowRepo can dress an
- * ordinary Markdown repository (like Garden's public surface) as a living site.
+ * Scenes are assigned by a section's position in the reading order, so the
+ * component stays generic (no site-specific strings) while each page still
+ * feels designed around its content. Reading bodies stay calm paper — the art
+ * lives in the chapter header, which is CSS + inline SVG (no per-page WebGL),
+ * so pages paint instantly.
  */
 import '../styles/tokens.css';
 import '../styles/base.css';
@@ -31,25 +34,53 @@ const { prev, next } = readingNeighbours(repo, page.path);
 const isLanding = page.path === '/';
 const title = isLanding ? repo.site.title : `${page.title} · ${repo.site.title}`;
 
-// Sidebar: the reading order grouped into its sections, expanded at the
-// section the reader is currently in.
+// Sidebar: reading order grouped into sections, expanded at the current one.
 const sections = repo.nav.map((n) => ({
   label: n.label,
   entry: n.path,
   pages: repo.pages.filter((p) => p.section === n.label),
 }));
 
-// Landing: the guided journey into each section (number, section, entry title).
+// Landing: the guided journey into each section.
 const journey = repo.nav.map((n, i) => {
   const entry = repo.pages.find((p) => p.section === n.label);
   return { n: i + 1, label: n.label, path: n.path, title: entry?.title ?? n.label };
 });
-
-// Landing lead = the homepage's opening prose, up to its first list/heading
-// (the hand-written link list is replaced by the journey index below).
 const landingIntro = isLanding
   ? page.bodyHtml.split(/<(?:h1|h2|h3|ul|ol)[\s>]/i)[0]
   : '';
+
+/* --- Art direction: a scene per chapter, in a day/growth arc --- */
+type Scene = { motif: keyof typeof MOTIFS; accent: string; tint: string; warm: string };
+const SCENES: Scene[] = [
+  { motif: 'sprout', accent: 'var(--_leaf)', tint: 'var(--_dawn)', warm: '18%' },
+  { motif: 'roots', accent: 'var(--_leaf-deep)', tint: 'var(--_leaf)', warm: '12%' },
+  { motif: 'uprights', accent: 'var(--_leaf-deep)', tint: 'var(--_dawn)', warm: '14%' },
+  { motif: 'horizon', accent: 'var(--_leaf)', tint: 'var(--_dawn)', warm: '22%' },
+  { motif: 'contours', accent: 'var(--_clay)', tint: 'var(--_dawn)', warm: '20%' },
+  { motif: 'rays', accent: 'var(--_clay)', tint: 'var(--_dawn)', warm: '26%' },
+  { motif: 'path', accent: 'var(--_leaf-deep)', tint: 'var(--_clay)', warm: '14%' },
+  { motif: 'leaves', accent: 'var(--_leaf)', tint: 'var(--_leaf-deep)', warm: '12%' },
+];
+
+// Hand-drawn chapter motifs (stroke = currentColor, so the scene accent tints
+// them). Simple line art, seated large and faint beside the title.
+const MOTIFS = {
+  sprout: `<path d="M120 214V96"/><path d="M120 150c-30-8-48-32-52-60 30 4 50 28 52 60Z"/><path d="M120 128c30-10 50-32 54-60-30 4-52 28-54 60Z"/>`,
+  roots: `<path d="M120 26v96"/><path d="M120 122c-10 26-34 40-52 46m52-46c10 26 34 40 52 46m-52-46c-2 30-2 56-2 74m2-74c2 30 2 56 2 74"/>`,
+  uprights: `<path d="M78 214V70m0 34c-16-4-26-18-28-34 16 2 26 16 28 34Z"/><path d="M120 214V44m0 46c18-5 30-22 32-42-18 2-30 20-32 42Z"/><path d="M162 214V86m0 30c16-4 26-16 28-32-16 2-26 14-28 32Z"/>`,
+  horizon: `<path d="M28 158h184"/><path d="M150 158a30 30 0 0 1 60 0"/><path d="M64 158c-2-22-2-38-2-52m2 52c8-10 16-16 24-20"/><path d="M96 158c-1-14-1-24-1-34"/>`,
+  contours: `<path d="M120 60c-40 0-70 26-70 60s30 60 70 60 70-26 70-60-30-60-70-60Z"/><path d="M120 92c-24 0-44 13-44 28s20 28 44 28 44-13 44-28-20-28-44-28Z"/><circle cx="120" cy="120" r="10"/>`,
+  rays: `<circle cx="120" cy="120" r="26"/><path d="M120 66V40M120 200v-26M174 120h26M40 120h26M158 82l18-18M64 176l18-18M158 158l18 18M64 64l18 18"/>`,
+  path: `<path d="M74 216c40-10 40-52 4-66s-36-58 8-70 44-52 8-64"/><circle cx="78" cy="150" r="4" fill="currentColor" stroke="none"/><circle cx="96" cy="86" r="4" fill="currentColor" stroke="none"/><circle cx="102" cy="24" r="4" fill="currentColor" stroke="none"/>`,
+  leaves: `<path d="M116 200c-44-6-74-36-74-76 44 6 74 36 74 76Z"/><path d="M124 168c44-6 74-36 74-76-44 6-74 36-74 76Z"/><path d="M116 200V96M124 168V72"/>`,
+} as const;
+
+const sectionIndex = page.section
+  ? repo.nav.findIndex((n) => n.label === page.section)
+  : 0;
+const scene = SCENES[(sectionIndex < 0 ? 0 : sectionIndex) % SCENES.length];
+const chapterNo = String((sectionIndex < 0 ? 0 : sectionIndex) + 1).padStart(2, '0');
 ---
 
 <!doctype html>
@@ -79,13 +110,14 @@ const landingIntro = isLanding
         </a>
         <nav class="doc__nav" aria-label="Разделы">
           {
-            sections.map((s) => (
+            sections.map((s, i) => (
               <div class="doc__group">
                 <a
                   class="doc__section"
                   href={href(s.entry)}
                   aria-current={page.section === s.label ? 'true' : undefined}
                 >
+                  <span class="doc__secnum">{String(i + 1).padStart(2, '0')}</span>
                   {s.label}
                 </a>
                 {page.section === s.label && s.pages.length > 1 && (
@@ -113,21 +145,15 @@ const landingIntro = isLanding
           isLanding ? (
             <div class="landing">
               <header class="hero">
-                <p class="hero__kicker">
-                  {repo.site.description}
-                </p>
-                <h1 class="hero__title">
-                  {repo.site.title}
-                </h1>
+                <p class="hero__kicker">{repo.site.description}</p>
+                <h1 class="hero__title">{repo.site.title}</h1>
                 {landingIntro && (
                   <div class="hero__lead doc-prose" set:html={landingIntro} />
                 )}
               </header>
 
               <section class="journey" aria-label="С чего начать">
-                <p class="journey__eyebrow">
-                  Путь по саду
-                </p>
+                <p class="journey__eyebrow">Путь по саду</p>
                 <ol class="journey__list">
                   {journey.map((j) => (
                     <li>
@@ -149,13 +175,21 @@ const landingIntro = isLanding
               </section>
             </div>
           ) : (
-            <article class="doc__article">
-              <header class="lede">
-                {page.section && <p class="doc__eyebrow">{page.section}</p>}
-                <h1 class="doc__title">{page.title}</h1>
-                {page.updated && (
-                  <p class="doc__meta">Обновлено {page.updated}</p>
-                )}
+            <article class="doc__article" style={`--scene-accent:${scene.accent};--scene-tint:${scene.tint};--scene-warm:${scene.warm};`}>
+              <header class="chapter">
+                <div class="chapter__text">
+                  <p class="chapter__eyebrow">
+                    <span class="chapter__no">Глава {chapterNo}</span>
+                    {page.section && <span class="chapter__sec">{page.section}</span>}
+                  </p>
+                  <h1 class="chapter__title">{page.title}</h1>
+                  {page.updated && (
+                    <p class="doc__meta">Обновлено {page.updated}</p>
+                  )}
+                </div>
+                <div class="chapter__art" aria-hidden="true">
+                  <svg viewBox="0 0 240 240" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" set:html={MOTIFS[scene.motif]} />
+                </div>
               </header>
 
               <div class="doc-prose" set:html={page.bodyHtml} />
@@ -245,7 +279,9 @@ const landingIntro = isLanding
     gap: var(--space-2xs);
   }
   .doc__section {
-    display: block;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
     font-size: var(--step-0);
     color: var(--color-text-soft);
     text-decoration: none;
@@ -255,6 +291,11 @@ const landingIntro = isLanding
     margin-inline-start: calc(var(--space-s) * -1);
     transition: color var(--dur-quick) var(--ease-standard);
   }
+  .doc__secnum {
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+  }
   .doc__section:hover {
     color: var(--color-text);
   }
@@ -263,10 +304,13 @@ const landingIntro = isLanding
     border-inline-start-color: var(--color-accent);
     font-weight: var(--weight-semibold);
   }
+  .doc__section[aria-current='true'] .doc__secnum {
+    color: var(--color-accent);
+  }
   .doc__pages {
     list-style: none;
     margin: var(--space-2xs) 0 var(--space-xs);
-    padding-inline-start: var(--space-s);
+    padding-inline-start: calc(var(--space-s) + 1.6rem);
     display: grid;
     gap: var(--space-3xs);
   }
@@ -287,7 +331,10 @@ const landingIntro = isLanding
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: var(--space-2xl) var(--gutter) var(--space-xl);
+    padding: 0 var(--gutter) var(--space-xl);
+  }
+  .doc--landing .doc__main {
+    padding-top: var(--space-2xl);
   }
   .doc__article,
   .landing {
@@ -295,40 +342,109 @@ const landingIntro = isLanding
     flex: 1;
   }
   .doc__article {
-    max-width: var(--measure);
+    max-width: var(--width-wide);
     margin-inline: auto;
+    padding-top: var(--space-xl);
+  }
+  /* Reading blocks stay at a comfortable measure inside the wider column. */
+  .doc__article > .doc-prose,
+  .doc__article > .doc__reading {
+    max-width: var(--measure);
   }
 
-  /* --- Content header --- */
-  .lede {
-    margin-bottom: var(--space-xl);
+  /* --- Chapter header (art-directed per section) --- */
+  .chapter {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: var(--space-xl);
+    min-height: 38vh;
+    padding: var(--space-xl) var(--space-l);
+    margin: 0 calc(var(--space-l) * -1) var(--space-2xl);
+    border-radius: var(--radius-m);
+    border-bottom: var(--border-hairline);
+    isolation: isolate;
+    overflow: hidden;
   }
-  .doc__eyebrow {
+  /* Scene light — a crafted glow, contained to the header, dissipating to
+     paper. This is a chapter opener's lighting, not a wash behind reading. */
+  .chapter::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(
+        60% 90% at 82% 30%,
+        color-mix(in srgb, var(--scene-tint) var(--scene-warm), transparent) 0%,
+        transparent 70%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--scene-tint) 8%, transparent) 0%,
+        transparent 60%
+      );
+  }
+  .chapter__text {
+    min-width: 0;
+  }
+  .chapter__eyebrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    flex-wrap: wrap;
+    margin: 0 0 var(--space-m);
     font-size: var(--step--1);
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
-    color: var(--color-accent-strong);
     font-weight: var(--weight-semibold);
-    margin: 0 0 var(--space-s);
   }
-  .doc__title {
+  .chapter__no {
+    color: var(--scene-accent);
+  }
+  .chapter__sec {
+    color: var(--color-text-faint);
+    position: relative;
+    padding-inline-start: var(--space-s);
+  }
+  .chapter__sec::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    top: 50%;
+    width: var(--space-2xs);
+    height: 1px;
+    background: currentColor;
+  }
+  .chapter__title {
     font-family: var(--font-display);
-    font-size: var(--step-4);
+    font-size: var(--step-5);
     line-height: var(--leading-tight);
     letter-spacing: var(--tracking-tight);
     color: var(--color-text);
     margin: 0;
-    max-width: 18ch;
+    max-width: 15ch;
   }
   .doc__meta {
     font-size: var(--step--1);
     color: var(--color-text-faint);
-    margin: var(--space-s) 0 0;
+    margin: var(--space-m) 0 0;
+  }
+  .chapter__art {
+    justify-self: end;
+    color: var(--scene-accent);
+    width: clamp(9rem, 22vw, 15rem);
+    opacity: 0.9;
+  }
+  .chapter__art svg {
+    width: 100%;
+    height: auto;
+    display: block;
+    filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--color-bg) 60%, transparent));
   }
 
   /* --- Landing hero --- */
-  /* Kept within the paper-veiled left zone so text stays legible while the
-     living tree owns the right of the frame. */
   .hero {
     padding-block: var(--space-l) var(--space-2xl);
     max-width: 26rem;
@@ -487,8 +603,24 @@ const landingIntro = isLanding
     .doc__brand {
       margin-bottom: var(--space-m);
     }
-    .doc__main {
+    .doc--landing .doc__main {
       padding-top: var(--space-xl);
+    }
+    .chapter {
+      grid-template-columns: 1fr;
+      min-height: 0;
+      padding: var(--space-l) var(--space-s);
+      margin-inline: 0;
+      margin-bottom: var(--space-xl);
+    }
+    .chapter__art {
+      order: -1;
+      justify-self: start;
+      width: clamp(6rem, 26vw, 8rem);
+      margin-bottom: var(--space-s);
+    }
+    .chapter__text {
+      max-width: none;
     }
     .hero__title {
       font-size: var(--step-5);
@@ -524,6 +656,11 @@ const landingIntro = isLanding
     font-size: var(--step-1);
     line-height: var(--leading-loose);
     color: var(--color-text-soft);
+    overflow-wrap: break-word;
+  }
+  /* Long unbroken tokens (filenames, ids in code) must wrap, not widen the page. */
+  .doc-prose code {
+    overflow-wrap: anywhere;
   }
   .hero__lead.doc-prose {
     color: var(--color-text-soft);
@@ -551,7 +688,7 @@ const landingIntro = isLanding
     display: block;
     inline-size: 1.6rem;
     block-size: 2px;
-    background: var(--color-accent);
+    background: var(--scene-accent, var(--color-accent));
     margin-block-end: var(--space-s);
   }
   .doc-prose h3 {
@@ -586,12 +723,12 @@ const landingIntro = isLanding
     padding-inline-start: var(--space-3xs);
   }
   .doc-prose li::marker {
-    color: var(--color-accent);
+    color: var(--scene-accent, var(--color-accent));
   }
   .doc-prose blockquote {
     margin: var(--space-l) 0;
     padding: var(--space-s) 0 var(--space-s) var(--space-l);
-    border-inline-start: 2px solid var(--color-accent);
+    border-inline-start: 2px solid var(--scene-accent, var(--color-accent));
     font-family: var(--font-display);
     font-size: var(--step-2);
     line-height: var(--leading-snug);
