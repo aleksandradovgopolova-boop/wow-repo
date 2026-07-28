@@ -6,18 +6,20 @@ it is. It exists so interface decisions follow a written rule instead of being
 made ad-hoc, page by page.
 
 It complements — does not replace — `docs/design-principles.md` (the system) and
-`examples/garden/docs/art-direction.md` (the visual language). Those say *what the
-system is*; this says *how the interface is composed and why*. Garden is the
-worked example; the model is generic (any content repo ingested in document mode).
+the per-site art-direction a repository supplies through token *values*. Those say
+*what the system is*; this says *how the interface is composed and why*. The model
+is generic: any content repository ingested in document mode. A site supplies only
+its own tokens and content; the engine composes, it does not impose a look.
 
 ---
 
 ## 0. The one job
 
-Garden is a quiet personal place. The interface must make **care felt before a
-single feature is explained** — it is not a docs portal, a dashboard, or a
-landing page. Success: the reader leaves a little more settled than they arrived,
-with no moment of pressure, urgency, or manipulation.
+Every site has one job, set by its own content — it is not a docs portal, a
+dashboard, or a default landing page. The interface must make **the meaning of the
+content felt before a single feature is explained**. Success: the reader leaves a
+little more settled than they arrived, with no moment of pressure, urgency, or
+manipulation.
 
 Every decision below is measured against that job.
 
@@ -27,15 +29,14 @@ The interface is composed as a sequence of five beats. Each beat names what the
 reader should *feel* and what the interface *does*.
 
 1. **Threshold (the landing).** Feel: "it is calm here; nothing is rushing me."
-   Do: the one living atmosphere (generative canopy light + a growing tree), the
-   site's name set large, a quiet tagline, and *Путь по саду* — the chapters
-   offered as doors.
+   Do: the one living atmosphere (a generative, meaning-matched scene), the site's
+   name set large, a quiet tagline, and the sections offered as doors.
 2. **Orientation (always).** Feel: "I know where I am and what is next." Do: a
    permanent quiet index on the left — sections as numbered chapters, the current
    one marked, its pages revealed.
 3. **Reading a chapter.** Feel: "this was made to be read, not skimmed." Do: a
    chapter-opener spread (chapter number, title, a factual meta line, a hairline),
-   then one calm column of prose on paper at a comfortable measure.
+   then one calm reading column at a comfortable measure.
 4. **Onward.** Feel: "there is a path, and I choose to continue." Do: a *Назад /
    Дальше* pair at the foot of every chapter — one path, never a fork or a grid.
 5. **Rest.** Feel: "I can stop whenever." Do: a quiet footer that asks for
@@ -53,11 +54,11 @@ reader should *feel* and what the interface *does*.
 ## 3. Screen anatomy — every element earns its place
 
 ### A. Threshold (landing)
-- **Atmosphere** — the only "living" scene; the front door. Meaning: the garden
-  is alive. Kept here *only* (for speed and focus), with a reading veil holding
-  the left zone as calm paper so text stays legible while the tree owns the right.
-- **Name + tagline** — set in the paper-veiled left zone.
-- **Путь по саду** — chapters as a numbered list of doors (number · section ·
+- **Atmosphere** — the only "living" scene; the front door. Kept here *only* (for
+  speed and focus), with a reading veil holding the reading zone legible while the
+  generative scene occupies the rest of the frame.
+- **Name + tagline** — set in the veiled reading zone.
+- **Section index** — sections as a numbered list of doors (number · section ·
   entry title · arrow). Replaces a hand-written link list with a real index.
 
 ### B. Chapter opener (section page header)
@@ -103,10 +104,11 @@ reader should *feel* and what the interface *does*.
 
 ## 7. Colour, type, space
 
-Realised entirely through tokens (`src/styles/tokens.css`): warm paper,
-botanical ink, one green accent, clay reserved for care. Serif for voice,
-humanist sans for reading, mono for labels/data. Low saturation, mostly paper.
-No dark UI, no AI gradients. (See `art-direction.md` for values.)
+Realised entirely through tokens (`src/styles/tokens.css`) — the interface reads
+token *roles*, never raw values: a ground, reading inks at a few strengths, one
+restrained accent, hairlines. A display face for voice, a humanist face for
+reading, a mono face for labels/data. Each site supplies its own values for those
+roles; the composition stays the same. No values are hard-coded in the engine.
 
 ## 8. Accessibility guarantees
 
@@ -145,8 +147,9 @@ same scenario.
 - **Why this text width?** ~62ch is the comfortable measure for sustained reading.
 - **Why numbering?** Sections are a real sequence; the number carries truth about
   order, it does not decorate.
-- **Why no dark theme / bright colours?** Garden is daylight on paper; dark UI and
-  AI gradients are prohibited by the art direction.
+- **Why these colours?** The engine holds no palette of its own — a site's tokens
+  decide. The engine only forbids the generic tells listed below, whatever the
+  palette.
 
 ## 11. Deliberately excluded
 
