@@ -1,0 +1,262 @@
+# runtimes.yaml — Runtime capability registry (AI Ops Platform V2)
+# Runtime = среда исполнения агента. Отделена от provider и model.
+# execution_modes: native | orchestrated | sequential | manual-assisted
+# status: declared | documented | verified | degraded | unsupported | unknown
+#
+# adapter_depth (честная глубина адаптера; для mvp_adapter: true — обязателен):
+#   executing          — код кита сам исполняет контракт: проводит стадии и БЛОКИРУЕТ
+#                        по гейтам (tools/orchestrator.py + tools/gate_executor.py);
+#   generated-commands — адаптер лишь ГЕНЕРИРУЕТ runtime-native точки входа (команды/
+#                        промпты); исполнение стадий, handoff и enforcement гейтов
+#                        выполняет сам раннтайм, следуя им, — не код кита;
+#   manual-assisted    — одна модель исполняет роли последовательно с помощью harness.
+schema_version: 1
+registry_type: runtimes
+
+runtimes:
+  claude-code:
+    display_name: Claude Code
+    kind: cli-agent
+    mvp_adapter: true
+    adapter_depth: generated-commands
+    adapter_note: >
+      Адаптер генерирует .claude/commands/ (tools/generate_runtime.py) и ставит их
+      при install. Стадии, handoff и enforcement гейтов исполняет сам Claude Code,
+      следуя командам; код кита их в этом раннтайме не оркестрирует. Полное
+      исполнение контракта с блокировкой гейтов — через generic-orchestrator.
+    # v3.9.0 (rc, in progress): KIT-DRIVEN executing путь — кит сам оркестрирует Claude Code как
+    # СИЛЬНОГО writer'а через локальный `claude -p --tools ""` (orchestrator.make_claude_cli_provider,
+    # provider=claude-cli). Claude только ПРЕДЛАГАЕТ действия текстом; кит владеет worktree/diff/evidence/
+    # gates/delivery (Claude не пушит/не создаёт PR/не меняет основной checkout/не закрывает свой review|
+    # security/не владеет lifecycle). Доказано live (full-stack -> draft PR). Codex-адаптер — позже.
+    kit_driven_executing:
+      status: verified          # v3.9.0: доказан live end-to-end через shipped-путь (не monkeypatch)
+      via: "provider=claude-cli (orchestrator.make_claude_cli_provider), read-only Read/Grep/Glob"
+      contract: "AI Ops = control plane; Claude Code = сильный заменяемый исполнитель"
+      proven_live: "complexity-routing->writer=claude-cli; green build/typecheck/test; независимый deepseek-ревьюер поймал реальный дефект claude (writer≠judge, 0 false-green); security->human #5"
+      routing: "complexity-aware: ENGINEERING/PRODUCT/AI_FEATURE/CRITICAL/RESEARCH или risk high/critical -> strong-executor сразу; QUICK -> дешёвый API writer"
+    default_provider: anthropic
+    execution_modes: [native, orchestrated, sequential]
+    preferred_mode: native
+    capabilities:
+      native_subagents: {status: documented, value: true}
+      parallel_execution: {status: documented, value: true}
+      tools: {status: documented, value: true}
+      mcp: {status: documented, value: true}
+      function_calling: {status: documented, value: true}
+      structured_output: {status: documented, value: true}
+      file_read: {status: documented, value: true}
+      file_write: {status: documented, value: true}
+      shell: {status: documented, value: true}
+      browser: {status: degraded, value: via-mcp-or-playwright}
+      web_access: {status: degraded, value: policy-dependent}
+      session_state: {status: documented, value: true}
+      resumability: {status: documented, value: true}
+      background_execution: {status: documented, value: true}
+    agent_packaging: markdown+frontmatter
+    skill_loading: ".claude/skills/"
+    command_loading: ".claude/commands/"
+    machine_readable_gate_result: supported
+    actions_requiring_human_approval: [destructive_shell, production_write]
+    last_documented_at: "2026-07-08"
+
+  codex:
+    display_name: Codex (CLI / app)
+    kind: cli-agent
+    mvp_adapter: true
+    adapter_depth: generated-commands
+    adapter_note: >
+      Адаптер генерирует $CODEX_HOME/prompts/ ($-промпты); исполнение стадий и
+      enforcement гейтов — на стороне Codex, не в коде кита.
+    default_provider: openai
+    execution_modes: [native, orchestrated, sequential]
+    preferred_mode: orchestrated
+    capabilities:
+      native_subagents: {status: degraded, value: "baseline TOML agents, not full parity"}
+      parallel_execution: {status: degraded, value: limited}
+      tools: {status: documented, value: true}
+      mcp: {status: documented, value: true}
+      function_calling: {status: documented, value: true}
+      structured_output: {status: documented, value: true}
+      file_read: {status: documented, value: true}
+      file_write: {status: documented, value: true}
+      shell: {status: documented, value: true}
+      session_state: {status: documented, value: true}
+      resumability: {status: degraded, value: file-based}
+    agent_packaging: toml
+    command_loading: "$CODEX_HOME/prompts/ or $-invocation"
+    machine_readable_gate_result: supported
+    last_documented_at: "2026-07-08"
+
+  cursor:
+    display_name: Cursor
+    kind: ide-agent
+    execution_modes: [native, sequential]
+    preferred_mode: native
+    capabilities:
+      native_subagents: {status: unsupported, value: false}
+      tools: {status: documented, value: true}
+      mcp: {status: documented, value: true}
+      file_read: {status: documented, value: true}
+      file_write: {status: documented, value: true}
+      resumability: {status: degraded, value: file-based}
+    agent_packaging: markdown-commands
+    command_loading: ".cursor/commands/"
+    last_documented_at: "2026-07-08"
+
+  gemini-cli:
+    display_name: Gemini CLI
+    kind: cli-agent
+    default_provider: google
+    execution_modes: [native, sequential]
+    preferred_mode: sequential
+    capabilities:
+      native_subagents: {status: unsupported, value: false}
+      tools: {status: documented, value: true}
+      mcp: {status: documented, value: true}
+      structured_output: {status: documented, value: true}
+      file_read: {status: documented, value: true}
+      file_write: {status: documented, value: true}
+    command_loading: ".gemini/commands/"
+    last_documented_at: "2026-07-08"
+
+  qwen-code:
+    display_name: Qwen Code
+    kind: cli-agent
+    default_provider: qwen
+    execution_modes: [native, sequential]
+    preferred_mode: sequential
+    capabilities:
+      native_subagents: {status: unsupported, value: false}
+      tools: {status: documented, value: true}
+      file_read: {status: documented, value: true}
+      file_write: {status: documented, value: true}
+    command_loading: ".qwen/commands/"
+    last_documented_at: "2026-07-08"
+
+  opencode:
+    display_name: OpenCode
+    kind: cli-agent
+    execution_modes: [native, sequential]
+    preferred_mode: sequential
+    capabilities:
+      tools: {status: documented, value: true}
+      mcp: {status: documented, value: true}
+      file_read: {status: documented, value: true}
+      file_write: {status: documented, value: true}
+    last_documented_at: "2026-07-08"
+
+  generic-orchestrator:
+    display_name: Generic orchestrator (our own, provider-agnostic)
+    kind: orchestrator
+    mvp_adapter: true
+    adapter_depth: executing
+    adapter_note: >
+      Код кита сам исполняет контракт: tools/orchestrator.py проводит стадии
+      sequential с изоляцией ролей, tools/gate_executor.py блокирует переход по
+      невыполненным блокирующим гейтам (GateReport.json). v2.18: провайдер стадий —
+      живая модель (--provider anthropic|openai, ключ из env) ИЛИ mock (по умолчанию,
+      офлайн). Живой путь opt-in.
+    live_provider:
+      status: implemented          # адаптеры anthropic/openai/openai-compatible (env-ключ, urllib, честный фолбэк)
+      verified_against_live_api: true    # v2.40: живой прогон QUICK на DeepSeek (openai-compatible) в ии-среде
+      verified_evidence:                 # что реально подтверждено живым прогоном (не «поверьте на слово»)
+        provider: openai-compatible      # DeepSeek, base_url + ключ из env
+        workflow: QUICK
+        checked:
+          - "4 стадии, связные артефакты на живой модели (без деградации против mock)"
+          - "audit-log редакция держится: только task_hash, без сырого текста (v2.31)"
+          - "гейты честны против живой модели: убедительный «pass» словами -> BLOCKED без evidence"
+          - "budget-счётчик живой: model_calls=4, budget_exceeded=false (v2.38)"
+        not_verified_yet: "tool-calling петля (модель предлагает действия) — Шаг B, отдельно"
+      providers: [anthropic, openai, openai-compatible]
+      opt_in: "--provider (default: mock, офлайн, детерминированный для CI)"
+      no_secrets: true             # ключ только из env, в репо/логи не попадает
+    default_provider: mock          # офлайн по умолчанию; живой — opt-in через --provider
+    execution_modes: [sequential, orchestrated]  # v3.8: concurrent parallel-2 + governed fan-in (tools/parallel_live.py)
+    preferred_mode: sequential
+    minimum_mode: sequential
+    capabilities:
+      native_subagents: {status: unsupported, value: false, note: emulated-via-role-isolation}
+      parallel_execution: {status: verified, value: true, note: "v3.8: concurrent parallel-2 (отдельный клон на пакет) + governed fan-in через tools/parallel_live.py (run_live_concurrent), доказан live s3c (no_checkout_damage, disjoint-scope, aggregate conflicts=0). tools/orchestrator.py остаётся sequential."}
+      tools: {status: documented, value: "via tool gateway"}
+      mcp: {status: degraded, value: optional}
+      function_calling: {status: degraded, value: provider-dependent}
+      structured_output: {status: degraded, value: provider-dependent}
+      file_read: {status: documented, value: true}
+      file_write: {status: documented, value: true}
+      shell: {status: documented, value: true}
+      session_state: {status: documented, value: "TaskState.yaml on disk"}
+      resumability: {status: verified, value: "file-based (RunHandoff); resume+fix-loop доказаны live на реальной задаче"}
+    role_isolation: {status: documented, value: true, note: "reviewer видит только опубликованные артефакты"}
+    machine_readable_gate_result: supported
+    last_documented_at: "2026-07-08"
+
+  generic-api:
+    display_name: Generic API (single model, sequential)
+    kind: api-executor
+    mvp_adapter: true
+    adapter_depth: manual-assisted
+    default_provider: any
+    execution_modes: [sequential, manual-assisted]
+    preferred_mode: sequential
+    minimum_mode: manual-assisted
+    capabilities:
+      native_subagents: {status: unsupported, value: false}
+      parallel_execution: {status: unsupported, value: false}
+      tools: {status: degraded, value: provider-dependent}
+      structured_output: {status: degraded, value: provider-dependent}
+      file_read: {status: degraded, value: "via harness"}
+      file_write: {status: degraded, value: "via harness / manual-assisted"}
+      resumability: {status: documented, value: "file-based checkpoints"}
+    note: >
+      Минимальный общий знаменатель. Одна модель исполняет роли последовательно
+      с раздельными role prompts и сохранёнными промежуточными артефактами.
+    last_documented_at: "2026-07-08"
+
+  github-actions:
+    display_name: GitHub Actions (CI runtime)
+    kind: ci
+    mvp_adapter: false
+    execution_modes: [orchestrated, sequential]
+    capabilities:
+      shell: {status: documented, value: true}
+      file_read: {status: documented, value: true}
+      file_write: {status: documented, value: true}
+      network: {status: degraded, value: policy-dependent}
+    note: Хостит validators, capability self-test и updater PR flow.
+    last_documented_at: "2026-07-08"
+
+# Общий контракт: workflow не должен ломаться при отсутствии native_subagents/mcp/structured_output.
+degradation_rule:
+  order: [native, orchestrated, sequential, manual-assisted]
+  guarantee: "любой MVP workflow исполним минимум в sequential mode"
+
+# --- Контракты рантайма (не адаптеры) ------------------------------------------
+# Абстрактный контракт постоянно работающего агента-ассистента (Robin).
+# Кит остаётся runtime-агностичным: здесь описано, ЧТО обязан дать любой рантайм,
+# а НЕ какой именно. Конкретная привязка — на уровне child
+# (templates/runtime/runtime-binding.example.yaml). Спека — runtime/robin/ROBIN.md.
+runtime_contracts:
+  persistent-agent-runtime:
+    display_name: Persistent team assistant runtime (agnostic)
+    kind: contract                       # это контракт, не mvp_adapter -> вне adapter_depth-проверки
+    status: contract                     # спека+валидатор есть; привязка к конкретному рантайму — child
+    verified_against_deploy: false       # ЧЕСТНО: из среды разработки деплой рантайма не проверялся
+    spec: runtime/robin/ROBIN.md
+    binding_template: templates/runtime/runtime-binding.example.yaml
+    duties_validator: validation/validate_duties.py
+    # что обязан обеспечить рантайм, чтобы удовлетворять контракту:
+    required_capabilities:
+      always_on:        {value: true,  note: "процесс работает по расписанию/событию, не только по запросу"}
+      model_call:       {value: true,  note: "может вызвать модель провайдера (ключ — из env рантайма)"}
+      chat_adapter:     {value: true,  note: "читает/пишет в рабочий чат команды; ввод из чата — недоверенный"}
+      kill_switch:      {value: true,  note: "оператор может остановить процесс и отозвать права; runbook в security-policies.md §3"}
+      audit_log:        {value: true,  note: "append-only interaction-log в формате tools/orchestrator.py; без секретов"}
+      read_mostly:      {value: true,  note: "нет записи в prod и в curated-память; инструменты — на чтение"}
+    optional_capabilities:
+      in_perimeter:     {value: true,  note: "закрытый контур для ПДн/гос-данных (child объявляет при необходимости)"}
+    example_bindings:
+      # только примеры; НЕ хардкод в ядре — у каждой команды свой рантайм
+      - "Hermes (собственный сервис в контуре команды)"
+      - "cron + CLI + чат-webhook"

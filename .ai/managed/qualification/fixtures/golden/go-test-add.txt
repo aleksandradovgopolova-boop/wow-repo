@@ -1,0 +1,5 @@
+--- FAIL: TestAdd (0.00s)
+    calc_test.go:7: Add(2,3) = 5; want 999
+FAIL
+FAIL	calcfixture	0.003s
+FAIL

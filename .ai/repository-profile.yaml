@@ -1,0 +1,22 @@
+schema_version: 1
+kind: repository-profile
+status: draft
+monorepo: false
+monorepo_reason: null
+stacks:
+- language: node
+  package_manager: npm
+  frameworks:
+  - react
+  install_command: npm ci
+  commands:
+    build: npm run build
+    lint: npm run lint
+    typecheck: npm run typecheck
+    test: npm run test
+  evidence_source:
+  - package.json
+  - npm-lock
+ci:
+- github-actions
+undetermined: []

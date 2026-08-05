@@ -1,0 +1,59 @@
+# release-claims.yaml — machine-readable claims о ТЕКУЩЕМ релизе + runtime-статусах (v3.8.1 Release Truth
+# Alignment). ЕДИНСТВЕННЫЙ источник публичных чисел/статусов; validate_release_claims.py (в CI) ловит дрейф
+# между этим файлом и фактическим состоянием (VERSION, python3-проверки в AGENTS.md, registry/agents.yaml,
+# registry/runtimes.yaml) И требует, чтобы README/ROADMAP ссылались на текущую версию. ОБНОВЛЯТЬ при релизе.
+schema_version: 1
+registry_type: release-claims
+
+version: 3.27.6
+phase: "v3.21 — Engineering Operating Model (срез 3): экономическая граница ДО траты. ВСЯ ФИЧА EngOps (3.19→3.21) ЗАКРЫТА."
+channel: stable
+patch_note: "3.21.0 — Engineering Operating Model (срез 3, WP7): economic_preflight — граница расхода ДО первого вызова модели. Прежде деньги узнавались ПОСЛЕ траты: контекстный бюджет денег не касался, Budget.charge_call рвался на N-м вызове (N-1 уже оплачены), cost_account сверял расход после прогона. Теперь оценка по фактической истории репозитория (usage_ledger) против лимитов RunPlan.execution_budget, встроена в preflight.py шагом 7 (после approvals, до tool loop). Решение по ХУДШЕМУ сравнимому прогону, а не по медиане. Честность: нет истории -> unavailable, НИКОГДА 0 (и не блокируем, иначе первый прогон в репозитории невозможен); задача с вызовами cost_status unavailable даёт НИЖНЮЮ ГРАНИЦУ (estimated_lower_bound) с явным предупреждением, что граница может не сработать; никаких выдуманных коэффициентов по writer_tier — в UsageRecord нет ни класса задачи, ни tier. Вердикты proceed/proceed_unknown/confirm_required/block. Ключ economics в схеме (require_estimate=true требует enforce=block — иначе противоречие), `ai-ops engops cost`, строка в doctor. ВСЯ ФИЧА EngOps (3.19 коммит/ветка -> 3.20 окружения/поставка -> 3.21 экономика) ЗАКРЫТА."
+
+# Числа сверяются ДЕРИВИРОВАННО (не на слово): checks_count = python3-команды в AGENTS.md;
+# agents_count = записи в registry/agents.yaml. Устаревшие числа (напр. «91+») CI отклонит.
+checks_count: 203
+agents_count: 51
+
+qualified_on: >
+  provider-neutral портфель по РОЛЯМ: дешёвый API-writer (money-mode) + СИЛЬНЫЙ writer (локальный
+  claude -p, без ключа) на сложном full-stack + независимый дешёвый ревьюер (deepseek, writer≠judge)
+  + ЧЕЛОВЕК на strict security #5. Sonnet НЕ требуется. Доказано live end-to-end (draft PR на ИИ-Среде).
+
+# Публичная поверхность обязана ссылаться на текущую версию (иначе рассказывает о прошлом продукте).
+docs_must_reference_version: [README.md, ROADMAP.md]
+
+# Каждый claim == фактический status в registry/runtimes.yaml (CI ловит расхождение заявленных
+# возможностей адаптеров/оркестратора). Обновлено под 3.8: concurrent + fan-in + resume доказаны live.
+runtime_capabilities:
+  - {runtime: generic-orchestrator, capability: parallel_execution, status: verified}
+  - {runtime: generic-orchestrator, capability: resumability,      status: verified}
+  # claude-code — first-class executing adapter (v3.9.0): кит оркестрирует локальный claude -p read-only
+  # как сильного writer'а; Claude предлагает, кит владеет worktree/diff/evidence/gates/delivery.
+  - {runtime: claude-code, capability: parallel_execution, status: documented}
+
+# ЦЕЛЕВЫЕ границы (не дефекты, объявлены явно): human на strict security #5; сильный writer на сложном
+# full-stack. Автономный дешёвый auto-close security-судья недостижим -> future_opportunities (см. BQP).
+standing_boundaries:
+  - human_strict_security_5
+  - strong_writer_for_complex_fullstack
+
+# v3.9.1: устаревшие маркеры «текущего статуса», которых НЕ должно быть в README/ROADMAP (ловит повторный
+# дрейф в CI). Добавлять сюда стейл-фразы при их удалении из публичной поверхности.
+forbidden_stale_markers:
+  - "Current Forward Roadmap (актуально с v3.0.14)"
+  - "ЗАКРЫТА (v3.0.0 stable, 2026-07-21, claude-sonnet-5)"
+  - "sequential-only"                        # кит умеет concurrent parallel-2 (parallel_live.py) с 3.8
+  - "не запускает параллельных агентов"
+
+# v3.9.2: файлы, сканируемые на forbidden_stale_markers (шире docs_must_reference_version — вся публичная
+# поверхность, включая docs/ и NOTICE). Добавлять сюда доки при выявлении в них дрейфа.
+stale_marker_files:
+  - README.md
+  - ROADMAP.md
+  - NOTICE.md
+  - docs/parallel-sessions.md
+  - docs/QUICKSTART.md
+  - docs/adoption-guide.md
+  - VISION.md
+  - AGENTS.md

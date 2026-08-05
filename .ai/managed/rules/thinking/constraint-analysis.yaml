@@ -1,0 +1,21 @@
+# rules/thinking/constraint-analysis.yaml — гейты анализа ограничений (v2.8).
+# Машиночитаемый чек-лист к скиллу skills/system-constraint-analysis/SKILL.md.
+# Теория ограничений (Голдратт). Инструмент-агностично. Находки ссылаются на id.
+# Opt-in: только потоковые системы с измеримой единицей пропускной способности.
+schema_version: 1
+kind: thinking-checklist
+id: constraint-analysis
+used_by: [product-analyst]
+skill: skills/system-constraint-analysis/SKILL.md
+adapted_from: "BayramAnnakov/systems-thinking-skills — constraint-finder (MIT)"
+items:
+  - {id: goal-gate, check: "Заявлена цель и единица пропускной способности (сколько чего к какому сроку) ДО диагностики", severity_default: critical}
+  - {id: flow-extracted, check: "Поток извлечён из описания: шаги, ёмкости, спрос, очереди, правила, метрики — без выдумывания недостающего", severity_default: major}
+  - {id: system-classified, check: "Система классифицирована (потоковая / demand-constrained / исследовательская); ограничение не навязано там, где его нет", severity_default: critical}
+  - {id: single-constraint, check: "Локализовано ОДНО связывающее ограничение (по куче накопленной работы и потолку пропускной способности)", severity_default: critical}
+  - {id: policy-presumption, check: "Проверена презумпция политики: ограничение, снимаемое сменой правила, названо политикой, а не ресурсным дефицитом", severity_default: major}
+  - {id: five-steps-order, check: "5 фокусирующих шагов в порядке Identify -> Exploit -> Subordinate -> Elevate -> Repeat; бесплатное раньше платного", severity_default: critical}
+  - {id: elevate-last, check: "Elevate (платное расширение) не предложено раньше Exploit/Subordinate", severity_default: critical}
+  - {id: judged-by-tio, check: "Каждый шаг оценён по T↑ / I↓ / OE↓ (throughput / inventory / operating expense)", severity_default: major}
+  - {id: local-optima-warned, check: "Названа ловушка локальной эффективности (оптимизация не-ограничения)", severity_default: minor}
+  - {id: resistance-named, check: "Названо, кто конкретно будет сопротивляться subordinate и почему (локальные KPI)", severity_default: minor}

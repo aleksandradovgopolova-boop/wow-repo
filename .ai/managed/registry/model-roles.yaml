@@ -1,0 +1,60 @@
+schema_version: 1
+registry_type: model-roles
+# Provider Independence & Cheapest Qualified Model (ADR-004).
+# Роли рантайма привязаны к КЛАССАМ возможностей (registry/models.yaml model_classes), НЕ к вендорам.
+# Runtime берёт САМЫЙ ДЕШЁВЫЙ квалифицированный класс для роли; повышает только при доказанной нужде.
+# Логические имена ролей (economy-code/strict-review/…) реализуются через существующие model_classes.
+
+roles:
+  implementation:        # economy-code -> standard-reasoning
+    preferred_class: balanced
+    fallback_class: high-reasoning
+  code_review:           # economy-review -> strict-review
+    preferred_class: balanced
+    fallback_class: high-reasoning
+  security_review:       # security-judge — только сильный класс (safety-first)
+    preferred_class: high-reasoning
+    fallback_class: high-reasoning
+  integration_judge:     # integration-judge — только сильный класс
+    preferred_class: high-reasoning
+    fallback_class: high-reasoning
+
+escalation_policy:
+  # reviewer воздержался / невалидная схема / неуверенность -> targeted retry -> эскалация ТОЛЬКО
+  # review/judge-вызова (НЕ пере-прогон всей задачи) на fallback_class.
+  triggers: [reviewer_abstain, schema_invalid, reviewer_uncertain]
+  max_targeted_retries: 1
+  escalate_scope: review_only
+  # ЖЁСТКИЙ инвариант ADR-004: экономия НИКОГДА не через удаление/ослабление проверок
+  cost_never_by_weakening_gates: true
+
+# v3.8.3 CONFLICT-AWARE writer≠judge: строгий судья НЕ должен судить собственное изменение, даже если он же
+# самый дешёвый writer. При конфликте судья фиксирован (qualified), writer перерезолвливается без модели судьи.
+role_constraints:
+  security_review:
+    must_differ_from: implementation
+  integration_judge:
+    must_differ_from: implementation
+
+# Матрица допуска: model_class × роль -> статус. ВЫВОДИТСЯ ИЗ Bench (не ручное мнение);
+# safety-first: любой false_green по роли -> not_qualified для неё (см. model_comparison).
+qualification_matrix:
+  fast:
+    implementation: experimental
+    code_review: not_qualified
+    security_review: not_qualified
+    integration_judge: not_qualified
+  balanced:
+    implementation: qualified
+    code_review: conditional
+    security_review: not_qualified
+    integration_judge: not_qualified
+  high-reasoning:
+    implementation: qualified
+    code_review: qualified
+    security_review: qualified
+    integration_judge: qualified
+
+# Метрика экономики: стоимость ОДНОГО успешно доставленного и проверенного изменения
+# (вызовы + retry + reviewer + эскалация + latency + ручное вмешательство) — считает cost_account.
+cost_metric: cost_per_successful_change

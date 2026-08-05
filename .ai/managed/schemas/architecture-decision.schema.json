@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/architecture-decision.schema.json",
+  "title": "ArchitectureDecision",
+  "description": "ArchitectureDecision (ADR) — v3.2 Architecture, Product & UI Governance. Первоклассная запись архитектурного решения: контекст, само решение, рассмотренные альтернативы, последствия и затронутые quality attributes. Отличается от decisions/registry.yaml (Decision Intelligence: принципы/эпизоды мышления) — ADR фиксирует КОНКРЕТНОЕ структурное решение о системе. Связь с UI-governance: ui_impact согласован с gate_policy (none/internal/user_facing/critical) — архитектурные решения по UI явно наследуют риск-тир, определяющий требуемое evidence (см. templates/quality/DefinitionOfDone-UI.md, StorybookPolicy).",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "title", "status", "context", "decision", "consequences"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "ArchitectureDecision" },
+    "id": { "type": "string", "pattern": "^ADR-[0-9]{3,}$",
+      "description": "стабильный идентификатор, напр. ADR-001" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["proposed", "accepted", "superseded", "deprecated"] },
+    "date": { "type": ["string", "null"], "format": "date" },
+    "owner": { "type": "string" },
+    "context": { "type": "string", "minLength": 1,
+      "description": "силы/ограничения, из-за которых решение потребовалось" },
+    "decision": { "type": "string", "minLength": 1,
+      "description": "что именно решено (в активной форме: «делаем X»)" },
+    "alternatives": {
+      "type": "array",
+      "description": "рассмотренные варианты и почему отклонены (честность: не задним числом)",
+      "items": {
+        "type": "object",
+        "required": ["option", "rejected_because"],
+        "additionalProperties": false,
+        "properties": {
+          "option": { "type": "string" },
+          "rejected_because": { "type": "string" }
+        }
+      }
+    },
+    "consequences": {
+      "type": "object",
+      "required": ["positive", "negative"],
+      "additionalProperties": false,
+      "description": "последствия ОБЕИХ полярностей — решение без негативных последствий подозрительно",
+      "properties": {
+        "positive": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "negative": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "neutral": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "quality_attributes": {
+      "type": "array",
+      "description": "затронутые атрибуты качества и направление влияния (ISO-25010-класс)",
+      "items": {
+        "type": "object",
+        "required": ["attribute", "effect"],
+        "additionalProperties": false,
+        "properties": {
+          "attribute": { "type": "string", "enum": [
+            "performance", "security", "reliability", "maintainability", "usability",
+            "accessibility", "portability", "compatibility", "scalability", "observability",
+            "cost", "testability"] },
+          "effect": { "type": "string", "enum": ["improves", "degrades", "tradeoff", "neutral"] },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "ui_impact": { "type": ["string", "null"],
+      "enum": ["none", "internal", "user_facing", "critical", null],
+      "description": "риск-тир UI (согласован с gate_policy). Не-null => UI-решение наследует требования DefinitionOfDone-UI" },
+    "supersedes": { "type": ["string", "null"], "pattern": "^ADR-[0-9]{3,}$",
+      "description": "ADR, который это решение заменяет (для status=accepted, вытесняющего прежнее)" },
+    "superseded_by": { "type": ["string", "null"], "pattern": "^ADR-[0-9]{3,}$",
+      "description": "ADR-преемник (обязателен при status=superseded)" },
+    "related": { "type": "array", "items": { "type": "string" } }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "ArchitectureDecision",
+      "id": "ADR-001",
+      "title": "AI Ops = control plane + адаптеры к open-source (не монолитный движок)",
+      "status": "accepted",
+      "date": "2026-07-24",
+      "owner": "architecture",
+      "context": "Нужно исполнять задачи через агентов, не переписывая существующие open-source инструменты.",
+      "decision": "Ядро — control plane (контракты/gates/маршрутизация); интеграции — тонкие адаптеры.",
+      "alternatives": [
+        { "option": "Монолитный движок со своей реализацией всего",
+          "rejected_because": "дублирование зрелых инструментов, высокая стоимость поддержки" }
+      ],
+      "consequences": {
+        "positive": ["переиспользование зрелых инструментов", "тонкие адаптеры легко заменяемы"],
+        "negative": ["зависимость от контрактов внешних инструментов", "нужна дисциплина адаптеров"]
+      },
+      "quality_attributes": [
+        { "attribute": "maintainability", "effect": "improves" },
+        { "attribute": "compatibility", "effect": "tradeoff", "note": "версии внешних инструментов" }
+      ],
+      "ui_impact": null,
+      "supersedes": null,
+      "superseded_by": null,
+      "related": []
+    }
+  ]
+}

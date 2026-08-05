@@ -1,0 +1,10 @@
+[project]
+name = "calc-fixture"
+version = "0.0.0"
+description = "Стек-фикстура квалификации (python): реальный pytest для проверки failure-id парсера движка."
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+[dependency-groups]
+dev = ["pytest"]

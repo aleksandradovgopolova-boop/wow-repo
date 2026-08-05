@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/package-manifest.schema.json",
+  "title": "PackageManifest",
+  "description": "ai-ops-manifest.yaml — central parent package manifest (Section 24).",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "ai-ops-manifest" },
+    "ai_ops": {
+      "type": "object",
+      "properties": {
+        "package_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+" },
+        "schema_version": { "type": "integer" },
+        "minimum_runtime_contract": { "type": "integer" }
+      },
+      "required": ["package_version", "schema_version", "minimum_runtime_contract"],
+      "additionalProperties": false
+    },
+    "spec_protocol": {
+      "type": "object",
+      "properties": {
+        "engine": { "type": "string" },
+        "version_range": { "type": "string" },
+        "dependency_strategy": { "type": "string" },
+        "extensions": { "type": "array", "items": { "type": "string" } },
+        "deterministic_operations": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["engine", "version_range"],
+      "additionalProperties": true
+    },
+    "registries": { "type": "object", "additionalProperties": { "type": "string" } },
+    "workflows": { "type": "object", "additionalProperties": true },
+    "agents": { "type": "object", "additionalProperties": true },
+    "skills": { "type": "object", "additionalProperties": true },
+    "quality_gates": { "type": "object", "additionalProperties": true },
+    "providers": { "type": "object", "additionalProperties": true },
+    "models": { "type": "object", "additionalProperties": true },
+    "runtimes": { "type": "object", "additionalProperties": true },
+    "adapters": { "type": "object", "additionalProperties": true },
+    "tools": { "type": "object", "additionalProperties": true },
+    "artifact_ownership": { "type": "object", "additionalProperties": true },
+    "approval_policies": { "type": "object", "additionalProperties": true },
+    "routing_policies": { "type": "object", "additionalProperties": true },
+    "security_policies": { "type": "object", "additionalProperties": true },
+    "update_policy": {
+      "type": "object",
+      "properties": {
+        "silent_update": { "const": "forbidden" },
+        "managed_paths": { "type": "array", "items": { "type": "string" } },
+        "protected_paths": { "type": "array", "items": { "type": "string" } },
+        "generated_paths": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "package_migrations": { "type": "object", "additionalProperties": true }
+  },
+  "required": ["schema_version", "kind", "ai_ops", "spec_protocol", "update_policy"],
+  "additionalProperties": true,
+  "x-extensibility": "Registering a provider/runtime/workflow/agent is adding a manifest entry — no core code change (Section 24).",
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "ai-ops-manifest",
+      "ai_ops": { "package_version": "0.5.0", "schema_version": 1, "minimum_runtime_contract": 1 },
+      "spec_protocol": { "engine": "openspec", "version_range": ">=1.5.0 <2.0.0", "dependency_strategy": "cli-and-protocol", "extensions": ["product"], "deterministic_operations": ["validate", "archive", "sync"] },
+      "update_policy": { "silent_update": "forbidden", "managed_paths": [".ai/managed/**"], "protected_paths": [".ai/project/**", ".ai/custom/**"], "generated_paths": [".ai/generated/**"] }
+    }
+  ]
+}

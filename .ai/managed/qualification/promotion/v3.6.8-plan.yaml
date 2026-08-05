@@ -1,0 +1,132 @@
+schema_version: 1
+kind: PromotionQualificationPlan
+plan_id: PQP-001
+phase: v3.6.8
+title: Live Qualification & Controlled Promotion Context Engine v2
+
+# ДАННЫЕ, не живой прогон. Живая квалификация исполняется против этого чек-листа под провайдер-ключ +
+# Node/React-тулчейн (см. blocked_by). Ничего нового не изобретаем — только подключаем и проверяем
+# уже построенное (v3.6.7 offline закрыт). Promotion строго shadow -> hybrid -> default.
+
+runs:
+  - id: run-python-child
+    title: "Прогон 1 — Python child: v1 execution + полный v2 shadow"
+    kind: python-child
+    exact_sha_bound: true
+    produces_pr: true
+    uses: [ai_ops_run.py, context_engine.py, context_shadow.py, gate_runtime.py, pr_open.py]
+    steps:
+      - "реальная ENGINEERING-задача на Python child; execution — боевой v1 context"
+      - "рядом строится полный v2 shadow (context_engine, require_snapshot=True) на точном committed_sha"
+      - "сравнение источников: mandatory / overlap / v2_only; проверка mandatory не потерян (иначе valid=false)"
+      - "метрики: cache/budget/access (budget из child BudgetContract, access — child AFP+DCP)"
+      - "настоящий draft PR; DeliveryReceipt sha_verified против реального remote SHA"
+
+  - id: run-ts-react-storybook
+    title: "Прогон 2 — TypeScript/React + Storybook: UI-задача с exact-SHA evidence"
+    kind: ts-react-storybook
+    exact_sha_bound: true
+    produces_pr: true
+    uses: [ai_ops_run.py, context_engine.py, storybook_adapter.py, storybook_query.py, gate_runtime.py, pr_open.py]
+    steps:
+      - "TS/TSX retrieval (full-text/role-view охватывают .ts/.tsx) на реальном React child"
+      - "Storybook catalog (read-only) в контексте агентов; реальная UI-задача"
+      - "evidence: stories + interaction + accessibility + visual; UIEvidenceBundle на integration-SHA"
+      - "exact-SHA binding evidence (evidence_for_gate mismatch -> not_run); настоящий draft PR"
+
+  - id: run-parallel-2
+    title: "Прогон 3 — bounded parallel-2: api || ui -> integration -> один PR"
+    kind: parallel-2
+    exact_sha_bound: true
+    produces_pr: true
+    uses: [parallel_planner.py, ai_ops_run.py, gate_runtime.py, pr_open.py]
+    steps:
+      - "package API || package UI в отдельных worktrees; каждый -> package SHA + GateReport(tested_revision==sha)"
+      - "integration worktree; aggregate verification; новый integration SHA (aggregate.tested_revision==integration_sha)"
+      - "integration_gate: полный доказательный набор -> один draft PR; иначе fail-closed"
+      - "speedup + coordination overhead измерены (IntegrationTrace)"
+
+negative_scenarios:
+  - id: neg-write-scope-overlap
+    scenario: "два пакета с пересекающимся write_scope (или глобальный **)"
+    expected: "can_parallel=false -> сериализация (не параллель)"
+    covers: write_scope_overlap
+  - id: neg-package-fail
+    scenario: "один package не pass"
+    expected: "integration_gate.proceed=false -> fan-in НЕ начинается"
+    covers: package_fail
+  - id: neg-contract-not-fixed
+    scenario: "общий контракт без зафиксированного contract SHA (или не sha-like)"
+    expected: "integration_gate block"
+    covers: contract_not_fixed
+  - id: neg-duplicate-package-id
+    scenario: "две записи с одинаковым package id в WorkGraph"
+    expected: "plan.valid=false"
+    covers: duplicate_package_id
+  - id: neg-merge-conflict
+    scenario: "merge conflict при fan-in (из git evidence)"
+    expected: "integration_gate block"
+    covers: merge_conflict
+  - id: neg-base-moved
+    scenario: "base сдвинулась между package-прогоном и интеграцией (из git evidence)"
+    expected: "revalidation_required, PR не открыт"
+    covers: base_moved
+  - id: neg-aggregate-wrong-sha
+    scenario: "aggregate GateReport относится к другому SHA (aggregate.tested_revision != integration_sha)"
+    expected: "proceed, но open_pr=false (evidence не на integration-SHA)"
+    covers: aggregate_wrong_sha
+  - id: neg-reviewer-abstain-twice
+    scenario: "ревьюер воздержался дважды по блокирующему гейту"
+    expected: "blocking-abstain(pending_human), delivery_allowed=false, human_handoff"
+    covers: reviewer_abstain_twice
+  - id: neg-mandatory-context-missing
+    scenario: "обязательный контекст v1 (spec/policy) отсутствует в snapshot или запрещён access"
+    expected: "context view valid=false -> execution не получает контекст -> handoff"
+    covers: mandatory_context_missing
+  - id: neg-child-policy-changed
+    scenario: "child policy изменилась между сборкой context и execution"
+    expected: "cache-key/snapshot расхождение -> пере-retrieval / block (не старый permissive view)"
+    covers: child_policy_changed
+
+promotion_sequence:
+  - stage: shadow
+    description: "v2 строится РЯДОМ с боевым v1; execution на v1; чистая наблюдаемость и сравнение"
+    gate: "shadow валиден и snapshot доказан на реальных прогонах; 0 access leaks в v2-view"
+  - stage: hybrid
+    description: "execution получает обязательный v1 + ДОБАВЛЕННЫЕ v2-кандидаты (retrieved additions)"
+    gate: "mandatory v1 всегда сохранён; v2-добавления не роняют качество; 0 stale/misbound"
+  - stage: default
+    description: "v2 становится default путём retrieval"
+    gate: "все exit_criteria выполнены на живой квалификации"
+
+exit_criteria:
+  - id: ec-access-leaks
+    metric: zero_access_leaks
+    target: "0 (secret/над-классовые файлы никогда в view)"
+  - id: ec-stale-context
+    metric: zero_stale_or_misbound_context
+    target: "0 (нет старого permissive/чужого-SHA контекста)"
+  - id: ec-false-green
+    metric: zero_false_green
+    target: "0"
+  - id: ec-duplicate-pr
+    metric: zero_duplicate_pr
+    target: "0"
+  - id: ec-mandatory-retained
+    metric: mandatory_retained_or_block
+    target: "100% mandatory сохранён ИЛИ явный block"
+  - id: ec-context-snapshot-bound
+    metric: context_views_snapshot_bound
+    target: "100% context views привязаны к доказанному snapshot"
+  - id: ec-package-evidence-bound
+    metric: package_evidence_sha_bound
+    target: "100% package evidence привязан к package SHA"
+  - id: ec-aggregate-evidence-bound
+    metric: aggregate_evidence_integration_sha_bound
+    target: "100% aggregate evidence привязан к integration SHA"
+
+blocked_by:
+  - "ротация ANTHROPIC_API_KEY (действие владельца в console.anthropic.com; агент не может revoke)"
+  - "сильный провайдер для ENGINEERING/UI (sonnet-класс; DeepSeek слаб для ENGINEERING)"
+  - "Node/React/Storybook-тулчейн для TS-child прогона"
+  - "приватный scratch child-репо для реальных draft PR"

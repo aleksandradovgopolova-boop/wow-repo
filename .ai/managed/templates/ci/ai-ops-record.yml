@@ -1,0 +1,53 @@
+# ai-ops-record.yml — автонакопление истории эффекта (report-history) без участия человека.
+# Устанавливается `ai-ops init` в .github/workflows/ (или скопируйте вручную).
+#
+# На каждый push фиксирует срез (run_report --record) по фичам, затронутым в этом пуше,
+# и коммитит снимок в .ai/project/report-history/ с [skip ci] (без рекурсии). Так фича
+# за свой жизненный цикл естественно набирает ≥3 срезов, и baseline метрик эффекта
+# закрывается сам — в дополнение к стадийной записи внутри сессии (plan/implement/
+# verify/finish). Инструменты кита не в репо — берутся из parent (как в ai-ops-update).
+#
+# Опт-аут: удалить этот файл. Снимки — машиночитаемые jsonl, PII не содержат
+# (см. tools/run_report.py). GITHUB_TOKEN-пуш не перезапускает workflow (нет петли).
+name: ai-ops-record
+on:
+  push: {}
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+      - name: Клонировать parent-кит (инструменты)
+        run: |
+          PARENT=$(python3 -c "import yaml; s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source']; print(s[4:] if s.startswith('git+') else s)")
+          git clone --depth 1 "$PARENT" /tmp/ai-ops-kit
+      - name: Записать срезы по затронутым фичам
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            BEFORE=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+          fi
+          CHANGED=$(git diff --name-only "$BEFORE" HEAD -- 'features/*' | cut -d/ -f2 | sort -u)
+          [ -z "$CHANGED" ] && { echo "фичи не затронуты — срезы не нужны"; exit 0; }
+          for fid in $CHANGED; do
+            [ -f "features/$fid/blueprint.yaml" ] || { echo "features/$fid: нет blueprint — пропуск"; continue; }
+            echo "срез: features/$fid"
+            python3 /tmp/ai-ops-kit/tools/run_report.py "features/$fid" --record || echo "features/$fid: run_report не смог — пропуск"
+          done
+      - name: Закоммитить снимки
+        run: |
+          if [ -z "$(git status --porcelain .ai/project/report-history 2>/dev/null)" ]; then
+            echo "новых срезов нет"; exit 0
+          fi
+          git config user.name "ai-ops-recorder"
+          git config user.email "ai-ops-recorder@users.noreply.github.com"
+          git add .ai/project/report-history
+          git commit -m "chore: record effect snapshot [skip ci]"
+          git push

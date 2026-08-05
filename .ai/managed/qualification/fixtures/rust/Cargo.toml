@@ -1,0 +1,6 @@
+[package]
+name = "calcfixture"
+version = "0.0.0"
+edition = "2021"
+
+# Стек-фикстура квалификации (rust). НЕ продукт — проверяет извлечение id падений `cargo test`.
