@@ -34,3 +34,16 @@ approval_policy: {human_approval_required_for: [protected_paths, destructive]}
 overlays: {project: .ai/project/, custom: .ai/custom/}
 protected_paths: [.github/workflows/]
 confidentiality_policy: {send_code_to_external_provider: allowed}
+
+# v3.35: где в ЭТОМ продукте лежат контуры. Кит знает типовые места (context/**, schemas/**,
+# **/migrations/**), а wow-repo — Astro/React-проект: контракты в pipeline/schema/, движок в
+# src/engine/. Без этого объявления кит честно говорил `unknown` по четырём контурам из восьми, то
+# есть гейт связности на этом репозитории не срабатывал вообще (замер: 8 коммитов, 0 находок,
+# включая коммит на 54 файла «Build WowRepo MVP engine, design system»).
+product_operating_model:
+  contours:
+    data_contracts:
+      source_of_truth: [pipeline/schema/]
+      change_signals: ["pipeline/schema/**", "src/engine/**"]
+    system_architecture:
+      change_signals: ["astro.config.mjs", "pipeline/stages/**", "src/layouts/**"]
