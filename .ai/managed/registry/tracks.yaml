@@ -6,7 +6,8 @@
 # документацию и rollback — система выводит их из сигналов.
 #
 # signal — булев признак задачи (из intake/discovery). kind: required | conditional.
-# gates — id из quality/gates.yaml (проверяется validate_run_plan.py).
+# gates — id из quality/gates.yaml (проверяется validate_workflow_gates.py; он же
+# требует непустой реестр и обязательные поля — пустой tracks молча отключал треки).
 # skip_reason — что пишется в RunPlan.skipped_tracks, когда signal=false (explainable skip).
 schema_version: 1
 registry_type: tracks

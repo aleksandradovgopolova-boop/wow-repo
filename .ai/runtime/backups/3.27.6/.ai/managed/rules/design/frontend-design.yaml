@@ -1,0 +1,20 @@
+# rules/design/frontend-design.yaml — гейты создания UI (v2.11).
+# Машиночитаемый чек-лист к скиллу skills/frontend-design/SKILL.md.
+# Дополняет ux-heuristics/design-system/responsive: те проверяют результат,
+# этот — процесс создания. Находки ссылаются на id. Opt-in: задачи с UI.
+schema_version: 1
+kind: design-checklist
+id: frontend-design
+used_by: [ui-ux-designer]
+skill: skills/frontend-design/SKILL.md
+source_of_truth: context/product/DesignSystem.md
+adapted_from: "anthropics/claude-code — frontend-design"
+items:
+  - {id: grounded-in-subject, check: "Дизайн-направление укоренено в предметной области продукта, а не абстрактная красота", severity_default: major}
+  - {id: plan-before-build, check: "Сначала дизайн-план (палитра, шрифты, макет, фирменный элемент), потом HTML/CSS — не наоборот", severity_default: major}
+  - {id: avoid-generic-clusters, check: "Проверено против типовых AI-клише (кремовый+serif, тёмный+неон, broadsheet); есть один оправданный эстетический риск", severity_default: major}
+  - {id: tokens-not-adhoc, check: "Цвета/шрифты/отступы/breakpoints — из токенов DesignSystem, не ad-hoc в компонентах", severity_default: critical}
+  - {id: copy-serves-understanding, check: "Копирайт служит пониманию, а не декорации", severity_default: minor}
+  - {id: motion-orchestrated, check: "Движение оркестровано, а не разбросано; уважает prefers-reduced-motion", severity_default: minor}
+  - {id: complexity-matches-vision, check: "Сложность соответствует замыслу — без усложнения ради вида", severity_default: minor}
+  - {id: a11y-and-responsive-built-in, check: "Клавиатурный фокус, контраст, матрица устройств и состояния Empty/Loading/Error/Success заложены при создании, а не потом", severity_default: critical}

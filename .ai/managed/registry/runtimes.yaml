@@ -245,7 +245,7 @@ runtime_contracts:
     verified_against_deploy: false       # ЧЕСТНО: из среды разработки деплой рантайма не проверялся
     spec: runtime/robin/ROBIN.md
     binding_template: templates/runtime/runtime-binding.example.yaml
-    duties_validator: validation/validate_duties.py
+    duties_validator: ai_ops_kit/validation/validate_duties.py
     # что обязан обеспечить рантайм, чтобы удовлетворять контракту:
     required_capabilities:
       always_on:        {value: true,  note: "процесс работает по расписанию/событию, не только по запросу"}

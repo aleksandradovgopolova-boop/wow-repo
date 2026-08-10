@@ -31,6 +31,26 @@ gates:
     stale_detection: {bind_to: intake_hash}
     required_evidence: [classified_type, size, risk]
 
+  regression_test_evidence:
+    id: regression_test_evidence
+    purpose: >
+      Правка ПОДТВЕРЖДЕНА: тест, приехавший вместе с ней, падает на коде ДО правки и проходит
+      после. implementation_verification доказывает, что ничего не сломалось; этот гейт — что
+      починилось то, что чинили. Класс: непроверенное исправление (раунд C живой квалификации,
+      T1/T2/T4 — writer правил код, тесты и до правки проходили, гейты вставали зелёными).
+    stage: implementation
+    blocking: false          # advisory до обкатки на живых прогонах; MVP-blocking ≤ 8 не трогаем
+    responsible_role: final-verifier
+    review_mode: read-only
+    validator: validate-regression-evidence   # runnable: tools/regression_evidence.py
+    human_approval: false
+    applicability: [QUICK, ENGINEERING, PRODUCT, VISUAL, AI_FEATURE, CRITICAL]   # пишущие в код
+    required_evidence: [regression_proven]
+    exemption_policy: >
+      Рефакторинг без смены поведения закрывается объявлением writer'а
+      {"done": true, "behavior_unchanged": "<причина>"} — причина попадает в warnings и в отчёт.
+      Отсутствие команды тестов в стеке даёт unverifiable, НЕ «доказано».
+
   concurrency_preflight:
     id: concurrency_preflight
     purpose: >
@@ -48,6 +68,29 @@ gates:
     required_evidence: [checked_paths, verdict]   # verdict ∈ clean|collision
     collision_policy: "verdict=collision -> координация / rebase на актуальный main / сузить scope / согласовать владельца (OwnershipMap)"
 
+  contour_consistency:
+    id: contour_consistency
+    purpose: >
+      Связность контуров продукта (v3.35 Product Operating Model): изменение обязано быть
+      согласовано с источниками истины тех контуров, которые оно затрагивает. Класс дефекта —
+      «закрыли WorkItem, обновив React-компонент, при изменившейся модели данных»: код и
+      представление о нём расходятся молча, и следующая сессия читает устаревшее описание как
+      правду. Кит выводит затронутые контуры из diff и сверяет с объявленным `affects` WorkItem'а.
+      Три состояния, и `unknown` НЕ равен `not_changed`: контур без сигнальных путей в этом
+      репозитории кит видеть не умеет и говорит об этом, а не зеленит.
+    stage: verification
+    blocking: false          # advisory до обкатки на child-репозиториях (правило движения по roadmap)
+    responsible_role: architecture-reviewer
+    review_mode: read-only
+    validator: validate-product-model        # runnable: tools/contours.py + validate_product_model.py
+    human_approval: false
+    applicability: [ENGINEERING, PRODUCT, VISUAL, AI_FEATURE, CRITICAL]
+    required_evidence: [affects, changed_files, verdict]   # verdict ∈ ok|inconsistent
+    findings: [undeclared_change, declared_not_updated, unknown_contour]
+    never: >
+      `not_changed` НЕ требует обновления документов — бюрократия «восемь документов на задачу»
+      запрещена явно; незатронутый контур закрывается сам собой.
+
   event_contract_consistency:
     id: event_contract_consistency
     purpose: >
@@ -58,7 +101,7 @@ gates:
     blocking: false          # advisory до обкатки
     responsible_role: solution-architect
     review_mode: writer
-    validator: validate-event-catalog        # runnable: validation/validate_event_catalog.py
+    validator: validate-event-catalog        # runnable: ai_ops_kit/validation/validate_event_catalog.py
     human_approval: false
     applicability: [ENGINEERING, PRODUCT, ANALYTICS, AI_FEATURE]
     required_evidence: [catalog_valid, names_reconciled]
@@ -75,7 +118,7 @@ gates:
     blocking: false          # advisory до обкатки (как соседние consistency-гейты)
     responsible_role: solution-architect
     review_mode: writer
-    validator: validate-surface-wiring        # runnable: validation/validate_surface_wiring.py (по манифесту поверхности child)
+    validator: validate-surface-wiring        # runnable: ai_ops_kit/validation/validate_surface_wiring.py (по манифесту поверхности child)
     human_approval: false
     applicability: [ENGINEERING, PRODUCT, AI_FEATURE, CRITICAL]
     required_evidence: [routes_declared, wrappers_matched, client_paths_matched]
@@ -145,7 +188,7 @@ gates:
     # SEAM_DEFECTS перестаёт быть чек-листом и становится полем гейта.
     advisory_evidence: [named_user_scenario, scenario_test]
     advisory_applicability: [ENGINEERING, PRODUCT, CRITICAL]
-    advisory_validator: validate-scenario-evidence   # runnable: validation/validate_scenario_evidence.py
+    advisory_validator: validate-scenario-evidence   # runnable: ai_ops_kit/validation/validate_scenario_evidence.py
     # v2.33: детерминированный evidence-контракт — что должен вернуть исполняемый runner
     # (не «pass словом»). Enforcement формы — validate_evidence_schema.py; в gate_executor
     # применяется, когда evidence подан в структурной форме (иначе required_evidence-дисциплина).
@@ -227,7 +270,7 @@ gates:
     review_mode: writer
     validator: openspec-validate-and-guard
     # Детерминированный OpenSpec-гейт: enforced НЕ per-task gate_executor'ом, а OpenSpec CLI
-    # + validation/validate_openspec_change.py в CI (см. openspec/README). Поэтому он не в
+    # + ai_ops_kit/validation/validate_openspec_change.py в CI (см. openspec/README). Поэтому он не в
     # workflow.quality_gates — enforced_by фиксирует реальный путь исполнения (честность).
     enforced_by: openspec-ci-guard
     human_approval: false

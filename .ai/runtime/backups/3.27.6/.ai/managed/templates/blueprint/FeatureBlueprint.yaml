@@ -1,0 +1,118 @@
+# Feature Blueprint — паспорт функции (schemas/feature-blueprint.schema.json). Профиль FULL: все 11 стадий.
+# Для прототипов/MVP есть lean-профиль (FeatureBlueprint.lean.yaml, 5 стадий) — по данным
+# первого прогона 75% артефактов full-профиля были declined (memory/lessons-learned/2026-07-09-first-child-run-insights.md).
+# Каталог функции: features/<id>/blueprint.yaml; пути артефактов — относительно каталога.
+# Правило: для стадий профиля не позже current_stage каждый артефакт существует
+# либо помечен status: declined с declined_reason (молчаливых пропусков нет).
+# Правило прогона (урок ii-sreda): blueprint закрывается (done/declined + current_stage)
+# В ТОМ ЖЕ PR, что и релиз кода — иначе run_report скажет «реальность обогнала blueprint».
+schema_version: 1
+kind: feature-blueprint
+feature:
+  id: <feature-id>
+  name: <человекочитаемое имя>
+  owner: <роль или человек>
+  status: planned
+  current_stage: discovery
+  profile: full
+links:
+  goal: ''
+  epic: ''
+  stories: []
+  experiments: []
+artifacts:
+  discovery:
+  - path: discovery/problem-statement.md
+    template: templates/discovery/ProblemStatement.md
+    status: planned
+  - path: discovery/hypotheses.md
+    template: templates/discovery/Hypotheses.md
+    status: planned
+  definition:
+  - path: prd/feature.md
+    template: templates/product/Feature.md
+    status: planned
+  - path: prd/user-stories.md
+    template: templates/product/UserStory.md
+    status: planned
+  ux:
+  - path: ux/ux-flow.md
+    template: templates/ux/UXFlow.md
+    status: planned
+  - path: ux/screen-states.md
+    template: templates/ux/ScreenStates.md
+    status: planned
+  - path: ux/design-review.md
+    template: templates/ux/DesignReview.md
+    status: planned
+  architecture:
+  - path: architecture/adr.md
+    template: templates/engineering/ADR.md
+    status: planned
+  - path: architecture/api-contract.md
+    template: templates/engineering/APIContract.md
+    status: planned
+  delivery:
+  - path: delivery/task-plan.md
+    template: templates/task/TaskPlan.md
+    status: planned
+  - path: delivery/test-plan.md
+    template: templates/quality/TestPlan.md
+    status: planned
+  analytics:
+  - path: analytics/tracking-plan.md
+    template: templates/analytics/TrackingPlan.md
+    status: planned
+  - path: analytics/event-schema.md
+    template: templates/analytics/EventSchema.md
+    status: planned
+  - path: analytics/dashboard-spec.md
+    template: templates/analytics/DashboardSpec.md
+    status: planned
+  documentation:
+  - path: docs/user-guide.md
+    template: templates/documentation/UserGuide.md
+    status: planned
+  - path: docs/faq.md
+    template: templates/documentation/FAQ.md
+    status: planned
+  - path: docs/whats-new.md
+    template: templates/documentation/WhatsNew.md
+    status: planned
+  - path: docs/release-notes.md
+    template: templates/documentation/ReleaseNotes.md
+    status: planned
+  release:
+  - path: release/rollout-plan.md
+    template: templates/release/RolloutPlan.md
+    status: planned
+  - path: release/feature-flag.md
+    template: templates/release/FeatureFlag.md
+    status: planned
+  - path: release/rollback-strategy.md
+    template: templates/release/RollbackStrategy.md
+    status: planned
+  - path: release/release-checklist.md
+    template: templates/quality/ReleaseChecklist.md
+    status: planned
+  monitoring:
+  - path: monitoring/monitoring-spec.md
+    template: templates/monitoring/MonitoringSpec.md
+    status: planned
+  adoption:
+  - path: adoption/launch-plan.md
+    template: templates/product/LaunchPlan.md
+    status: planned
+  - path: adoption/adoption-plan.md
+    template: templates/product/AdoptionPlan.md
+    status: planned
+  - path: adoption/feedback-loop.md
+    template: templates/product/FeedbackLoop.md
+    status: planned
+  - path: adoption/post-launch-review.md
+    template: templates/product/PostLaunchReview.md
+    status: planned
+  retrospective:
+  - path: retrospective/retrospective.md
+    template: templates/task/Retrospective.md
+    status: planned

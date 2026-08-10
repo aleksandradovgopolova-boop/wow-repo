@@ -1,0 +1,23 @@
+# rules/meta/repo-onboarding.yaml — чек-лист первичного онбординга репозитория (v2.22).
+# Машиночитаемый чек-лист к скиллу skills/repo-onboarding/SKILL.md.
+# Инвариант: writer≠judge — агент пишет ЧЕРНОВИКИ context/*, источник истины подтверждает человек.
+# Находки ссылаются на id.
+schema_version: 1
+kind: onboarding-checklist
+id: repo-onboarding
+used_by: [context-builder]
+skill: skills/repo-onboarding/SKILL.md
+items:
+  - {id: stack-detected, check: "Определён стек: языки, фреймворки, менеджеры пакетов, точки входа — из манифестов и дерева репозитория, а не из догадок", severity_default: major}
+  - {id: structure-mapped, check: "Составлена карта структуры репозитория (ключевые каталоги, их назначение) -> context/system/RepositoryMap.md", severity_default: major}
+  - {id: product-summarized, check: "Зафиксировано что за продукт и для кого; ненайденное помечено «требует подтверждения», не выдумано -> context/product/ProductOverview.md", severity_default: critical}
+  - {id: product-status-drafted, check: "Заполнен черновик context/product/ProductStatus.md: что реально готово/живёт в проде (backend/генерация/хранилище/деплой/провайдер) и что отложено — по фактам из репо/деплоя, не по нормативке", severity_default: critical}
+  - {id: architecture-and-data, check: "Описаны компоненты, сущности и модель данных -> context/system/*; связи, где явны", severity_default: major}
+  - {id: design-system-captured, check: "Если дизайн-система есть — токены/компоненты/паттерны зафиксированы; если нет — так и сказано -> context/product/DesignSystem.md", severity_default: minor}
+  - {id: dev-rules-and-constraints, check: "Собраны правила разработки и активные ограничения (линтеры, конвенции, protected paths, регуляторика) -> context/team/*", severity_default: major}
+  - {id: integrations-listed, check: "Перечислены внешние интеграции и AI-провайдеры (или явно их отсутствие); секреты НЕ собираются, только имена env", severity_default: major}
+  - {id: metrics-and-glossary, check: "Метрики и словарь продукта заполнены при наличии -> MetricCatalog.md/Glossary.md; иначе помечены пустыми", severity_default: minor}
+  - {id: risks-and-decisions, check: "Известные риски и история ключевых решений извлечены из docs/ADR/issues в черновик (decisions/registry.yaml эпизоды), где найдены", severity_default: minor}
+  - {id: drafts-not-truth, check: "Все заполненные файлы помечены status: draft; источником истины их делает человек (writer≠judge)", severity_default: critical}
+  - {id: no-fabrication, check: "Ничего не выдумано: неопределённое явно помечено «не определено, требует подтверждения»", severity_default: critical}
+  - {id: presets-proposed, check: "По стеку предложены (не включены автоматически) подходящие presets/workflow; включение подтверждает человек", severity_default: minor}

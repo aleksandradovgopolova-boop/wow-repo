@@ -20,4 +20,13 @@ items:
   - {id: risks-and-decisions, check: "Известные риски и история ключевых решений извлечены из docs/ADR/issues в черновик (decisions/registry.yaml эпизоды), где найдены", severity_default: minor}
   - {id: drafts-not-truth, check: "Все заполненные файлы помечены status: draft; источником истины их делает человек (writer≠judge)", severity_default: critical}
   - {id: no-fabrication, check: "Ничего не выдумано: неопределённое явно помечено «не определено, требует подтверждения»", severity_default: critical}
+  # v3.35 Product Operating Model: онбординг заканчивается не документацией, а работой.
+  - {id: repository-classified, check: "Определён класс репозитория (NEW/EARLY/EXISTING/UNKNOWN) по замеренным сигналам — код, история, CI, тесты, миграции, релизы; UNKNOWN означает «не читается», а НЕ «пустой»", severity_default: critical}
+  - {id: provenance-declared, check: "У каждого восстановленного утверждения есть статус и основание: verified (факт репо) / inferred (вывод из структуры) / user_confirmed / unknown. Догадка НЕ публикуется как verified", severity_default: critical}
+  - {id: contours-audited, check: "Состояние восьми контуров модели сверено с registry/product-operating-model.yaml: что закрыто, что кит восстановит сам, что знает только человек -> `ai-ops model`", severity_default: major}
+  - {id: questions-asked-once, check: "Недостающее человеческое знание запрошено ОДНИМ пакетом, и только то, что из репозитория не выводится; где есть основание — с предложением «предполагаю X, подтвердить?»", severity_default: major}
+  - {id: roadmap-drafted, check: "Направление продукта является артефактом: ROADMAP.md с четырьмя горизонтами (Сейчас / Следующий результат / Дальше / Later); цели — id в обратных кавычках", severity_default: critical}
+  - {id: plan-drafted, check: "planning/plan.yaml (kind: delivery-plan) заполнен: цели по приоритету, работы с depends_on/type/owner_role/write_scope. Выводимые статусы (ready/blocked/waiting) НЕ объявляются", severity_default: critical}
+  - {id: gap-plan-progressive, check: "Пробелы разложены по срочности (required_now / required_before_next_change / can_reconstruct / opportunistic), а не выданы одним списком «заполните 14 документов»", severity_default: major}
+  - {id: ends-with-work, check: "Итог онбординга — не «документация создана», а ответ на четыре вопроса и названная следующая работа с обоснованием -> `ai-ops next`", severity_default: critical}
   - {id: presets-proposed, check: "По стеку предложены (не включены автоматически) подходящие presets/workflow; включение подтверждает человек", severity_default: minor}

@@ -1,0 +1,119 @@
+# capability-index.yaml — Нормализованный индекс возможностей (AI Ops Platform V2)
+# Единая точка, из которой routing/self-test выясняют "кто что умеет".
+# НЕ дублирует providers/models/runtimes/tools — ссылается на них по id.
+# Каждая capability-entry обязана иметь status/value/verification_required/source.
+schema_version: 1
+registry_type: capability-index
+
+# Справочник самих возможностей (что вообще бывает).
+capability_dimensions:
+  - context_window
+  - structured_output
+  - tool_calling
+  - native_subagents
+  - parallel_execution
+  - background_execution
+  - file_read
+  - file_write
+  - shell
+  - browser
+  - mcp
+  - embeddings
+  - vision
+  - image_generation
+  - web_access
+  - streaming
+  - data_residency
+  - deployment_model
+  - authentication
+  - rate_limits
+  - cost_class
+  - confidentiality_class
+  - russian_language
+
+status_vocabulary: [declared, documented, verified, inferred, degraded, unsupported, unknown]
+
+# Нормализованные записи. entity_kind: provider|model|runtime|tool|adapter
+# Пример-срез (не полный дубликат реестров): критичные для routing MVP возможности.
+entries:
+  - entity_kind: provider
+    entity_id: gigachat
+    capability: russian_language
+    status: documented
+    value: true
+    verification_required: false
+    last_documented_at: "2026-07-08"
+    last_verified_at: null
+    model_or_version: GigaChat-2-*
+    source: "github.com/ai-forever/gigachat (official SDK)"
+    limitations: null
+    fallback: null
+  - entity_kind: provider
+    entity_id: gigachat
+    capability: data_residency
+    status: inferred
+    value: ru
+    verification_required: true
+    last_documented_at: "2026-07-08"
+    last_verified_at: null
+    source: "Sber press / 3rd-party"
+    limitations: "developers.sber.ru недоступен в сессии аудита"
+    fallback: "on-prem GigaChat Enterprise (verification_required)"
+  - entity_kind: provider
+    entity_id: gigachat
+    capability: mcp
+    status: unsupported
+    value: false
+    verification_required: false
+    source: "official SDK — нет MCP в REST API"
+    fallback: "tool-gateway (gpt2giga / litellm)"
+  - entity_kind: provider
+    entity_id: gigachat
+    capability: structured_output
+    status: documented
+    value: true
+    verification_required: true
+    source: "SDK examples/structured_outputs"
+    limitations: "Beta"
+    fallback: "emulate via function calling / retry+validate"
+  - entity_kind: provider
+    entity_id: anthropic
+    capability: embeddings
+    status: unsupported
+    value: false
+    source: "provider docs"
+    fallback: "openai-embeddings-class / gigachat-embeddings"
+  - entity_kind: runtime
+    entity_id: claude-code
+    capability: native_subagents
+    status: documented
+    value: true
+    source: "runtime docs"
+  - entity_kind: runtime
+    entity_id: generic-api
+    capability: native_subagents
+    status: unsupported
+    value: false
+    fallback: "sequential role isolation"
+  - entity_kind: runtime
+    entity_id: generic-orchestrator
+    capability: parallel_execution
+    status: unsupported
+    value: false
+    source: "tools/orchestrator.py — sequential-only; parallel scheduler planned"
+    fallback: "sequential role isolation"
+  - entity_kind: tool
+    entity_id: openspec-cli
+    capability: deterministic_archive
+    status: documented
+    value: true
+    source: "OpenSpec docs/how-commands-work.md"
+    limitations: "replace-only merge -> parallel-change data-loss risk"
+    fallback: "our sync-before-archive discipline + guard validator"
+
+# Правило актуальности верификации.
+verification_policy:
+  verified_ttl_days: 30
+  on_expiry: mark_stale_and_require_reverify
+  routing_uses: [documented, verified]
+  routing_downgrades_on: [inferred, degraded, unknown, unsupported]

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "package": "ai-first-system",
   "source": "git+<ai-ops-kit-repo-url>",
-  "installed_version": "3.27.6",
+  "installed_version": "3.35.0",
   "installed_at": null,
   "managed_root": ".ai/managed",
   "presets": [],
   "checksums_file": ".checksums.json",
-  "note": "Initial install by ai-ops init."
+  "note": "Updated 3.27.6 -> 3.35.0 by ai-ops CLI."
 }

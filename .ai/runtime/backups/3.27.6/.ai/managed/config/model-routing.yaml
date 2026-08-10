@@ -1,0 +1,8 @@
+version: 1
+routes:
+  high_reasoning:
+    tasks: [architecture, ambiguous_requirements, security, complex_debugging]
+  balanced:
+    tasks: [implementation, test_design, code_review, documentation]
+  fast:
+    tasks: [repository_search, formatting, lint_fixes, mechanical_refactoring]

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/supply-chain-pin.schema.json",
+  "title": "SupplyChainPinPolicy",
+  "description": "SupplyChainPinPolicy (SCP) — security-долг перед расширением автономности (OWASP ASI). Любая внешняя зависимость движка (модель, skill, MCP-сервер) устанавливается ТОЛЬКО по зафиксированному revision/hash — никаких плавающих ссылок (latest/main/HEAD/*). Для исполняемого кода (skill/mcp) обязательна install-верификация (hash или signature). Это ДАННЫЕ+инвариант; исполнять write-capable MCP/самоизменение без такой политики нельзя.",
+  "type": "object",
+  "required": ["schema_version", "kind", "policy_id", "dependencies"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "SupplyChainPinPolicy" },
+    "policy_id": { "type": "string", "pattern": "^SCP-[0-9]{3,}$" },
+    "dependencies": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "source", "pinned"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "enum": ["model", "skill", "mcp"] },
+          "source": { "type": "string", "minLength": 1 },
+          "pinned": {
+            "type": "object",
+            "required": ["type", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "type": "string", "enum": ["revision", "hash", "digest", "tag-immutable"] },
+              "value": { "type": "string", "minLength": 7 }
+            }
+          },
+          "install_verify": {
+            "type": "object",
+            "required": ["method", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "method": { "type": "string", "enum": ["sha256", "signature", "sigstore"] },
+              "value": { "type": "string", "minLength": 8 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

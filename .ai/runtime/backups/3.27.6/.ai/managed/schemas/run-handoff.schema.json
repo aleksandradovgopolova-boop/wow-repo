@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RunHandoff",
+  "description": "Передача состояния прогона между сессиями (Context Lifecycle, этап 3 эпика Context Engineering).",
+  "type": "object",
+  "required": ["schema_version", "kind", "workitem_id", "verification", "next_action"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "RunHandoff"},
+    "run_id": {"type": "string"},
+    "workitem_id": {"type": "string"},
+    "completed": {"type": "array"},
+    "decisions": {
+      "type": "array",
+      "items": {"type": "object", "required": ["id", "summary"],
+                "properties": {"id": {"type": "string"}, "summary": {"type": "string"},
+                               "source": {"type": "string"}}}
+    },
+    "changed_files": {"type": "array"},
+    "verification": {
+      "type": "object",
+      "required": ["passed", "failed"],
+      "properties": {"passed": {"type": "array"}, "failed": {"type": "array"}}
+    },
+    "open_questions": {"type": "array"},
+    "known_risks": {"type": "array"},
+    "next_action": {"type": "string"},
+    "resume_from_revision": {"type": ["string", "null"]}
+  }
+}

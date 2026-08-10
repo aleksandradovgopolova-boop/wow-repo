@@ -1,0 +1,1886 @@
+{
+  "schema_version": 1,
+  "command": "update",
+  "from_version": "3.27.6",
+  "to_version": "3.35.0",
+  "status": "ok",
+  "compatibility": "compatible",
+  "managed_changes": [
+    {
+      "path": ".ai/managed/VERSION",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/cli/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/cli/ai_ops_cli.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/context_compiler.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/context_cost.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/context_engine.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/context_hybrid.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/context_promotion_gate.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/context_retrieval.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/context_shadow.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/repo_graph.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/semantic_lite.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/delivery/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/delivery/pr_open.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/delivery/review_branch.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/bench_lite.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/bench_performance.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/changelog_gen.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/kit_observability.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/model_comparison.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/promotion_qual.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/qual_run.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/devtools/retrieval_bench.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/ai_ops_run.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/ai_route.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/atomic_planner.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/budget.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/execution_pipeline.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/gitio.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/parallel_executor.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/parallel_live.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/parallel_planner.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/pipeline_evidence.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/pipeline_failure.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/pipeline_git.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/pipeline_helpers.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/run_handoff.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/run_plan.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/tool_broker.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/tool_loop.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/workpackage_executor.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/worktree.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/architecture_baseline.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/branch_policy.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/commit_policy.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/delegation_advisor.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/deploy_readiness.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/engineering_advisor.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/environment_map.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/session_boundary.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/session_guardrails.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/session_telemetry.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engops/session_telemetry_provider.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/approvals.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/concurrency_preflight.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/economic_preflight.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/evidence_collector.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/gate_executor.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/gate_policy.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/gate_result_v2.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/gate_runtime.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/invariants.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/preflight.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/regression_evidence.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/spec_levels.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/gates/verification_tiers.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/intelligence/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/intelligence/effect_metrics.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/intelligence/evolution_triggers.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/intelligence/product_health.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/lifecycle/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/lifecycle/active_work.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/lifecycle/lifecycle_intent.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/lifecycle/lifecycle_store.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/lifecycle/merge_memory.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/lifecycle/run_report.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/lifecycle/workitem.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/planning/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/planning/contours.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/planning/delivery_plan.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/planning/next_work.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/planning/repo_audit.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/planning/roadmap.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/cost_account.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/cost_method.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/model_router.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/orchestrator.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/orchestrator_http.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/orchestrator_providers.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/orchestrator_usage.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/provider_endpoints.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/providers/usage_ledger.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/security/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/security/data_classification.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/security/seam_scan.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/security/security_enforcement.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/security/security_pack.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/security/security_review_cascade.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/security/security_scan.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/shared/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/shared/_bootstrap.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/shared/contracts.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/shared/generate_artifacts.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/shared/generate_runtime.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/shared/path_hygiene.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/shared/project_detector.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/ui/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/ui/presenter.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/ui/storybook_adapter.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/ui/storybook_query.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/ui/ui_evidence_collect.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/ui/ui_readiness.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/_bootstrap.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/ai_managed_checksums.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_adr_registry.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_ai_ops_child.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_architecture_decision.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_claims.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_cross_artifacts.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_duties.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_engops_policy.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_event_catalog.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_feature_blueprint.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_freshness.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_knowledge_graph.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_memory_governance.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_openspec_change.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_plan_artifact.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_quality_attributes.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_references.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_requirements_artifact.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_reviewer_result.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_scenario_evidence.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_spec_artifact.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_storybook_evidence.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/validation/validate_surface_wiring.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/manifest/ai-ops-manifest.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/quality/gates.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/registry/communication-policy.yaml",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/registry/entities.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/registry/product-operating-model.yaml",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/registry/release-claims.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/registry/runtimes.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/registry/tracks.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/rules/meta/repo-onboarding.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/schemas/child-config.schema.json",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/templates/planning/ROADMAP.md",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/templates/planning/plan.yaml",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/templates/runtime/claude-communication.md",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/__init__.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/_bootstrap.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/active_work.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/ai_ops_cli.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/ai_ops_run.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/ai_route.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/approvals.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/architecture_baseline.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/atomic_planner.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/branch_policy.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/budget.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/commit_policy.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/concurrency_preflight.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/context_compiler.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/context_cost.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/context_engine.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/context_hybrid.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/context_promotion_gate.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/context_retrieval.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/context_shadow.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/contours.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/contracts.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/cost_account.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/cost_method.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/data_classification.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/delegation_advisor.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/delivery_plan.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/deploy_readiness.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/economic_preflight.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/effect_metrics.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/engineering_advisor.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/environment_map.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/evidence_collector.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/evolution_triggers.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/execution_pipeline.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/gate_executor.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/gate_policy.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/gate_result_v2.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/gate_runtime.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/generate_artifacts.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/generate_runtime.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/gitio.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/invariants.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/lifecycle_intent.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/lifecycle_store.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/merge_memory.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/model_router.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/next_work.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/orchestrator.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/orchestrator_http.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/orchestrator_providers.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/orchestrator_usage.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/parallel_executor.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/parallel_live.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/parallel_planner.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/path_hygiene.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/pipeline_evidence.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/pipeline_failure.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/pipeline_git.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/pipeline_helpers.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/pr_open.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/preflight.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/presenter.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/product_health.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/project_detector.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/provider_endpoints.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/regression_evidence.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/repo_audit.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/repo_graph.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/review_branch.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/roadmap.py",
+      "action": "add",
+      "reason": "новый managed-файл"
+    },
+    {
+      "path": ".ai/managed/tools/run_handoff.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/run_plan.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/run_report.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/seam_scan.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/security_enforcement.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/security_pack.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/security_review_cascade.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/security_scan.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/semantic_lite.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/session_boundary.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/session_guardrails.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/session_telemetry.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/session_telemetry_provider.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/spec_levels.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/storybook_adapter.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/storybook_query.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/tool_broker.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/tool_loop.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/ui_evidence_collect.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/ui_readiness.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/usage_ledger.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/verification_tiers.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/workitem.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/workpackage_executor.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/tools/worktree.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/containers/Dockerfile",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/containers/deliver-run-branches.sh",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/containers/run-sandboxed.sh",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/PHASE-B-QUALIFICATION-REPORT.md",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/bootstrap/v3.8.0-plan.yaml",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/go/calc.go",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/go/calc_test.go",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/go/go.mod",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/golden/go-test-add.txt",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/golden/go-test-sub.txt",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/golden/java-test-add.txt",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/golden/java-test-sub.txt",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/golden/pytest.txt",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/golden/rust-test-add.txt",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/golden/rust-test-sub.txt",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/java/pom.xml",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/java/src/main/java/Calc.java",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/java/src/test/java/CalcTest.java",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/python/.pytest_cache/.gitignore",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/python/.pytest_cache/CACHEDIR.TAG",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/python/.pytest_cache/README.md",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/python/.pytest_cache/v/cache/lastfailed",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/python/.pytest_cache/v/cache/nodeids",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/python/calc.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/python/pyproject.toml",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/python/test_calc.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/rust/Cargo.toml",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/fixtures/rust/src/lib.rs",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/promotion/v3.6.8-plan.yaml",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/qualification/scenarios.yaml",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/tools/bench_lite.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/tools/model_comparison.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/tools/promotion_qual.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/tools/qual_run.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/tools/retrieval_bench.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/ai_capability_selftest.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/ai_managed_checksums.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/ai_route.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_access_filter.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_adr_registry.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_agent_evals.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_agents_checklist.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_ai_first_config.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_ai_first_providers.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_ai_first_registry.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_ai_first_workflows.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_ai_ops_child.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_architecture_decision.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_bootstrap_qualification.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_budget_contract.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_capability_scope.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_claims.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_container_assets.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_container_delivery.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_context_architecture.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_context_bundle.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_context_completeness.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_context_qualification.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_cross_artifacts.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_decisions.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_duties.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_engops_policy.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_event_catalog.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_feature_blueprint.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_feature_learning.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_freshness.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_integration_trace.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_key_lifecycle.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_knowledge_graph.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_learning_loop.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_loop_policy.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_loop_trace.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_memory_governance.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_model_qualification.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_model_roles.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_openspec_change.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_package_boundaries.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_pipeline_e2e.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_plan_artifact.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_post_release_readout.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_presets.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_product_qualification.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_promotion_qualification.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_provider_residency.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_python_compat.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_qualification.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_quality_attributes.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_references.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_regression_corpus.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_release_claims.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_requirements_artifact.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_research_artifacts.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_reviewer_result.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_run_handoff.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_runtime_surface.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_scenario_evidence.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_security_domains.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_security_posture.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_spec_artifact.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_spec_coverage.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_stack_qualification.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_stale_gates.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_standalone_engine.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_storybook_evidence.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_supply_chain.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_surface_wiring.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_work_graph.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    },
+    {
+      "path": ".ai/managed/validation/validate_workflow_gates.py",
+      "action": "remove",
+      "reason": "исключён из managed_set"
+    }
+  ],
+  "direct_edits_detected": [],
+  "migrations_applied": [
+    "3.33-to-3.34"
+  ],
+  "preserved_paths": [
+    ".ai/project/**",
+    ".ai/custom/**"
+  ],
+  "smoke_tests": [
+    {
+      "check": "validate_ai_ops_child.py",
+      "status": "pass"
+    },
+    {
+      "check": "validate_ai_first_registry.py",
+      "status": "pass"
+    },
+    {
+      "check": "validate_ai_first_providers.py",
+      "status": "pass"
+    },
+    {
+      "check": "validate_ai_first_workflows.py",
+      "status": "pass"
+    }
+  ],
+  "backup_ref": ".ai/runtime/backups/3.27.6",
+  "pull_request": null,
+  "human_approval_required": false,
+  "report": "Обновление 3.27.6 -> 3.35.0: 361 изменений, 598 файлов под контролем. Back-fill контекста (черновики status: draft): product/ProductStatus.md, now.md. Back-fill модели продукта (черновики, заполнить вам): ROADMAP.md, planning/plan.yaml. Политика общения подключена к runtime (блок в CLAUDE.md между маркерами; текст вне них не тронут). Дальше: `ai-ops model .` покажет, что кит понял о проекте, и спросит недостающее одним пакетом. Создайте PR с этим diff — silent update запрещён.",
+  "context_backfilled": [
+    {
+      "doc": "product/ProductStatus.md",
+      "action": "created-draft"
+    },
+    {
+      "doc": "now.md",
+      "action": "created-draft"
+    }
+  ],
+  "skills_synced": [
+    "product-session-review",
+    "system-constraint-analysis",
+    "contradiction-resolution",
+    "decision-support",
+    "frontend-design",
+    "e2e-browser-testing",
+    "user-documentation",
+    "product-demo-video",
+    "repo-onboarding",
+    "plain-language-communication"
+  ],
+  "commands_installed": {
+    "claude_commands": 14,
+    "codex_prompts": 0,
+    "codex_generated": 14
+  },
+  "communication_adapter": {
+    "action": "created",
+    "path": "/Users/sasad/projects/wow-repo/CLAUDE.md"
+  },
+  "planning_seeded": [
+    {
+      "artifact": "ROADMAP.md",
+      "action": "created-draft"
+    },
+    {
+      "artifact": "planning/plan.yaml",
+      "action": "created-draft"
+    }
+  ]
+}

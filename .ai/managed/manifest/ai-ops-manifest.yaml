@@ -6,7 +6,7 @@ schema_version: 1
 kind: ai-ops-manifest
 
 ai_ops:
-  package_version: 3.27.6
+  package_version: 3.35.0
   schema_version: 1
   minimum_runtime_contract: 1
 
@@ -22,7 +22,7 @@ spec_protocol:
   extension_schemas: [openspec/schemas/product, openspec/schemas/research]
   change_template: openspec/change-template/
   example: examples/openspec-demo/            # проходит openspec validate --all --strict
-  parallel_merge_guard: validation/validate_openspec_change.py
+  parallel_merge_guard: ai_ops_kit/validation/validate_openspec_change.py
   fallback: [pin-version, fork-mit, our-format-validator]
 
 registries:
@@ -78,6 +78,10 @@ skills:
       path: skills/repo-onboarding/SKILL.md
       opt_in: true
       checklist: rules/meta/repo-onboarding.yaml
+    - id: plain-language-communication  # v3.35, НЕ opt-in: регулирует каждый ответ человеку
+      path: skills/plain-language-communication/SKILL.md
+      opt_in: false
+      policy: registry/communication-policy.yaml
   authoring_convention: rules/meta/skill-authoring.yaml   # v2.11: конвенция авторинга (из skill-creator)
 
 quality_gates:
@@ -86,7 +90,7 @@ quality_gates:
   mvp_blocking_max: 8
   # Честность пути исполнения (self-audit v2.67): 7 из 8 MVP-blocking гейтов enforced per-task
   # gate_executor'ом через workflow.quality_gates/треки; spec_synchronization — детерминированный
-  # OpenSpec-гейт, enforced OpenSpec CLI + validation/validate_openspec_change.py в CI
+  # OpenSpec-гейт, enforced OpenSpec CLI + ai_ops_kit/validation/validate_openspec_change.py в CI
   # (gate.enforced_by=openspec-ci-guard), НЕ per-task прогоном. validate_workflow_gates теперь
   # ERROR'ит недостижимый MVP-blocking гейт (orphan-guard), так что этот класс дрифта не повторится.
   enforced_by_ci_guard: [spec_synchronization, archive_readiness]
@@ -108,8 +112,8 @@ providers:
   tools: registry/tools.yaml
   capability_index: registry/capability-index.yaml
   routing_policy: registry/routing-policy.yaml
-  routing_engine: validation/ai_route.py
-  capability_selftest: validation/ai_capability_selftest.py
+  routing_engine: ai_ops_kit/engine/ai_route.py
+  capability_selftest: ai_ops_kit/validation/ai_capability_selftest.py
   first_class: [anthropic, openai]
   live_executor_providers: [anthropic, openai, openai-compatible]  # v2.39: openai-compatible (DeepSeek/local) через OPENAI_COMPATIBLE_BASE_URL+ключ
   planned: [gigachat]         # опциональный провайдер на будущее (config-switch, без ключей сейчас)
@@ -118,12 +122,12 @@ providers:
 knowledge_integrity:
   # v2.9: drift-control (идея team-os-toolkit), наведённый сначала на сам пакет.
   status: integrated
-  references_validator: validation/validate_references.py    # uses_skills/checklist/owner/gate резолвятся
+  references_validator: ai_ops_kit/validation/validate_references.py    # uses_skills/checklist/owner/gate резолвятся
   claims: knowledge/claims.yaml                              # утверждения документации о коде
-  claims_validator: validation/validate_claims.py            # типы: file-exists, symbol-exists, enum-values, count (v2.67)
-  python_compat_validator: validation/validate_python_compat.py  # v2.69: PEP 604 union без future-import ломает <3.10
+  claims_validator: ai_ops_kit/validation/validate_claims.py            # типы: file-exists, symbol-exists, enum-values, count (v2.67)
+  python_compat_validator: ai_ops_kit/validation/validate_python_compat.py  # v2.69: PEP 604 union без future-import ломает <3.10
   freshness_policy: rules/core/FreshnessPolicy.md            # классы stable/evolving/volatile
-  freshness_validator: validation/validate_freshness.py
+  freshness_validator: ai_ops_kit/validation/validate_freshness.py
   gates: [knowledge_integrity, knowledge_freshness]           # non-blocking до обкатки
   child_claims_path: ".ai/project/knowledge/claims.yaml"      # где child хранит свои claims
 
@@ -138,7 +142,7 @@ execution_engine:
     child_path: "features/<id>/run-plan.yaml"
   phase1_done: [run-plan-tracks, structured-reviewer-outputs, per-gate-evidence-schema]
   reviewer_result_schema: schemas/reviewer-result.schema.json   # источник истины вместо regex
-  reviewer_result_validator: validation/validate_reviewer_result.py
+  reviewer_result_validator: ai_ops_kit/validation/validate_reviewer_result.py
   project_detector:                         # v2.41 (P0#5 аудита): stack-aware evidence
     tool: tools/project_detector.py          # detect -> RepositoryProfile (стек, команды build/lint/test)
     schema: schemas/repository-profile.schema.json
@@ -192,7 +196,7 @@ execution_engine:
   release_3_0:                              # docs/3.0-design.md; запускается по явному решению
     design: docs/3.0-design.md
     packages_declared: packages/            # v2.46 (срез 0): 5 деклараций границ, БЕЗ переноса файлов
-    boundary_validator: validation/validate_package_boundaries.py  # DAG + непересечение + резолв
+    boundary_validator: ai_ops_kit/validation/validate_package_boundaries.py  # DAG + непересечение + резолв
     slice0_done: true                       # границы объявлены и стережутся валидатором
     slice1_done: true                       # v2.47: ai-run — канонический вход; ai-start-task — совместимый алиас
     canonical_entry: commands/task/ai-run.md  # генерируется в раннтайм (generate_runtime.render_ai_run)
@@ -289,7 +293,7 @@ execution_engine:
     clean_areas: "51 агент, 14 ревьюеров, workflow-декларации, AGENTS.md checklist ⊆ CI, reference/claim integrity — расхождений нет"
     fixed_v2_69:                              # первый реальный finding квалификационного харнесса
       - "PORTABILITY: generate_artifacts.py и run_report.py использовали `X | None` (PEP 604) в аннотациях без future-import -> на Python 3.9 (дефолт macOS CommandLineTools) весь движок падал TypeError при импорте (ai_ops_run->workitem->run_report->generate_artifacts). Пойман попыткой живого qual-прогона с Mac. Фикс: `from __future__ import annotations` (ленивые аннотации, PEP 563)"
-      - "guard: validation/validate_python_compat.py (AST) — union-аннотация `X | Y` без future-import = ERROR в CI; класс «падает на 3.9» больше не пройдёт. Документированный floor понижен 3.10+ -> 3.9+ (честно: дефолтный python3 macOS подходит)"
+      - "guard: ai_ops_kit/validation/validate_python_compat.py (AST) — union-аннотация `X | Y` без future-import = ERROR в CI; класс «падает на 3.9» больше не пройдёт. Документированный floor понижен 3.10+ -> 3.9+ (честно: дефолтный python3 macOS подходит)"
     live_qual_run_2026_07_17:                 # первый живой прогон qual-харнесса на реальном child (ii-sreda, DeepSeek)
       result: "движок отработал на ii-sreda: изолированный worktree создан, петля прошла. Для ENGINEERING-класса гейты ЧЕСТНО заблокировали (unmet: requirements/specification/plan_readiness/code_review — pipeline не производит для них evidence). Это подтверждает backlog P0.4, а не баг: движок не подделывает pass"
       fixed_v2_70: "qual_run завышал класс задачи до ENGINEERING по умолчанию -> любая задача блокировалась гейтами, для которых pipeline не даёт evidence. Дефолт -> QUICK (реально поддерживаемый класс: tool-loop + intake + implementation_verification) + флаг --task-type для осознанного выбора класса"
@@ -361,7 +365,7 @@ execution_engine:
     added_v3_1_7_storybook_evidence_adapter:
       - "schemas/ui-evidence-bundle.schema.json — контракт UIEvidenceBundle (storybook/state_coverage/interaction/accessibility/visual/design_system с явным status, вкл. not_run/absent — 'нет данных' не выдаётся за 'чисто')"
       - "tools/storybook_adapter.py — оффлайн stdlib-адаптер: собирает UIEvidenceBundle из ЛОКАЛЬНЫХ артефактов child-репо (Storybook static index + vitest/axe/visual/design-system results). БЕЗ SaaS/MCP; kit НЕ становится React-app. evidence_for_gate() — shadow-мост к gate_policy.evidence_mode"
-      - "validation/validate_storybook_evidence.py — структура + СЕМАНТИКА (статус нельзя разойтись с цифрами: pass ⟺ 0 blocking a11y / passed=total / changed=0; новые компоненты без обоснования -> fail); drift-guard enum'ов против схемы"
+      - "ai_ops_kit/validation/validate_storybook_evidence.py — структура + СЕМАНТИКА (статус нельзя разойтись с цифрами: pass ⟺ 0 blocking a11y / passed=total / changed=0; новые компоненты без обоснования -> fail); drift-guard enum'ов против схемы"
       - "templates/quality/StorybookPolicy.md — маппинг UIEvidenceBundle -> 4 UI-гейта -> evidence_mode (visual=deterministic; design_system/accessibility/ux=hybrid; not_run -> остаётся за ревьюером, fail-closed)"
       - "SHADOW: только сбор+валидация, enforcement нет (это v3.1.8 + GateResult v2). Safety-гейты не трогаются. 2 selftest в CI+AGENTS.md"
     added_v3_1_6_ui_gate_applicability_shadow:
@@ -716,7 +720,7 @@ execution_engine:
       - "САМОАУДИТ нового слоя нашёл ложный green (тот же класс, что аудит execution-движка): security_pack (v2.101) проверял применимость доменов только по ПУТИ изменённого файла -> auth-логика в файле, чей путь не матчит паттерны (напр. src/users.py с plaintext-сравнением пароля), не поднимала домен authentication -> применим только secrets -> чисто -> security АВТО-ПРОХОДИЛ (ложный green в самом остром гейте)"
       - "фикс: _applies проверяет file_patterns по пути И по СОДЕРЖИМОМУ изменённых файлов. Под-срабатывание (опасное, ведёт к ложному green) устранено; пере-срабатывание -> лишний needs_review (fail-closed, безопасно). Регрессия в security_pack selftest: src/users.py c 'password' -> authentication применим, overall != clear"
     fixed_v2_103_context_qualification:
-      - "этап 7 (финал эпика) Qualification нового слоя: validation/validate_context_qualification.py гоняет Q1-Q10 ДЕТЕРМИНИРОВАННО против построенных инструментов (без модели, в CI): Q1 context filtering, Q2 context overflow->декомпозиция, Q3 resume, Q4 stale context, Q5 spec depth (QUICK L0 / PRODUCT L2), Q6 unsafe assumption->эскалация, Q7 security applicability (frontend без DB/tenant audit), Q8 prompt injection не переопределяет policy, Q9 long-running (решение сохранено в Handoff), Q10 human approval для auth/secret boundary"
+      - "этап 7 (финал эпика) Qualification нового слоя: ai_ops_kit/validation/validate_context_qualification.py гоняет Q1-Q10 ДЕТЕРМИНИРОВАННО против построенных инструментов (без модели, в CI): Q1 context filtering, Q2 context overflow->декомпозиция, Q3 resume, Q4 stale context, Q5 spec depth (QUICK L0 / PRODUCT L2), Q6 unsafe assumption->эскалация, Q7 security applicability (frontend без DB/tenant audit), Q8 prompt injection не переопределяет policy, Q9 long-running (решение сохранено в Handoff), Q10 human approval для auth/secret boundary"
       - "ЭПИК Context Engineering & Spec-Driven Execution ЗАВЕРШЁН (7/7): Context Compiler (v2.97) + Adaptive Spec-First (v2.98) + Context Lifecycle/Resume (v2.99) + Atomic Planning/Context Budget (v2.100) + Security Pack (v2.101) + Intent UX (v2.102) + Qualification (v2.103). Живые сценарии с моделью — на машине пользователя; механика слоя покрыта детерминированно в CI"
     fixed_v2_102_intent_ux:
       - "этап 6 Простой внешний UX: tools/ai_ops_cli.py — intent-команды new/onboard/discuss/specify/plan/run/resume/review/status/health поверх флагов. Пользователь НЕ обязан помнить --engine pipeline/--author/--review/--baseline-diff/--sandbox: resolve_flags авто-подбирает пресет по классу задачи (ENGINEERING/PRODUCT/CRITICAL -> review+author; всегда sandbox+baseline). Флаги остаются доступны как низкоуровневый интерфейс"
@@ -725,7 +729,7 @@ execution_engine:
     fixed_v2_101_security_pack:
       - "этап 5 Security Pack: security/security-domains.yaml — 12 доменов (authentication, authorization/IDOR, input_validation, secrets, dependencies, rate_limiting, file_upload, network/SSRF, logging/monitoring, deployment/config, ai_prompt_injection, data_isolation) с applicability(signals+file_patterns), deterministic_checks, reviewer_checklist, required_evidence, severity_policy, blocking/human_approval conditions, remediation_template"
       - "tools/security_pack.py: выбирает ТОЛЬКО применимые к изменению домены (frontend-only не запускает database/tenant audit, но проверяет XSS/secrets), гоняет детерминированные проверки (secret_scan/dependency_audit/injection_scan из security_scan) и даёт доменный вердикт. Честность: домен нельзя закрыть фразой «уязвимостей нет» (allowed_evidence_sources); авто-закрыть можно ТОЛЬКО домены, чьё required_evidence целиком детерминированно (secrets/dependencies) и чисто; домены с security_reviewer/human -> needs_review; находка -> fail+блок по severity"
-      - "гейт security в pipeline теперь domain-aware: проходит ТОЛЬКО при pack overall='clear' (все применимые домены закрыты детерминированным evidence); иначе честный блок с перечнем блокирующих/needs_review доменов. validation/validate_security_domains.py стережёт контракт (12 доменов, required_evidence ⊆ allowed, severity, remediation). В checklist и CI"
+      - "гейт security в pipeline теперь domain-aware: проходит ТОЛЬКО при pack overall='clear' (все применимые домены закрыты детерминированным evidence); иначе честный блок с перечнем блокирующих/needs_review доменов. ai_ops_kit/validation/validate_security_domains.py стережёт контракт (12 доменов, required_evidence ⊆ allowed, severity, remediation). В checklist и CI"
     fixed_v2_100_atomic_planning:
       - "этап 4 Atomic Planning и Context Budget: tools/atomic_planner.py оценивает рабочий пакет (объём контекста из ContextBundle, файлы, системные границы/подсистемы, зависимости, ожидаемые model calls, риск, критерий завершения) и предлагает декомпозицию, если контекст превышает бюджет / слишком много подсистем (>2) / несколько независимых результатов / нужно >1 коммита / не проверяемо одним критерием / размер large-xl"
       - "инвариант: декомпозиция называет ОСИ разбиения (by-context-budget/by-subsystem/by-result/by-commit/by-verifiable-unit/by-size), но НЕ меняет продуктовый смысл и не принимает новых бизнес-решений ради удобства модели (constraint_note); итог подтверждает человек. acceptance: один проверяемый результат на пакет, каждый пакет — отдельный commit, зависимости явные"
@@ -733,17 +737,17 @@ execution_engine:
     fixed_v2_99_context_lifecycle_resume:
       - "этап 3 Context Lifecycle и Resume: tools/run_handoff.py — артефакт RunHandoff (что сделано, changed_files, verification passed/failed, open_questions, known_risks, next_action, resume_from_revision) собирается из отчёта прогона. Сущности Feature->WorkItem->Run->Stage->Step->Handoff. Встроено в lifecycle: features/<wid>/run-handoff.yaml + report['handoff']"
       - "resume: run_handoff.resume_preflight(child, wid, base) детерминированно проверяет — есть ли handoff, на месте ли ветка/worktree, УШЁЛ ЛИ base вперёд с момента прогона (revalidation_needed: старый evidence не действителен для нового состояния), устарели ли решения. CLI `ai-ops resume <child> <feature>` печатает preflight + указывает, как продолжить (worktree/ветка переиспользуются, не начиная заново)"
-      - "артефакт schemas/run-handoff.schema.json + validation/validate_run_handoff.py (форма: next_action обязателен, verification passed/failed, decisions с id+summary, resume_from_revision строка|null). В checklist, CI и e2e-харнессе. Инварианты resume: не начинать заново, не повторять подтверждённое без причины, ревалидация при смене main, не удалять предыдущий результат"
+      - "артефакт schemas/run-handoff.schema.json + ai_ops_kit/validation/validate_run_handoff.py (форма: next_action обязателен, verification passed/failed, decisions с id+summary, resume_from_revision строка|null). В checklist, CI и e2e-харнессе. Инварианты resume: не начинать заново, не повторять подтверждённое без причины, ревалидация при смене main, не удалять предыдущий результат"
     fixed_v2_98_adaptive_spec_first:
       - "этап 2 Adaptive Spec-First: tools/spec_levels.py выбирает глубину спецификации L0 QUICK / L1 ENGINEERING / L2 PRODUCT / L3 CRITICAL детерминированно из сигналов (базовый уровень по task_type + эскалация по риску/необратимости/secret_boundary/измеримому польз.изменению). Разделы КУМУЛЯТИВНЫ (уровень N включает всё <= N)"
       - "инварианты честности: уровень видно ПОЧЕМУ (level_reason); можно повысить, нельзя понизить молча (запрос ниже расчётного -> остаётся расчётный + escalated_from); статус раздела complete|not_applicable|declined|needs_human|missing; declined ТРЕБУЕТ note; ready_to_implement=False при непустом blocking_missing (missing-разделах)"
-      - "артефакт SpecCoverage + validation/validate_spec_coverage.py (форма + инварианты: declined с note, blocking_missing = ровно missing, ready несовместим с missing, escalated_from < level). Встроено в lifecycle контроллера: features/<wid>/spec-coverage.yaml + report['spec_coverage'] (уровень/эскалация/пробелы/needs_human). Пока информативно (не хард-блок в pipeline — чтобы QUICK-из-промпта не ломался); enforcement блокирующих разделов — на стыке с этапом 4"
+      - "артефакт SpecCoverage + ai_ops_kit/validation/validate_spec_coverage.py (форма + инварианты: declined с note, blocking_missing = ровно missing, ready несовместим с missing, escalated_from < level). Встроено в lifecycle контроллера: features/<wid>/spec-coverage.yaml + report['spec_coverage'] (уровень/эскалация/пробелы/needs_human). Пока информативно (не хард-блок в pipeline — чтобы QUICK-из-промпта не ломался); enforcement блокирующих разделов — на стыке с этапом 4"
     fixed_v2_97_context_compiler:
       - "этап 1 Context Compiler: tools/context_compiler.py собирает МИНИМАЛЬНЫЙ релевантный ContextBundle на WorkItem вместо загрузки всего репо/правил/агентов. Селекция ДЕТЕРМИНИРОВАННА и обоснована реальными данными: agents = владельцы стадий base_workflow + responsible_role гейтов плана (∩ registry); skills = uses_skills стадий; rules = категории по workflow+трекам (core всегда); repository_context = RepositoryProfile; files = манифесты стека; specs/decisions = существующие артефакты"
       - "честность отбора: excluded несёт причину для КАЖДОГО источника (агенты не из RunPlan, правила не по задаче); estimated_tokens считается ДО вызова модели; overflow НЕ обрезает контекст молча (поднимает open_question); stale-артефакты помечаются; тот же WorkItem при тех же входах -> ВОСПРОИЗВОДИМЫЙ пакет (без времени/рандома)"
-      - "артефакт schemas/context-bundle.schema.json + валидатор validation/validate_context_bundle.py (форма + инварианты честности: excluded с причинами, overflow не молча, агент не в included и excluded одновременно). Встроено в lifecycle контроллера (v2.94): bundle сохраняется features/<wid>/context-bundle.yaml рядом с планом, сводка в report['context_bundle'], проверяется e2e-харнессом. В checklist и CI"
+      - "артефакт schemas/context-bundle.schema.json + валидатор ai_ops_kit/validation/validate_context_bundle.py (форма + инварианты честности: excluded с причинами, overflow не молча, агент не в included и excluded одновременно). Встроено в lifecycle контроллера (v2.94): bundle сохраняется features/<wid>/context-bundle.yaml рядом с планом, сводка в report['context_bundle'], проверяется e2e-харнессом. В checklist и CI"
     fixed_v2_96_real_qualification:
-      - "канонический e2e в CI (аудит 2.96): validation/validate_pipeline_e2e.py поднимает НАСТОЯЩИЙ git-репо из python-фикстуры и гоняет ПОЛНЫЙ путь `ai-ops run --engine pipeline --execute` со scripted-proposer (без модели) -> проверяет цепочку task->RunPlan->WorkItem->active-work->detect->tool-loop->commit на ветке->evidence на точном SHA->гейты->run-report->active-work закрыта. Раньше CI гонял в основном selftest-модули"
+      - "канонический e2e в CI (аудит 2.96): ai_ops_kit/validation/validate_pipeline_e2e.py поднимает НАСТОЯЩИЙ git-репо из python-фикстуры и гоняет ПОЛНЫЙ путь `ai-ops run --engine pipeline --execute` со scripted-proposer (без модели) -> проверяет цепочку task->RunPlan->WorkItem->active-work->detect->tool-loop->commit на ветке->evidence на точном SHA->гейты->run-report->active-work закрыта. Раньше CI гонял в основном selftest-модули"
       - "матрица Python в CI: новый job pipeline-e2e гоняет e2e + стек-квалификацию + ядро движка на Python 3.9 И 3.12 (раньше только 3.12). ai_ops_run.run получил проброс install_deps (e2e offline, без pip)"
       - "живые сценарии расширены до S1-S10 (qualification/scenarios.yaml): + prompt-injection в репо, попытка изменить основной checkout из контейнера (worktree-only), повтор/resume и идемпотентный PR, настоящий push+draft PR, работа на КРАСНОЙ базе. Прогон полной живой матрицы (Node/Python/Go × macOS/Linux с моделью) — на машине пользователя (docs/qualification-runbook.md); scripted-e2e закрывает механику детерминированно, качество правок — модель"
       - "ЧЕСТНО (остаток, требует окружения пользователя): (1) полная живая матрица с моделью посильнее DeepSeek; (2) реальная сборка Docker-образа в CI закрыта egress-прокси песочницы кита -> на Docker-хосте пользователя; (3) сохранение execution-report как CI-artifact — можно добавить, когда живая матрица переедет в CI с моделью"
@@ -810,7 +814,7 @@ event_contract:
   # v2.29: единый каталог имён событий — против contract<->code<->analytics drift.
   status: integrated
   schema: schemas/event-catalog.schema.json
-  validator: validation/validate_event_catalog.py   # + --scan по коду (best-effort)
+  validator: ai_ops_kit/validation/validate_event_catalog.py   # + --scan по коду (best-effort)
   rule: rules/engineering/EventNamingConvention.md
   gate: event_contract_consistency                   # advisory до обкатки
   child_path: ".ai/project/contracts/events.yaml"
@@ -835,7 +839,7 @@ decision_intelligence:
   status: integrated
   registry: decisions/registry.yaml                    # принципы + эпизоды + исходы
   schema: schemas/decisions-registry.schema.json
-  validator: validation/validate_decisions.py
+  validator: ai_ops_kit/validation/validate_decisions.py
   skill: skills/decision-support/SKILL.md              # recommendation-first + one-way-door
   workflow: DECISION
   gate: decision_quality                                # non-blocking до обкатки
@@ -848,7 +852,7 @@ security_policies:
   secrets_in_repo: forbidden
   # v2.20: постура безопасности — карта по 13 областям (status/evidence/severity)
   posture: governance/security-posture.yaml
-  posture_validator: validation/validate_security_posture.py
+  posture_validator: ai_ops_kit/validation/validate_security_posture.py
   policies: governance/security-policies.md
   information_boundaries: governance/information-boundaries.md
   audit_log: ".ai/runtime/interaction-log.jsonl"       # append-only действия ИИ (orchestrator)
@@ -882,6 +886,30 @@ session_orchestration:
       # Пути относительно context/ (в репо: .ai/project/context/<путь>).
       - product/ProductStatus.md               # что реально готово/живёт (ярус 1)
       - now.md                                 # снимок на дату (ярус 1)
+  product_operating_model:                    # v3.35: модель продуктового репозитория
+    registry: registry/product-operating-model.yaml   # 8 контуров, роли, типы работы, состояния
+    package: ai_ops_kit/planning                      # контур Planning & Execution в коде
+    validator: ai_ops_kit/validation/validate_product_model.py
+    gate: contour_consistency                         # advisory до обкатки на child-репозиториях
+    commands: [next, model]                           # четыре вопроса / понимание репозитория
+    required_repo_artifacts:                          # обязательные артефакты контура планирования
+      - ROADMAP.md                                    # направление: четыре горизонта
+      - planning/plan.yaml                            # delivery plan: kind: delivery-plan
+    templates:
+      roadmap: templates/planning/ROADMAP.md
+      plan: templates/planning/plan.yaml
+    invariants:
+      - "unknown != not_changed: контур без сигнальных путей кит видеть не умеет и говорит об этом"
+      - "выводимый статус (ready/blocked/waiting) не объявляется — он считается из графа и гейтов"
+      - "план называет РОЛЬ; исполнителя выбирает роутер в момент запуска"
+      - "not_changed не требует обновления документов — бюрократии «8 документов на задачу» нет"
+  communication:                              # v3.35: Human Communication Layer
+    policy: registry/communication-policy.yaml
+    presenter: ai_ops_kit/ui/presenter.py             # контракт UserMessage в КОДЕ, не только в скилле
+    skill: skills/plain-language-communication/SKILL.md
+    runtime_adapter: templates/runtime/claude-communication.md
+    default_audience: product                         # по умолчанию — владелец продукта, не отладчик
+    invariant: "перевод меняет язык, а не факты: degraded остаётся degraded на всех уровнях"
   concurrency_preflight:                      # v2.28: коллизии параллельной работы до старта
     gate: concurrency_preflight                # quality/gates.yaml, stage intake, advisory
     tool: tools/concurrency_preflight.py       # base_changes (git) + open PRs (gh -> REST) + active-work
@@ -929,7 +957,7 @@ runtime_spec:
   contract: persistent-agent-runtime        # registry/runtimes.yaml -> runtime_contracts
   spec: runtime/robin/ROBIN.md
   duties_example: runtime/robin/duties.example.yaml
-  duties_validator: validation/validate_duties.py
+  duties_validator: ai_ops_kit/validation/validate_duties.py
   binding_template: templates/runtime/runtime-binding.example.yaml
   child_duties_path: ".ai/project/runtime/robin/duties.yaml"
   read_mostly: true                          # нет записи в prod и в curated-память
@@ -963,8 +991,11 @@ update_policy:
     # файлы, принадлежащие ai-ops-execution/quality/..., ставятся при выборе этих пакетов;
     # без выбора packages (дефолт) — ставится всё. Полный self-contained доказан
     # validate_standalone_engine.py (subprocess из .ai/managed без parent на path).
+    # v3.30: код движка переехал в пакеты ai_ops_kit/*; tools/**/*.py остались тонкими
+    # алиасами обратной совместимости, поэтому в поставку нужны ОБА — иначе алиас в
+    # child-репозитории ссылается на несуществующий пакет.
+    - "ai_ops_kit/**/*.py"
     - "tools/**/*.py"
-    - "validation/**/*.py"
     - "config/**/*"
     - "qualification/**/*"
     - "containers/*"
@@ -976,11 +1007,13 @@ update_policy:
   provenance: ".ai/managed/.provenance.json"
   checksums: ".ai/managed/.checksums.json"
   update_lock: ".ai/managed/.update-lock"
-  drift_detection: "validation/ai_managed_checksums.py verify"
+  drift_detection: "ai_ops_kit/validation/ai_managed_checksums.py verify"
   example_install: "examples/child-install/"
 
 package_migrations:
-  chain: []                  # первый релиз; цепочка появится с 0.1.0-to-0.2.0
+  # v3.34: валидаторы переехали в ai_ops_kit/validation/ — раскладка child зеркалит кит.
+  chain:
+    - 3.33-to-3.34
 
 contracts_dir: schemas/
-compatibility_check: python3 validation/validate_ai_first_registry.py
+compatibility_check: python3 ai_ops_kit/validation/validate_ai_first_registry.py

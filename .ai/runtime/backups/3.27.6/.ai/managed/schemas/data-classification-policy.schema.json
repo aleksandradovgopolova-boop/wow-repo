@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/data-classification-policy.schema.json",
+  "title": "DataClassificationPolicy",
+  "description": "DataClassificationPolicy (DCP) — v3.6.4. Авторитетный источник класса данных по path/module (public/internal/confidential/secret). Приоритет: policy -> scanner (raise-only) -> inline marker (advisory, raise-only). unknown -> default_class; strict_unknown=true трактует неизвестное как deny (обрабатывается вызывающим data_classification.classify(strict=True)).",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "default_class", "strict_unknown", "rules"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "DataClassificationPolicy" },
+    "id": { "type": "string", "pattern": "^DCP-[0-9]{3,}$" },
+    "default_class": { "type": "string", "enum": ["public", "internal", "confidential", "secret"] },
+    "strict_unknown": { "type": "boolean" },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path_prefix", "class"],
+        "additionalProperties": false,
+        "properties": {
+          "path_prefix": { "type": "string", "minLength": 1 },
+          "class": { "type": "string", "enum": ["public", "internal", "confidential", "secret"] }
+        }
+      }
+    }
+  }
+}

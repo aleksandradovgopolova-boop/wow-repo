@@ -1,7 +1,7 @@
 # registry/entities.yaml — словарь Knowledge Graph (Ф4 roadmap, v2.0).
 # Определяет ТИПЫ сущностей и допустимые СВЯЗИ между ними. Сам граф проекта живёт
 # в child-репозитории: knowledge/graph.yaml (schemas/knowledge-graph.schema.json);
-# ссылочную целостность проверяет validation/validate_knowledge_graph.py.
+# ссылочную целостность проверяет ai_ops_kit/validation/validate_knowledge_graph.py.
 # Feature Blueprint — узел типа feature (атрибут blueprint -> features/<id>/blueprint.yaml).
 schema_version: 1
 registry_type: entities
