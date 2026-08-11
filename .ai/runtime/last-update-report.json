@@ -16,36 +16,10 @@
   "backup_ref": null,
   "pull_request": null,
   "human_approval_required": false,
-  "report": "Обновление не требуется. CI ребёнка обновлён вместе с китом: ai-ops-update.yml (repaired), ai-ops-record.yml (repaired), ai-ops-validate.yml (repaired). Починены сломанные (звали то, чего в ките нет): ai-ops-update.yml — прежний в истории git; ai-ops-record.yml — прежний в истории git; ai-ops-validate.yml — прежний в истории git.",
+  "report": "Обновление не требуется. Пустые зоны `.ai/` получили README, чтобы раскладка пережила клон: .ai/custom/README.md.",
   "context_backfilled": [],
-  "ci_workflows": [
-    {
-      "file": "ai-ops-update.yml",
-      "action": "repaired",
-      "was": "unknown",
-      "broken_before": [
-        "клон в общий /tmp (нужен $RUNNER_TEMP)"
-      ],
-      "backup": "git"
-    },
-    {
-      "file": "ai-ops-record.yml",
-      "action": "repaired",
-      "was": "unknown",
-      "broken_before": [
-        "клон в общий /tmp (нужен $RUNNER_TEMP)"
-      ],
-      "backup": "git"
-    },
-    {
-      "file": "ai-ops-validate.yml",
-      "action": "repaired",
-      "was": "unknown",
-      "broken_before": [
-        "validation/validate_ai_ops_child.py",
-        "клон в общий /tmp (нужен $RUNNER_TEMP)"
-      ],
-      "backup": "git"
-    }
+  "ci_workflows": [],
+  "zone_markers": [
+    ".ai/custom/README.md"
   ]
 }
