@@ -50,8 +50,25 @@ _IMPERATIVE = re.compile(
     re.IGNORECASE)
 
 
+def roadmap_rel(child_root) -> str:
+    """Где в ЭТОМ репозитории лежит направление. -> относительный путь.
+
+    По умолчанию `ROADMAP.md` в корне; монорепозиторий объявляет свой
+    (`.ai-ops.yaml -> product_operating_model.paths.roadmap`). Прежде путь был жёстким, и продукт,
+    живущий в `apps/web/`, не мог объявить направление вовсе — кит вечно отвечал «направление
+    продукта не является артефактом» репозиторию, у которого оно есть.
+    """
+    from ai_ops_kit.planning import contours as _c
+    try:
+        return _c.declared_path(child_root, "roadmap", ROADMAP_REL)
+    except _c.ConfigInvalid:
+        # Направление — не fail-closed-контур: кит не читает по нему решения, он лишь сверяет цели.
+        # Объявление недостоверно -> работаем по дефолту, и об этом скажет `doctor`/`validate`.
+        return ROADMAP_REL
+
+
 def roadmap_path(child_root) -> Path:
-    return Path(child_root) / ROADMAP_REL
+    return Path(child_root) / roadmap_rel(child_root)
 
 
 def parse(text: str) -> dict:
@@ -96,9 +113,10 @@ def check(child_root, plan=None):
     в бэклоге, а не про продукт.
     """
     rm = load(child_root)
+    rel = roadmap_rel(child_root)      # путь называем ФАКТИЧЕСКИЙ: монорепо объявляет свой
     errors, warns = [], []
     if rm is None:
-        return {"errors": [f"нет {ROADMAP_REL} — направление продукта не является артефактом"],
+        return {"errors": [f"нет {rel} — направление продукта не является артефактом"],
                 "warnings": [], "horizons": {}}
 
     for key, names in HORIZONS:

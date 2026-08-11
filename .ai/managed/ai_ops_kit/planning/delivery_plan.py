@@ -50,15 +50,54 @@ VALUE = ("high", "medium", "low")
 # работы — законная часть продукта, а `runtime: claude-code` в плане — привязка плана к вендору.
 FORBIDDEN_ITEM_KEYS = ("runtime", "model", "provider", "executor", "assignee", "agent")
 
-_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+def _engine_id_ok(wid: str) -> bool:
+    """Годен ли id для СОЗДАНИЯ работы движком — правило берётся у движка, а не переписывается.
+
+    Дублировать регулярное выражение значило бы завести вторую правду об одном id: ровно из-за
+    расхождения двух правил `ARCH-01` проходил валидатор плана и падал в `run` сырым ValueError.
+    Если движок недоступен (валидатор запускают процессом в урезанном окружении) — проверяем
+    минимум, который заведомо безопасен для пути `features/<id>/`.
+    """
+    try:
+        from ai_ops_kit.engine.run_plan import WORKITEM_ID_RE as _RE
+    except ImportError:                                # pragma: no cover — движок обязан быть рядом
+        _RE = _FALLBACK_ID
+    return bool(_RE.match(wid or "")) and not wid.startswith(".") and ".." not in wid
+
+
+def _engine_id_pattern() -> str:
+    try:
+        from ai_ops_kit.engine.run_plan import WORKITEM_ID_RE as _RE
+        return _RE.pattern
+    except ImportError:                                # pragma: no cover
+        return _FALLBACK_ID.pattern
+
+
+_FALLBACK_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
 class PlanCorrupt(Exception):
     """План недостоверен. Пустой план означал бы «работы нет» -> `next` ответил бы «всё сделано»."""
 
 
+def plan_rel(child_root) -> str:
+    """Где в ЭТОМ репозитории лежит план работ. -> относительный путь.
+
+    По умолчанию `planning/plan.yaml` в корне. Монорепозиторий, где продукт живёт в `apps/web/`,
+    так себя описать не мог вовсе: `next` отвечал «плана нет» репозиторию, у которого план есть
+    (тир 3 разбора перед квалификацией). Объявляется в
+    `.ai-ops.yaml -> product_operating_model.paths.plan`.
+    """
+    try:
+        return _contours.declared_path(child_root, "plan", PLAN_REL)
+    except _contours.ConfigInvalid as e:
+        # Недостоверное объявление пути — fail-closed: взять дефолт значило бы читать НЕ ТОТ файл и
+        # уверенно отвечать по нему.
+        raise PlanCorrupt(str(e)) from e
+
+
 def plan_path(child_root) -> Path:
-    return Path(child_root) / PLAN_REL
+    return Path(child_root) / plan_rel(child_root)
 
 
 def load(child_root, path=None):
@@ -80,6 +119,22 @@ def load(child_root, path=None):
     if not isinstance(data, dict):
         raise PlanCorrupt(f"{p}: ожидался mapping, получен {type(data).__name__}")
     return data
+
+
+def is_template(plan) -> bool:
+    """Это ещё заготовка кита, а не план продукта?
+
+    Установщик кладёт шаблон в репозиторий, и без маркера кит уверенно советовал работу из своего
+    примера («Спроектировать pipeline»), рапортовал «работа 1/5» и получал `✓` в doctor — выдавал
+    догадку за факт на чужом продукте. Маркер `template: true` снимает человек, когда впишет своё.
+    Заодно распознаём незаполненные id-заглушки: файл могли скопировать руками, потеряв маркер.
+    """
+    if not plan:
+        return False
+    if plan.get("template") is True:
+        return True
+    gids = {g.get("id") for g in (plan.get("goals") or []) if isinstance(g, dict)}
+    return bool(gids) and gids <= {"goal-id-1", "goal-id-2"}
 
 
 def items(plan) -> list:
@@ -157,9 +212,11 @@ def validate(plan, model=None):
         where = f"работа '{wid or '<без id>'}'"
         if not wid:
             errors.append("элемент работы без id"); continue
-        if not _ID.match(str(wid)):
-            errors.append(f"{where}: id не годится для пути features/<id>/ "
-                          f"(разрешено [A-Za-z][A-Za-z0-9_-]*)")
+        if not _engine_id_ok(str(wid)):
+            errors.append(f"{where}: id непригоден для работы — движок требует slug НИЖНЕГО "
+                          f"регистра ({_engine_id_pattern()}). Прежде валидатор плана допускал "
+                          f"'ARCH-01', а `ai-ops run --feature ARCH-01` падал сырым ValueError: "
+                          f"два правила об одном id. Возьмите '{str(wid).lower()}'")
         if not (w.get("title") or "").strip():
             errors.append(f"{where}: нет title")
         if w.get("type") not in types:
@@ -211,6 +268,51 @@ def validate(plan, model=None):
 
 # ── Вывод статуса ─────────────────────────────────────────────────────────────────────────────
 
+GLOBAL_SCOPE = "*"          # маркер «пишет всюду»: конфликтует с любой областью
+
+
+def scope_prefix(glob) -> str:
+    """Область записи -> нормализованный префикс. Глобальная область -> GLOBAL_SCOPE.
+
+    Нормализация обязательна: сравнение было строковым, и `./src/`, `src/`, `src\\` считались
+    РАЗНЫМИ каталогами — три сессии уходили писать один. Отдельно глобальный случай: `**`, `.`, `/`
+    и пустой префикс означают «пишет всюду», а прежде отфильтровывались как пустая строка и давали
+    «пересечений нет». Этот же fail-closed уже был потерян и починен в
+    `engine/parallel_planner.py` (баг v3.6.5) — здесь он повторился в новом коде.
+    """
+    s = str(glob or "").replace("\\", "/").strip()
+    while s.startswith("./"):
+        s = s[2:]
+    head = s.split("*")[0].strip("/")
+    if not head:
+        return GLOBAL_SCOPE
+    return head
+
+
+def scopes_overlap(a: str, b: str) -> bool:
+    """Пересекаются ли две нормализованные области записи. Глобальная пересекается со всем."""
+    if not a or not b:
+        return False
+    if a == GLOBAL_SCOPE or b == GLOBAL_SCOPE:
+        return True
+    return a == b or a.startswith(b + "/") or b.startswith(a + "/")
+
+
+def _workitem_key(entry: dict) -> str:
+    """id работы из записи active-work. Движок пишет `workitem` ПУТЁМ `features/<id>/workitem.yaml`.
+
+    Прежде здесь брали значение как есть, поэтому ключ никогда не совпадал с id элемента плана.
+    """
+    wi = str(entry.get("workitem") or "").replace("\\", "/").strip()
+    if wi:
+        parts = [x for x in wi.split("/") if x]
+        if len(parts) >= 2 and parts[0] == "features":
+            return parts[1]
+        if not wi.endswith(".yaml"):
+            return wi                              # уже id, а не путь
+    return str(entry.get("id") or "")
+
+
 def _workitem_status(child_root, wid):
     """Статус WorkItem'а из `features/<id>/workitem.yaml`, если работа уже началась. -> str|None.
 
@@ -238,9 +340,14 @@ def _active_map(child_root):
     data = active_work.load(p)
     out = {}
     for a in data.get("active") or []:
-        key = a.get("workitem") or a.get("id")
-        if key:
-            out[str(key)] = a
+        # `workitem` движок пишет ПУТЁМ (`features/<id>/workitem.yaml`), а не id: см.
+        # `engine/ai_ops_run.py` -> active_work.register(..., workitem=f"features/{fid}/…").
+        # Прежде здесь ждали id, поэтому карта активных работ индексировалась путями и НИКОГДА не
+        # совпадала с id элемента плана: вопрос «что делаем прямо сейчас» был всегда пуст, а
+        # проверка конфликта записи не срабатывала ни разу. Тесты этого не ловили, потому что
+        # фикстуры писали форму, которой движок не производит.
+        out[_workitem_key(a)] = a
+    out.pop("", None)
     return out
 
 
@@ -250,24 +357,20 @@ def _scope_conflict(scope, active, exclude_id=None):
     Правило то же, что у ParallelSafetyDecision внутри задачи: сравнение по префиксу до первого
     `*`. Совпадение не случайно — опасность пересечения области записи не зависит от масштаба.
     """
-    def _pref(g):
-        return (str(g) or "").split("*")[0].rstrip("/")
-    mine = [_pref(s) for s in (scope or []) if _pref(s)]
+    mine = [scope_prefix(s) for s in (scope or [])]
+    if not mine:
+        return []
     hits = []
     for wid, a in (active or {}).items():
         if exclude_id and wid == exclude_id:
             continue
         if (a.get("status") or "") == "done":
             continue
-        theirs = [_pref(x) for x in (a.get("areas") or []) if _pref(x)]
-        for m in mine:
-            for t in theirs:
-                if m == t or m.startswith(t + "/") or t.startswith(m + "/"):
-                    hits.append(wid)
-                    break
-            else:
-                continue
-            break
+        # `affected_areas` — РЕАЛЬНОЕ имя поля (`lifecycle/active_work.py`); `areas` оставлен для
+        # записей, сделанных вручную и в старых версиях.
+        theirs = [scope_prefix(x) for x in (a.get("affected_areas") or a.get("areas") or [])]
+        if any(scopes_overlap(m, o) for m in mine for o in theirs):
+            hits.append(wid)
     return sorted(set(hits))
 
 
@@ -421,7 +524,7 @@ def main(argv=None):
         print(f"ОШИБКА: {e}")
         return 1
     if plan is None:
-        print(f"ПЛАНА НЕТ: ожидался {PLAN_REL} — контур Planning & Execution не заполнен")
+        print(f"ПЛАНА НЕТ: ожидался {plan_rel(root)} — контур Planning & Execution не заполнен")
         return 1
 
     if ns.cmd == "validate":

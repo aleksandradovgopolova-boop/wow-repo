@@ -1537,6 +1537,37 @@ def _print_pipeline(r):
         print(f"  draft PR: {pr.get('status')}" + (f" — {pr.get('url')}" if pr.get('url') else ""))
     for n in r.get("not_yet") or []:
         print(f"  · not_yet: {n}")
+    _print_contour_consistency(r)
+
+
+def _print_contour_consistency(r):
+    """Находки гейта связности контуров — человеку, в конце прогона.
+
+    ГЕЙТ, ЧЬИ НАХОДКИ НЕ ВИДНЫ, — ЭТО ГЕЙТ, КОТОРОГО НЕТ. Гейт исполнялся, считал находки и писал
+    их в evidence; вывод прогона о них молчал. Единственное место, где «описание продукта отстало от
+    кода» было видно, — yaml-артефакт, который человек не открывает. Это тот же дефект, что
+    «переводчик написан и не подключён», только дороже: здесь молчит главная проверка релиза 3.35.
+
+    Печатается ПОСЛЕ вердикта прогона и отдельным блоком: находка advisory, она не отменяет
+    результат, но и не должна тонуть среди строк о шагах и коммитах.
+    """
+    cc = r.get("contour_consistency") or {}
+    rep = cc.get("report")
+    if not rep:
+        # Гейт не исполнялся (не коммитили) либо проверка не удалась — evidence уже сказал об этом
+        # своим `warn`, и выдумывать здесь ещё одно сообщение незачем.
+        return
+    try:
+        from ai_ops_kit.ui import presenter
+        msg = presenter.from_contour_consistency(rep)
+        if msg.get("status") == "ok":
+            return          # согласовано — отдельного блока не нужно, вердикт прогона уже сказал всё
+        print()
+        print(presenter.render(msg, audience=presenter.audience_from_config(
+            r.get("child_root") or ".")))
+    except Exception as _e:  # noqa: BLE001 — вывод отчёта не роняет прогон...
+        # ...но и молчать нельзя: молчание здесь неотличимо от «расхождений нет».
+        print(f"  ⚠ находки связности контуров есть, показать не смог: {type(_e).__name__}: {_e}")
 
 
 def print_human(r):

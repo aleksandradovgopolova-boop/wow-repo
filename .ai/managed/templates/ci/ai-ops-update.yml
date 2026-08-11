@@ -32,8 +32,8 @@ jobs:
           PARENT=$(python3 -c "import yaml; s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source']; print(s[4:] if s.startswith('git+') else s)")
           INSTALLED=$(python3 -c "import yaml; print(yaml.safe_load(open('.ai-ops.yaml'))['parent']['installed_version'])")
           AUTO=$(python3 -c "import yaml; print(str(yaml.safe_load(open('.ai-ops.yaml'))['parent'].get('auto_update', True)).lower())")
-          git clone --depth 1 "$PARENT" /tmp/ai-ops-kit
-          AVAILABLE=$(tr -d '[:space:]' < /tmp/ai-ops-kit/VERSION)
+          git clone --depth 1 "$PARENT" "$RUNNER_TEMP/ai-ops-kit"
+          AVAILABLE=$(tr -d '[:space:]' < "$RUNNER_TEMP/ai-ops-kit/VERSION")
           echo "installed=$INSTALLED available=$AVAILABLE auto_update=$AUTO event=${{ github.event_name }}"
           echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
           echo "available=$AVAILABLE" >> "$GITHUB_OUTPUT"
@@ -46,7 +46,7 @@ jobs:
         run: echo "Доступно обновление $INSTALLED -> $AVAILABLE, но parent.auto_update=false (опт-аут) и запуск по расписанию — PR не открывается. Запустите workflow вручную (Run workflow) или включите auto_update."
       - name: Запустить ai-ops update
         if: steps.ver.outputs.proceed == 'true'
-        run: python3 /tmp/ai-ops-kit/installer/ai_ops.py update
+        run: python3 "$RUNNER_TEMP"/ai-ops-kit/installer/ai_ops.py update
       - name: Открыть PR с обновлением
         if: steps.ver.outputs.proceed == 'true'
         env:

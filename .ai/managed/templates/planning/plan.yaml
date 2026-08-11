@@ -1,92 +1,44 @@
 # planning/plan.yaml — delivery plan репозитория: что нужно сделать и в каком порядке.
 #
-# Уровень МЕЖДУ направлением (`ROADMAP.md`) и прогоном (`features/<id>/run-plan.yaml`).
-# Читает его код: `ai-ops next` отвечает по этому файлу на четыре вопроса — где мы, что идёт
-# сейчас, что заблокировано и чем, какую работу взять следующей и что можно вести одновременно.
+# Уровень МЕЖДУ направлением (`ROADMAP.md`) и прогоном. По этому файлу `ai-ops next` отвечает на
+# четыре вопроса: где мы, что идёт сейчас, что блокирует и чем, какую работу взять следующей.
 #
-# ТРИ ПРАВИЛА, КОТОРЫЕ ПРОВЕРЯЮТСЯ (`validate_product_model.py`):
+# ЭТО ЗАГОТОВКА. Пока стоит `template: true`, кит НЕ считает содержимое планом продукта и не
+# советует работу отсюда: иначе он выдавал бы свой пример за состояние вашего проекта. Замените
+# пример своей работой и снимите строку `template: true`.
 #
-# 1. Статус не объявляется там, где его можно вывести. Объявляйте только факты, которых код не
-#    знает: todo / in_progress / done / dropped. `ready`, `blocked`, `waiting` СЧИТАЮТСЯ из
-#    зависимостей, статуса WorkItem'а (гейты) и реестра активных работ. Объявленный `ready` при
-#    незакрытой зависимости — расхождение, и кит его покажет.
+# ТРИ ПРАВИЛА (проверяет `validate_product_model.py`):
+#  1. Статус объявляйте только тот, которого код не знает: todo / in_progress / done / dropped.
+#     `ready`, `blocked`, `waiting` кит СЧИТАЕТ сам — из зависимостей, гейтов и активной работы.
+#  2. Называйте РОЛЬ, а не исполнителя: поля runtime/model/provider/assignee/agent запрещены —
+#     иначе смена Claude Code на Codex переписывала бы план продукта.
+#  3. id — slug нижнего регистра ([a-z0-9._-]): такой же, как требует движок для `--feature`.
 #
-# 2. План называет РОЛЬ, а не исполнителя. Поля `runtime`, `model`, `provider`, `assignee`,
-#    `agent` запрещены: с ними смена Claude Code на Codex переписывала бы план продукта. Какой
-#    исполнитель соответствует роли СЕЙЧАС, решает роутер в момент запуска — по сложности, риску,
-#    capability, стоимости и доступности.
-#
-# 3. Планирование не хранит смысл задачи. Зачем работа нужна — в контуре Product & Strategy;
-#    почему выбран подход — в Research & Decisions; как устроено — в System & Architecture.
-#    Здесь: что, в каком порядке, кем, в каком состоянии, и какие контуры работа изменяет
-#    (`affects`).
-#
-# Словари (роли, типы работы, контуры) — `registry/product-operating-model.yaml`.
+# Словари ролей, типов работы и контуров — `registry/product-operating-model.yaml`.
 schema_version: 1
 kind: delivery-plan
+template: true            # СНИМИТЕ эту строку, когда впишете свою работу
 
-# Цели в ПОРЯДКЕ ПРИОРИТЕТА. id обязан совпадать с целью в ROADMAP.md.
 goals:
-  - id: goal-id-1
-    status: active                 # active | paused | done
-    outcome:                       # проверяемый результат; ключ — утверждение, значение — достигнут ли
+  - id: goal-id-1         # тот же id, что в ROADMAP.md
+    status: active        # active | paused | done
+    outcome:              # проверяемый результат: ключ — утверждение, значение — достигнут ли
       user_can_do_the_thing: false
 
 work:
-  - id: RESEARCH-01
-    title: Исследовать способы решения
-    type: research                 # словарь work_types модели
+  - id: arch-01
+    title: Спроектировать то, без чего остальное не начать
+    type: architecture    # словарь work_types модели
     goal: goal-id-1
-    status: done                   # объявляемый факт
-    owner_role: researcher         # РОЛЬ, не исполнитель
+    status: todo          # объявляемый факт
+    owner_role: architect # РОЛЬ, не исполнитель
     depends_on: []
-    write_scope: [research/]       # области записи — без них параллельность недоказуема
-    value: high                    # high | medium | low
-    affects: {research_decisions: true}
+    write_scope: [context/system/]   # области записи; без них параллельность недоказуема
+    value: high           # high | medium | low
+    affects: {system_architecture: true}   # какие контуры продукта работа изменяет
 
-  - id: ARCH-01
-    title: Спроектировать pipeline
-    type: architecture
-    goal: goal-id-1
-    status: todo
-    owner_role: architect
-    depends_on: [RESEARCH-01]
-    write_scope: [context/system/]
-    value: high
-    affects: {system_architecture: true, data_contracts: true}
-
-  - id: UI-01
-    title: Реализовать интерфейс
-    type: visual
-    goal: goal-id-1
-    status: todo
-    owner_role: frontend
-    depends_on: []                 # независима от ARCH-01 -> может идти одновременно
-    write_scope: [src/ui/]
-    value: medium
-    affects: {engineering_quality_security: true}
-
-  - id: ENG-01
-    title: Реализовать backend
-    type: engineering
-    goal: goal-id-1
-    status: todo
-    owner_role: engineer
-    depends_on: [ARCH-01]          # статус `blocked` НЕ пишется — он выведется из этой строки
-    write_scope: [src/api/]
-    value: high
-    affects: {engineering_quality_security: true, data_contracts: true}
-    # human_decision: "нужно решение владельца про источник данных"   # незакрытое решение блокирует
-    # capabilities: [structured_output]                               # требуемые capability
-    # estimate_tokens: 120000                                         # нет оценки -> unknown, НЕ ноль
-
-  - id: REVIEW-01
-    title: Независимо проверить итог
-    type: review
-    goal: goal-id-1
-    status: todo
-    owner_role: reviewer
-    depends_on: [ENG-01, UI-01]
-    write_scope: []
-    value: high
-    affects: {engineering_quality_security: true}
+  # Дальше — по образцу выше. Полезные необязательные поля:
+  #   depends_on: [arch-01]              — статус `blocked` НЕ пишите, он выведется отсюда
+  #   human_decision: "нужно решение владельца про источник данных"
+  #   capabilities: [structured_output]
+  #   estimate_tokens: 120000            — нет оценки -> unknown, НЕ ноль

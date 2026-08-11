@@ -16,13 +16,23 @@ def _git(root, *args):
 
 
 def _committed_changed_files(root, sha):
-    """Файлы, изменённые коммитом sha относительно его первого родителя. -> [path] (пусто при ошибке)."""
+    """Файлы, изменённые коммитом sha относительно его первого родителя. -> [path] (пусто при ошибке).
+
+    `-z` ОБЯЗАТЕЛЕН, а не украшение. При `core.quotePath` (включён по умолчанию) git отдаёт не-ASCII
+    имена в escape-кавычках: `"context/product/\320\236..."`. Такой путь не совпадает ни с одним
+    сигнальным паттерном, и гейт связности превращал `changed` в `not_changed` — утверждение вместо
+    признания, то есть главный инвариант модели ломался на любом файле с русским именем. Для
+    русскоязычного продукта это отменяло гейт целиком. `-z` отдаёт имена как есть, разделённые NUL,
+    и попутно снимает вторую дыру: путь с переводом строки или запятой больше не распадается.
+    """
     if not sha:
         return []
-    rc, out, _ = _git(root, "diff", "--name-only", f"{sha}~1", sha)
+    rc, out, _ = _git(root, "diff", "--name-only", "-z", f"{sha}~1", sha)
     if rc != 0:
-        rc, out, _ = _git(root, "show", "--name-only", "--pretty=format:", sha)
-    return [ln for ln in out.splitlines() if ln.strip()] if rc == 0 else []
+        rc, out, _ = _git(root, "show", "--name-only", "-z", "--pretty=format:", sha)
+    if rc != 0:
+        return []
+    return [ln for ln in out.split("\0") if ln.strip()]
 
 
 def _commit_on_branch(root, branch, message):

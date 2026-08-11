@@ -1,0 +1,40 @@
+# runtime-binding.example.yaml — привязка контракта к конкретному рантайму (child-уровень).
+#
+# Кит runtime-агностичен: он описывает контракт persistent-agent-runtime
+# (registry/runtimes.yaml) и спеку Robin (runtime/robin/ROBIN.md), но НЕ навязывает
+# рантайм. Здесь child объявляет, ЧЕМ он этот контракт закрывает и что уже проверено.
+# Как stack-skills: конкретика — на уровне child, не в ядре.
+#
+# Пример ниже — Hermes (рантайм команды ii-sreda). У другой команды это будет
+# свой сервис / cron+CLI+webhook. Меняйте под себя; храните в .ai/project/runtime/.
+schema_version: 1
+kind: runtime-binding
+
+contract: persistent-agent-runtime      # какой контракт из registry/runtimes.yaml закрываем
+
+runtime:
+  name: Hermes                          # пример; у вас может быть своё имя
+  kind: in-house-service                # in-house-service | cron+cli | managed | ...
+  owner: team-lead
+  duties_file: .ai/project/runtime/robin/duties.yaml   # свои duties, проверяются validate_duties.py
+
+# Как рантайм закрывает обязательные возможности контракта.
+# Честно: satisfied — реализовано и проверено на рантайме; declared — заявлено, но
+# ещё не проверено деплоем. Кит проверяет форму и границы, деплой — на вашей стороне.
+capabilities:
+  always_on:    {satisfied: false, evidence: "planned: systemd-таймер в контуре"}
+  model_call:   {satisfied: false, evidence: "planned: провайдер из env рантайма"}
+  chat_adapter: {satisfied: false, evidence: "planned: Telegram-бот в рабочем чате"}
+  kill_switch:  {satisfied: false, evidence: "planned: runbook governance/security-policies.md §3"}
+  audit_log:    {satisfied: false, evidence: "planned: interaction-log.jsonl в контуре"}
+  read_mostly:  {satisfied: false, evidence: "planned: токены инструментов — только на чтение"}
+
+optional:
+  in_perimeter: {satisfied: false, evidence: "planned: закрытый контур для ПДн"}
+
+# Пока ни одна возможность не satisfied — это декларация намерения, а не работающий
+# рантайм. verified_against_deploy останется false в registry/runtimes.yaml, пока
+# привязка не проверена на реальном деплое.
+notes: >
+  Шаблон-заготовка. Не включайте Robin в прод, пока: (1) база знаний зрелая,
+  (2) есть конкретная повторяющаяся боль, (3) kill-switch и audit-log реально работают.

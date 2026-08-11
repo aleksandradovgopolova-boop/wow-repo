@@ -24,7 +24,10 @@ from pathlib import Path
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
 # intent -> (описание, какое действие, нужен ли текст задачи)
 INTENTS = {
-    "new":     ("создать новую фичу/каркас", "scaffold", False),
+    # Третье поле — нужен ли текст задачи. `new` и `resume` его ИСПОЛЬЗУЮТ (заголовок работы,
+    # выбор фичи), поэтому объявлены честно: расхождение объявления с использованием и было тем,
+    # из-за чего `new` принимал текст задачи за каталог репозитория.
+    "new":     ("создать новую фичу/каркас", "scaffold", True),
     "onboard": ("определить стек и команды репозитория", "onboard", False),
     "discuss": ("обсудить идею до спецификации (discovery)", "discuss", True),
     "specify": ("построить спецификацию нужной глубины", "specify", True),
@@ -32,13 +35,18 @@ INTENTS = {
     "run":     ("выполнить задачу движком (авто-подбор стадий)", "run", True),
     "do":      ("автономный прогон: run --execute + авторазрешение блокировщиков", "do", True),
     "advise":  ("инженерный совет: окружения, delivery plan, альтернативы (без исполнения)", "advise", True),
-    "resume":  ("продолжить прерванную работу по фиче", "resume", False),
+    "resume":  ("продолжить прерванную работу по фиче", "resume", True),
     "review":  ("независимый ревью произведённого", "review", True),
     "status":  ("статус активной работы", "status", False),
     "health":  ("здоровье продукта", "health", False),
     # v3.35 Product Operating Model: план продукта и его связность.
     "next":    ("что взять следующим: где мы, что идёт, что блокирует, что можно параллельно", "next", False),
     "model":   ("модель продуктового репозитория: классификация, контуры, пробелы, вопросы", "model", False),
+    # v3.35.2 (тир 4): BOOTSTRAP существовал СТРОКОЙ в реестре — кит не создавал ни направления, ни
+    # плана, и владелец после онбординга оставался с пониманием и без работы. Сухой прогон по
+    # умолчанию: запись в чужой репозиторий он обязан увидеть до того, как она произошла.
+    "bootstrap": ("создать первое направление и план из фактов репозитория (--apply — записать)",
+                  "bootstrap", False),
 }
 
 
@@ -92,17 +100,27 @@ def build_preview(intent, task, child_root, signals):
     if signals.get("secret_boundary") or signals.get("destructive"):
         approvals.append("человек: затронута граница секретов/деструктивное действие")
 
-    expected = ("проверяемый draft PR (если гейты закрыты)" if intent == "run"
-                else {"plan": "RunPlan + оценка без изменений кода",
-                      "specify": f"спецификация уровня {cov['level_name']}",
-                      "review": "вердикты независимых ревьюеров",
-                      "onboard": "RepositoryProfile (стек/команды)",
-                      "status": "список активной работы", "health": "Product Health Score",
-                      "next": "ответ на четыре вопроса + следующая работа с обоснованием",
-                      "model": "понимание репозитория: класс, контуры, пробелы, вопросы владельцу",
-                      "discuss": "черновик проблемы/гипотез (discovery)",
-                      "new": "каркас фичи",
-                      "resume": "продолжение с последнего подтверждённого шага"}.get(intent, "результат намерения"))
+    # ЭТУ СТРОКУ ЧИТАЕТ ЧЕЛОВЕК. Прежде здесь стояли внутренние имена артефактов — `RunPlan +
+    # оценка без изменений кода`, `RepositoryProfile (стек/команды)`, `Product Health Score`, — и
+    # они выходили наружу через превью, то есть через самое частое сообщение кита. Проверка на
+    # реалистичном дереве показала это первой же строкой ответа.
+    # Формулировка — от первого лица и глаголом: эту строку человек читает как ответ на «что ты
+    # сейчас сделаешь». Существительные не годятся: «Собираюсь: чем проект написан» — не фраза.
+    expected = ("проверю изменение и открою черновой pull request, если все проверки пройдут"
+                if intent == "run"
+                else {"plan": "построю план работы и оценю объём; код при этом не меняю",
+                      "specify": "напишу заготовку описания задачи нужной глубины",
+                      "review": "проведу независимую проверку сделанного",
+                      "onboard": "разберусь, чем проект написан и чем он проверяется",
+                      "status": "скажу, что идёт прямо сейчас",
+                      "health": "оценю состояние продукта",
+                      "next": "скажу, где мы, что идёт, что мешает и что взять следующим",
+                      "model": "разберусь в проекте: что за продукт, что я знаю, чего не знаю",
+                      "discuss": "заведу черновик обсуждения: какую боль решаем и как поймём, "
+                                 "что помогло",
+                      "new": "заведу место для новой работы",
+                      "resume": "продолжу с последнего подтверждённого шага"}.get(
+                          intent, "выполню намерение"))
 
     return {
         "schema_version": 1, "kind": "ExecutionPreview",
@@ -152,6 +170,28 @@ def _wid_for(task, signals, feature):
                                           workitem_id=feature)["workitem_id"]
 
 
+def _say(child_root, translator, *args, **kwargs):
+    """Внутренний отчёт -> человеческий текст. ЕДИНСТВЕННЫЙ путь наружу для команд намерений.
+
+    Прежде каждая команда печатала своё: `ONBOARD: стек python`, `SPECIFY: создан`, `REVIEW wid:
+    verdict=…`. Правило «наружу выходит смысл» держалось на памяти автора команды, и из двенадцати
+    команд его соблюдали три. Здесь оно держится на том, что другого способа напечатать нет.
+
+    Имя переводчика — строка: так `cli` не тянет `ui` на импорте (слои). Опечатка в имени падает
+    громко (`AttributeError`), а не печатает пустоту, и её же ловит тест разводки.
+    """
+    from ai_ops_kit.ui import presenter
+    fn = getattr(presenter, translator)
+    print(presenter.render(fn(*args, **kwargs),
+                           audience=presenter.audience_from_config(child_root)))
+
+
+def _audience(child_root):
+    """Уровень детализации для этого репозитория. Отдельно — там, где нужен и внутренний вывод."""
+    from ai_ops_kit.ui import presenter
+    return presenter.audience_from_config(child_root)
+
+
 def _run_intent(intent, task, child_root, signals, a):
     """v2.112 Intent UX: РЕАЛЬНОЕ действие для намерения. -> код возврата или None (нет спец-действия)."""
     import yaml
@@ -167,22 +207,34 @@ def _run_intent(intent, task, child_root, signals, a):
         if js:
             print(json.dumps({"written": str(out), "profile": prof}, ensure_ascii=False, indent=2))
         else:
-            stacks = ", ".join(s.get("language", "?") for s in prof.get("stacks", [])) or "не определён"
-            print(f"ONBOARD: стек {stacks} · профиль записан {out.relative_to(child_root)}")
-            for s in prof.get("stacks", []):
-                cmds = {k: v for k, v in (s.get("commands") or {}).items() if v}
-                print(f"  · {s.get('language')}: {', '.join(f'{k}={v}' for k, v in cmds.items()) or 'команды не найдены'}")
-            if prof.get("undetermined"):
-                print(f"  ⚠ не определено: {', '.join(prof['undetermined'])}")
+            _say(child_root, "from_onboarding_profile", prof, str(out.relative_to(child_root)))
         return 0
 
     if intent == "status":
         from ai_ops_kit.lifecycle import active_work
+        from ai_ops_kit.ui import presenter
         awp = child_root / ".ai" / "runtime" / "active-work.yaml"
-        if not awp.is_file():
-            print("STATUS: активной работы нет (нет .ai/runtime/active-work.yaml)")
-            return 0
-        return active_work.list_cmd(awp, as_json=js)
+        data = {"active": []}
+        if awp.is_file():
+            try:
+                data = active_work.load(awp)
+            except active_work.ActiveWorkCorrupt as e:
+                # Битый реестр — не «работы нет»: координация сессий недостоверна (инвариант 3.0.12).
+                print(presenter.render(presenter.message(
+                    status="blocked",
+                    summary="Не могу сказать, что идёт прямо сейчас: запись об идущих работах "
+                            "повреждена.",
+                    why_it_matters="Пока это так, я не знаю, не перепишет ли новая работа то, что "
+                                   "уже правит другая сессия.",
+                    next_steps=["восстановить запись и повторить"],
+                    technical={"ошибка": str(e)}),
+                    audience=presenter.audience_from_config(child_root)))
+                return 1
+        if js:
+            return active_work.list_cmd(awp, as_json=True) if awp.is_file() else 0
+        aud = presenter.audience_from_config(child_root)
+        print(presenter.render(presenter.from_active_work(data), audience=aud))
+        return 0
 
     if intent == "next":
         # Четыре вопроса: где мы, что идёт сейчас, что блокирует, что взять следующим.
@@ -217,8 +269,14 @@ def _run_intent(intent, task, child_root, signals, a):
                      and not rep["roadmap"]["errors"]) else 1
 
     if intent == "model":
-        # DISCOVER -> CLASSIFY -> RECONSTRUCT -> AUDIT -> ASK. Ничего не пишет: онбординг сначала
-        # ПОНИМАЕТ репозиторий и только потом предлагает достройку.
+        # DISCOVER -> CLASSIFY -> RECONSTRUCT -> AUDIT -> ASK. Понимание репозитория: артефактов
+        # проекта команда не создаёт и ничего не перестраивает.
+        #
+        # ОДИН ФАЙЛ ОНА ВСЁ-ТАКИ ПИШЕТ, и объявить это обязательно: `.ai/project/
+        # onboarding-answers.yaml` — форма, в которую человек впишет ответы. Раньше здесь стояло
+        # «ничего не пишет», а команда писала (это внёс фикс тупика с вопросами), и человек, позвав
+        # `model` просто посмотреть состояние, находил в своём `git status` незнакомый файл.
+        # Заявление приведено к фактам, повторный вызов файл НЕ трогает, если текст тот же.
         from ai_ops_kit.planning import repo_audit
         from ai_ops_kit.planning import contours as _contours
         try:
@@ -226,8 +284,17 @@ def _run_intent(intent, task, child_root, signals, a):
         except _contours.ModelCorrupt as e:
             print(f"ОШИБКА: {e}")
             return 1
+        # ПОБОЧНЫЙ ЭФФЕКТ НЕ ЗАВИСИТ ОТ ФОРМАТА ВЫВОДА. Прежде форма ответов создавалась только в
+        # человеческой ветке: `--json` того же намерения оставлял человека без места для ответа, то
+        # есть одна команда вела себя двумя разными способами.
+        answers_file = None
+        if rep["ask"]["questions"]:
+            answers_file = repo_audit.write_question_file(child_root, rep["ask"])
         if js:
-            print(json.dumps(rep, ensure_ascii=False, indent=2, default=str))
+            out = dict(rep)
+            if answers_file:
+                out["answers_file"] = str(answers_file)
+            print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
         else:
             from ai_ops_kit.ui import presenter
             aud = presenter.audience_from_config(child_root)
@@ -240,7 +307,43 @@ def _run_intent(intent, task, child_root, signals, a):
                 print(f"  {mark} {q['ask']}")
                 if q["proposal"]:
                     print(f"      предполагаю: {q['proposal']['value']} — подтвердить?")
+            # ВОПРОСАМ НУЖНО МЕСТО. Прежде кит печатал их и завершался: куда отвечать — не сказано,
+            # интерактива нет, человек в тупике на главном шаге первого сценария.
+            if answers_file:
+                try:
+                    shown = answers_file.relative_to(Path(child_root))
+                except ValueError:
+                    shown = answers_file
+                print(f"\n  Ответы впишите здесь: {shown}")
+                print("  Потом запустите снова: ./ai-ops model — ответы станут подтверждёнными "
+                      "фактами и больше не будут переспрашиваться.")
         return 0
+
+    if intent == "bootstrap":
+        # BOOTSTRAP: онбординг заканчивается работой, а не документацией. Пишет ТОЛЬКО с --apply и
+        # ТОЛЬКО отсутствующее; заготовку кита заменяет (в ней нет фактов о продукте), настоящий
+        # план — никогда.
+        from ai_ops_kit.planning import product_bootstrap as _boot
+        from ai_ops_kit.planning import contours as _contours
+        from ai_ops_kit.planning import delivery_plan as _dp
+        from ai_ops_kit.planning import repo_audit as _ra
+        try:
+            # Аудит — один раз на команду: сухой прогон и запись смотрят на ОДНИ факты, иначе между
+            # «вот что создам» и «создал» могла бы оказаться разница, которую человек не просил.
+            _und = _ra.run(child_root)
+            boot = _boot.plan(child_root, _und)
+        except (_contours.ModelCorrupt, _dp.PlanCorrupt) as e:
+            print(f"ОШИБКА: {e}")
+            return 1
+        applied = bool(getattr(a, "apply", False))
+        rep = _boot.apply(child_root, boot, _und) if applied else boot
+        if js:
+            print(json.dumps(rep, ensure_ascii=False, indent=2))
+        else:
+            _say(child_root, "from_bootstrap", rep, applied=applied)
+            if not applied and rep["will_write"]:
+                print(f"\n  Записать: ./ai-ops bootstrap --apply")
+        return 1 if rep.get("error") else 0
 
     if intent == "health":
         from ai_ops_kit.intelligence import product_health
@@ -249,15 +352,17 @@ def _run_intent(intent, task, child_root, signals, a):
                 child_root / "product-health.yaml"]
         src = next((p for p in cand if p.is_file()), None)
         if not src:
-            print("HEALTH: нет входных метрик (ожидается product/product-health.yaml) — "
-                  "честно: без данных score не считается")
+            from ai_ops_kit.ui import presenter
+            aud = presenter.audience_from_config(child_root)
+            print(presenter.render(presenter.from_product_health(None), audience=aud))
             return 1
         report = product_health.compute(yaml.safe_load(src.read_text(encoding="utf-8")))
         if js:
             print(json.dumps(report, ensure_ascii=False, indent=2))
         else:
-            hs = report["health_score"]
-            print(f"HEALTH: score {hs['value']} ({hs['band']}) · источник {src.relative_to(child_root)}")
+            from ai_ops_kit.ui import presenter
+            aud = presenter.audience_from_config(child_root)
+            print(presenter.render(presenter.from_product_health(report), audience=aud))
         return 0
 
     if intent == "new":
@@ -269,20 +374,22 @@ def _run_intent(intent, task, child_root, signals, a):
         wid = _wid_for(task, signals, a.feature)
         workitem.start(str(child_root / "features"), wid, task or wid,
                        task_type=signals.get("task_type"), risk=signals.get("risk"))
-        # v3.35: `affects` засевается ПОДСКАЗКОЙ по типу работы, а не выводится из diff. Разница
-        # принципиальная: заявление автора и факт изменения — два независимых источника, и сверять
-        # их имеет смысл только пока они независимы. Автозаполнение из diff сделало бы находку
-        # `undeclared_change` невозможной, то есть выключило бы гейт, оставив его зелёным.
-        # Прежде поле оставалось `{}` навсегда, а `suggest_affects` не вызывался нигде (ревью 3.35).
-        _seed_workitem_affects(child_root, wid, signals.get("task_type"))
+        # v3.35.1 (ревью перед квалификацией): засев `affects` ПО ТИПУ ЗАДАЧИ УБРАН. Кит записывал
+        # `{engineering_quality_security: true}` всем шести инженерным типам, а `reconcile` читал это
+        # как заявление АВТОРА — и на каждой обычной задаче выдавал major-находку «источник истины не
+        # обновлён», потому что задача не трогает DevelopmentProcess.md. Кит ловил себя же.
+        # Теперь `affects` берётся ТОЛЬКО из плана: если элемент с этим id объявлен в
+        # `planning/plan.yaml`, его заявление переносится в WorkItem — это настоящее заявление
+        # человека и настоящая связь уровней. Нет элемента — поле остаётся пустым, и гейт называет
+        # затронутые контуры информацией, а не расхождением.
+        _copy_affects_from_plan(child_root, wid)
         sp, created = spec_levels.create_spec(child_root, wid, signals)
         if js:
             print(json.dumps({"workitem_id": wid, "workitem": f"features/{wid}/workitem.yaml",
                               "spec": str(sp), "spec_created": created}, ensure_ascii=False, indent=2))
         else:
-            print(f"NEW: каркас фичи '{wid}' · features/{wid}/workitem.yaml + spec.yaml "
-                  f"({'создан' if created else 'уже был'})")
-            print(f"  далее: ai-ops specify \"{task or '<задача>'}\" {child_root} --feature {wid}")
+            _say(child_root, "from_new_feature", wid, task or wid, created,
+                 f"./ai-ops specify \"{task or '<задача>'}\" --feature {wid}")
         return 0
 
     if intent == "plan":
@@ -297,7 +404,7 @@ def _run_intent(intent, task, child_root, signals, a):
         fdir = child_root / "features" / wid
         fdir.mkdir(parents=True, exist_ok=True)
         (fdir / "run-plan.yaml").write_text(yaml.safe_dump(plan, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        bundle = None
+        bundle, ctx_error = None, None
         try:
             bundle = context_compiler.compile_bundle(signals, child_root, plan=plan)
             (fdir / "context-bundle.yaml").write_text(
@@ -306,8 +413,7 @@ def _run_intent(intent, task, child_root, signals, a):
             # ...но деградация обязана быть видна: без бандла оценка пакета уходит на дефолты,
             # а context-bundle.yaml не пишется — молча это выглядит как обычный план.
             bundle = None
-            print(f"  ⚠ контекст не собран ({type(_ce).__name__}: {_ce}) — оценка пакета по "
-                  f"умолчаниям, context-bundle.yaml не записан")
+            ctx_error = f"{type(_ce).__name__}: {_ce}"[:200]
         cov = spec_levels.assess_from_artifacts(signals, child_root, wid)
         (fdir / "spec-coverage.yaml").write_text(yaml.safe_dump(cov, allow_unicode=True, sort_keys=False), encoding="utf-8")
         wp = atomic_planner.decompose(signals, wid=wid, child_root=child_root, bundle=bundle)
@@ -315,11 +421,11 @@ def _run_intent(intent, task, child_root, signals, a):
         if js:
             print(json.dumps({"workitem_id": wid, "plan": f"features/{wid}/run-plan.yaml",
                               "spec_level": cov["level_name"], "should_decompose": wp["should_decompose"],
-                              "work_packages": len(wp["work_packages"])}, ensure_ascii=False, indent=2))
+                              "work_packages": len(wp["work_packages"]),
+                              "context_error": ctx_error}, ensure_ascii=False, indent=2))
         else:
-            print(f"PLAN: '{wid}' · workflow {plan['base_workflow']} · спека {cov['level_name']} · "
-                  f"пакетов {len(wp['work_packages']) or 'атомарно'}")
-            print(f"  артефакты в features/{wid}/ (run-plan, context-bundle, spec-coverage, work-package) — код НЕ менялся")
+            _say(child_root, "from_plan_built", wid, plan["base_workflow"], cov["level_name"],
+                 len(wp["work_packages"]), context_error=ctx_error)
         return 0
 
     if intent == "review":
@@ -336,15 +442,7 @@ def _run_intent(intent, task, child_root, signals, a):
         if js:
             print(json.dumps(rep, ensure_ascii=False, indent=2))
         else:
-            rmerge = (rep.get("readiness") or {}).get("ready_for_merge")
-            print(f"REVIEW {wid}: verdict={rep['verdict']} · ready_for_merge={rmerge} · ревьюируемых гейтов "
-                  f"{len(rep.get('reviewable') or [])} · изменено файлов {len(rep.get('changed_files') or [])}")
-            for rv in rep.get("reviews") or []:
-                print(f"  · {rv['gate']}: {rv.get('status') or 'invalid'}")
-            if rep.get("evidence_path"):
-                print(f"  evidence: {rep['evidence_path']}")
-            if rep.get("note"):
-                print(f"  {rep['note']}")
+            _say(child_root, "from_review", rep)
         # v2.121 (P1.3): exit code = готовность к merge (needs-reviewer/needs-changes -> non-zero)
         return 0 if (rep.get("readiness") or {}).get("ready_for_merge") else 1
 
@@ -370,8 +468,7 @@ def _run_intent(intent, task, child_root, signals, a):
             print(json.dumps({"workitem_id": wid, "draft": str(draft), "created": created},
                              ensure_ascii=False, indent=2))
         else:
-            print(f"DISCUSS: {'создан' if created else 'уже есть'} черновик discovery {draft.relative_to(child_root)}")
-            print("  заполни разделы, затем: ai-ops specify …")
+            _say(child_root, "from_discovery_draft", draft.relative_to(child_root), created)
         return 0
 
     if intent == "advise":
@@ -380,38 +477,31 @@ def _run_intent(intent, task, child_root, signals, a):
         if js:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
-            print(f"ENGINEERING ADVISOR: {result['summary']}")
-            print(f"Repository: {result['repository']}")
-            if result.get("task_type"):
-                print(f"Task type: {result['task_type']}")
-            print()
-            for r in result["recommendations"]:
-                p = r.get("priority", 3)
-                marker = "⚠" if p == 1 else "·" if p == 2 else " "
-                print(f"  {marker} [{r.get('category')}] {r['advice']}")
-                print(f"    (source: {r.get('source')})")
+            _say(child_root, "from_advice", result)
         return 0
 
     return None
 
 
-def _seed_workitem_affects(child_root, wid, task_type):
-    """Записать в WorkItem подсказку `affects` по типу работы (v3.35). Тихо ничего не делает, если
-    модель недоступна: онбординг и создание фичи не обязаны падать из-за реестра контуров."""
+def _copy_affects_from_plan(child_root, wid):
+    """Перенести `affects` из элемента плана с этим id в WorkItem. -> перенесённое или None.
+
+    Это ЕДИНСТВЕННЫЙ законный источник `affects`: заявление человека в `planning/plan.yaml`. Кит не
+    заявляет за автора — прежний засев по типу задачи выдумывал заявление и ловил на нём сам себя.
+    Нет элемента плана с этим id — поле остаётся пустым, и это честно: заявления действительно не
+    было. Тихо ничего не делает при недоступности плана: создание фичи не обязано падать из-за него.
+    """
     import yaml as _yaml
     try:
-        from ai_ops_kit.planning import contours as _c
-        model = _c.load_model()
-    except Exception:                                  # noqa: BLE001 — реестр не обязан быть рядом
+        from ai_ops_kit.planning import delivery_plan as _dp
+        plan = _dp.load(child_root)
+    except Exception:                                  # noqa: BLE001 — план не обязан существовать
         return None
-    wf = (task_type or "").strip()
-    # Тип работы плана (`engineering`/`visual`/…) и класс задачи движка (`ENGINEERING`/`VISUAL`/…)
-    # — разные словари; сопоставление объявлено здесь, а не угадывается по регистру.
-    by_workflow = {"QUICK": "engineering", "ENGINEERING": "engineering", "PRODUCT": "product",
-                   "RESEARCH": "research", "VISUAL": "visual", "AI_FEATURE": "engineering",
-                   "CRITICAL": "security", "ANALYTICS": "analytics"}
-    suggested = _c.suggest_affects(model, by_workflow.get(wf.upper(), ""))
-    if not suggested:
+    if not plan:
+        return None
+    item = next((w for w in _dp.items(plan) if str(w.get("id")) == str(wid)), None)
+    declared = (item or {}).get("affects") or {}
+    if not declared:
         return None
     wp = Path(child_root) / "features" / str(wid) / "workitem.yaml"
     if not wp.is_file():
@@ -421,10 +511,11 @@ def _seed_workitem_affects(child_root, wid, task_type):
     except _yaml.YAMLError:
         return None
     if data.get("affects"):
-        return None                                    # объявленное человеком не перезаписываем
-    data["affects"] = suggested
+        return None                                    # уже объявлено — не перезаписываем
+    data["affects"] = dict(declared)
+    data["affects_source"] = f"planning/plan.yaml -> {wid}"
     wp.write_text(_yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    return suggested
+    return declared
 
 
 def _session_guard_before_start(child_root, task, signals, feature=None):
@@ -499,6 +590,9 @@ def main(argv):
                     help="resume: осознанно сменить классификацию/policy (replan c ревалидацией)")
     ap.add_argument("--budget", type=int, default=None,
                     help="next: остаток бюджета в токенах (нет значения -> unknown, НЕ ноль)")
+    ap.add_argument("--apply", action="store_true",
+                    help="bootstrap: РЕАЛЬНО создать отсутствующие направление и план "
+                         "(без флага — сухой прогон: показать, что будет создано)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
@@ -510,9 +604,17 @@ def main(argv):
     # разбор [задача] child_root
     needs_task = INTENTS.get(intent, ("", "", False))[2]
     task, child_root = None, "."
-    if needs_task:
-        task = rest.pop(0) if rest else ""
-    child_root = rest.pop(0) if rest else "."
+    # КАТАЛОГ РЕПОЗИТОРИЯ — ПОСЛЕДНИЙ АРГУМЕНТ (его подставляет `./ai-ops`), текст задачи — перед
+    # ним. Прежде разбор шёл слева и опирался на флаг `needs_task`: у `new` он стоял `False`, и
+    # `./ai-ops new "добавить экспорт в CSV"` объявлял каталогом репозитория… текст задачи. Каркас
+    # создавался в `./добавить экспорт в CSV/features/wi-unknown/`, код возврата 0 — кит молча
+    # работал не в том репозитории и сообщал об успехе. Нашлось тестом разводки команд.
+    if rest and Path(rest[-1]).is_dir():
+        child_root = rest.pop()
+    if rest:
+        task = rest.pop(0)
+    elif needs_task:
+        task = ""
     signals = json.loads(a.signals)
     if a.feature:
         signals["feature"] = a.feature
@@ -549,17 +651,19 @@ def main(argv):
             print(json.dumps({"path": str(sp), "created": created, "coverage": cov},
                              ensure_ascii=False, indent=2))
         else:
-            print(f"SPECIFY: {'создан' if created else 'уже существует'} {sp}")
-            print(f"  уровень {cov['level_name']} · обязательных разделов {len(cov['sections'])} · "
-                  f"заполнить: {len(cov['blocking_missing'])}")
-            print(f"  заполни разделы в {sp.relative_to(Path(child_root)) if str(sp).startswith(child_root) else sp}, "
-                  f"затем: ai-ops run \"{task or '<задача>'}\" {child_root} --feature {wid} --execute")
+            try:
+                shown = sp.relative_to(Path(child_root))
+            except ValueError:
+                shown = sp
+            _say(Path(child_root), "from_specification", shown, created, cov["level_name"],
+                 cov["sections"], cov["blocking_missing"],
+                 f"./ai-ops run \"{task or '<задача>'}\" --feature {wid} --execute")
         return 0
 
     # v2.112 Intent UX: настоящие действия (не только превью). preview_mode -> всегда показать превью.
     # v2.116: `review` тоже настоящий intent — read-only ревью действующей ветки.
     if not preview_mode and intent in ("onboard", "status", "health", "plan", "new", "discuss",
-                                       "review", "advise", "next", "model"):
+                                       "review", "advise", "next", "model", "bootstrap"):
         rc = _run_intent(intent, task, Path(child_root), signals, a)
         if rc is not None:
             return rc
@@ -575,7 +679,12 @@ def main(argv):
     if a.json:
         print(json.dumps(pv, ensure_ascii=False, indent=2))
     else:
-        _print_preview(pv)
+        # Смысл — всегда; внутренний разбор превью (стадии, флаги, бюджет) — на technical/debug,
+        # как у `next` и `model`. Разбор не выброшен: без него не отладить неверный подбор режима.
+        _say(Path(child_root), "from_execution_preview", pv)
+        if _audience(Path(child_root)) != "product":
+            print()
+            _print_preview(pv)
 
     # только `run --execute` и `do` реально запускают движок; остальное — превью/делегация
     # v3.22: `do` — alias для `run --execute` с авторазрешением блокировщиков (review_fix_attempts, author, open_pr)
@@ -594,8 +703,10 @@ def main(argv):
                 print(json.dumps({"kind": "intake-incomplete", "exit": 2,
                                   "missing": _missing, "hint": _hint}, ensure_ascii=False, indent=2))
             else:
-                for _ln in _hint:
-                    print(_ln)
+                # Готовая команда с ответом обязана дойти до человека на любом уровне детализации,
+                # иначе сообщение назовёт препятствие и не даст его убрать.
+                _say(Path(child_root), "from_intake_gap", _missing,
+                     pipeline_helpers.intake_signals_command(_missing))
             return 2
         flags = pv["will_do"]["auto_flags"]
         # v3.28.x (P0-1): провайдер выбирается ОДИН раз здесь и дальше идёт под своим именем во все

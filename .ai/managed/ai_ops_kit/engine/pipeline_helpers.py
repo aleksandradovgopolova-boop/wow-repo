@@ -75,11 +75,22 @@ def missing_intake_signals(signals):
     return out
 
 
+def intake_signals_command(missing):
+    """Готовая строка ответа: `--signals '{"size":"small"}'`. -> строка или None.
+
+    Отдельная функция, потому что эту же строку печатает человекочитаемый слой, а собирать её
+    вторым способом значило бы завести второе правило: разойдутся именно в допустимых значениях.
+    """
+    if not missing:
+        return None
+    example = ", ".join(f'"{m["signal"]}":"{(m["allowed"] or ["<значение>"])[0]}"' for m in missing)
+    return f"--signals '{{{example}}}'"
+
+
 def intake_signals_hint(missing, task="<задача>"):
     """Готовая к печати подсказка: чего не хватает и как это передать одной строкой."""
     if not missing:
         return None
-    example = ", ".join(f'"{m["signal"]}":"{(m["allowed"] or ["<значение>"])[0]}"' for m in missing)
     names = ", ".join(m["signal"] for m in missing)
     one = len(missing) == 1
     lines = [f"intake неполон: не {'задан' if one else 'заданы'} {names} — "
@@ -87,7 +98,7 @@ def intake_signals_hint(missing, task="<задача>"):
     for m in missing:
         allowed = " | ".join(m["allowed"]) if m["allowed"] else "значение"
         lines.append(f"  · {m['signal']}: {allowed}")
-    lines.append(f"  добавь: --signals '{{{example}}}'")
+    lines.append(f"  добавь: {intake_signals_command(missing)}")
     return lines
 
 

@@ -30,11 +30,24 @@ from pathlib import Path
 
 import yaml
 
-# ВАЖНО (finding аудита исполнения): shell — НЕ полноценная security boundary. write_scope и
-# protected_paths применяются к операциям read/write; для shell действуют только timeout +
-# denylist деструктивных команд + scrub_env. Модель через shell МОЖЕТ писать вне write_scope
-# (python -c open(...), tee, sed -i), читать файлы вне репо, ходить в сеть. Полный jail
-# (worktree-only writable mount, HOME изолирован, сеть off, лимиты) = контейнер — НЕ реализован.
+# ВАЖНО (finding аудита исполнения): shell — НЕ полноценная security boundary. Статически
+# проверить произвольную команду нельзя, поэтому НА ВХОДЕ для shell действуют только timeout +
+# denylist деструктивных команд + scrub_env.
+#
+# v3.36 (finding живого прогона: `sed -i` правил .github/workflows там, где эквивалентный write
+# отклонялся как protected path): последствия shell ПРОВЕРЯЕМЫ, даже когда сама команда — нет.
+# Брокер снимает состояние git-дерева до команды и после; если shell изменил protected-путь
+# (а при shell_scope_guard — и путь вне write_scope), правка ОТКАТЫВАЕТСЯ, а операция помечается
+# запрещённой. Обход перестал быть необнаружимым и безнаказанным — но это пост-фактум, не запрет.
+#
+# Что этим ЕЩЁ НЕ закрыто, честно:
+#   * не-git рабочее дерево — сверять не с чем, сторож молчит (в evidence нет fs_guard);
+#   * запись ВНЕ корня репозитория (python -c open('/etc/...','w')), чтение чужих файлов, сеть —
+#     сторож смотрит только внутрь git-дерева;
+#   * write_scope для shell по умолчанию НЕ enforced (см. shell_scope_guard): тот же брокер
+#     исполняет подготовку окружения и проверки движка, а они законно пишут вне scope;
+#   * побочные эффекты без файлов (внешние вызовы, БД, отправка данных) не откатываются в принципе.
+# Полный jail (writable-only worktree, изолированный HOME, сеть off, лимиты) = контейнер.
 # Не давать --engine pipeline с живой моделью доступ к ценному приватному репо без надзора.
 SHELL_TIMEOUT_DEFAULT = 300   # сек: shell-команда не висит вечно
 # v2.85: хвост вывода shell для evidence. 400 было мало — сводка теста / список упавших node-id
@@ -155,7 +168,8 @@ def _normalize(cmd):
 class Policy:
     def __init__(self, level="controlled-write", write_scope=None, confidentiality="internal",
                  approvals=None, child_root=None, shell_mode="unrestricted",
-                 shell_allowlist=None, allow_network=True, block_push=False):
+                 shell_allowlist=None, allow_network=True, block_push=False,
+                 shell_path_guard=True, shell_scope_guard=False):
         if level not in LEVEL_ORDER:
             raise ValueError(f"неизвестный уровень '{level}'")
         self.level = level
@@ -174,9 +188,44 @@ class Policy:
         self.shell_allowlist = set(shell_allowlist or [])
         self.allow_network = allow_network
         self.block_push = block_push
+        # v3.36 (закрытие известного разрыва, см. комментарий в начале модуля): shell статически
+        # не проверить, но ПОСЛЕДСТВИЯ shell проверяемы. shell_path_guard=True -> после каждой
+        # shell/git-операции брокер сверяет ФАКТИЧЕСКИ изменённые пути с protected_paths и
+        # откатывает нарушения (пост-фактум enforcement вместо необнаружимого обхода).
+        #   shell_scope_guard: то же для write_scope. По умолчанию ВЫКЛЮЧЕН — тот же брокер
+        #   исполняет подготовку окружения и проверки движка (npm ci, сборка), а они законно
+        #   пишут lock-файлы и артефакты вне write_scope; включать для tool-loop модели.
+        self.shell_path_guard = shell_path_guard
+        self.shell_scope_guard = shell_scope_guard
 
     def _level_ok(self, required):
         return LEVEL_ORDER.index(self.level) >= LEVEL_ORDER.index(required)
+
+    def protected_match(self, rel: str):
+        """(prefix, approval) первого protected-правила, накрывающего путь, иначе None."""
+        path = (rel or "").strip("/")
+        for pre, appr in self.protected:
+            if path and _under(path, pre):
+                return pre, appr
+        return None
+
+    def path_violation(self, rel: str, *, check_scope=True):
+        """Единственный судья по пути: protected_paths (+ опционально write_scope).
+
+        Возвращает причину-строку, если путь писать НЕЛЬЗЯ, иначе None. Используется и ветвью
+        write в decide(), и пост-фактум сторожем shell — чтобы канал записи не менял вердикт
+        (finding живого прогона: `sed -i` правил .github/workflows там, где write отклонялся)."""
+        path = (rel or "").strip("/")
+        if not path:
+            return None
+        for pre, appr in self.protected:
+            if _under(path, pre):
+                if self._level_ok("privileged") and "protected_path_write" in self.approvals:
+                    return None
+                return f"protected path '{pre}' ({appr}) — нужен privileged + approval"
+        if check_scope and self.write_scope and not any(_under(path, s) for s in self.write_scope):
+            return f"'{path}' вне write_scope {self.write_scope}"
+        return None
 
     def decide(self, action: dict) -> dict:
         op = action.get("op")
@@ -199,17 +248,14 @@ class Policy:
             # security (finding аудита): путь не должен выходить за корень (../, абсолютный)
             if _escapes_root(action.get("path") or ""):
                 return {"allow": False, "reason": f"путь '{action.get('path')}' выходит за пределы репозитория (traversal)"}
-            # protected path -> нужен privileged + approval
-            for pre, appr in self.protected:
-                if _under(path, pre):
-                    if self._level_ok("privileged") and "protected_path_write" in self.approvals:
-                        return {"allow": True, "reason": f"protected '{pre}' + approval"}
-                    return {"allow": False,
-                            "reason": f"protected path '{pre}' ({appr}) — нужен privileged + approval"}
-            # вне write_scope -> запрет
-            if self.write_scope and not any(_under(path, s) for s in self.write_scope):
-                return {"allow": False,
-                        "reason": f"'{path}' вне write_scope {self.write_scope}"}
+            # protected path -> нужен privileged + approval; вне write_scope -> запрет.
+            # Судит path_violation() — тот же код, что и пост-фактум сторож shell.
+            why = self.path_violation(path)
+            if why:
+                return {"allow": False, "reason": why}
+            hit = self.protected_match(path)
+            if hit:   # накрыт protected-правилом, но есть privileged + approval
+                return {"allow": True, "reason": f"protected '{hit[0]}' + approval"}
             return {"allow": True, "reason": "запись в пределах write_scope"}
 
         # shell / git. Текстовые денай-проверки — по НОРМАЛИЗОВАННОЙ команде (снятые кавычки),
@@ -388,6 +434,116 @@ def _revision(root):
     return rc.stdout.strip() if rc.returncode == 0 else None
 
 
+def _git_q(root, *args):
+    """git в root без интерактива. -> (rc, stdout). Ошибка git не роняет брокер."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
+                           timeout=60, env=scrub_env())
+        return r.returncode, (r.stdout or "")
+    except (OSError, subprocess.SubprocessError):
+        return 1, ""
+
+
+def _porcelain(root):
+    """Состояние рабочего дерева -> {"paths": set, "renames": [(old, new)]} (None, если не git).
+
+    Переносы нужны отдельно: `git mv security/x public/x` вынес бы содержимое из protected-пути,
+    и откат только исходной стороны оставил бы копию снаружи — то есть обход остался бы рабочим."""
+    # -uall: новые файлы перечисляются ПОШТУЧНО. Без него git сворачивает untracked-каталог в одну
+    # запись «dir/», и откат нарушения промахивался бы: unlink каталога — не файл, тихий no-op.
+    rc, out = _git_q(root, "status", "--porcelain", "-uall")
+    if rc != 0:
+        return None
+    paths, renames = set(), []
+    for line in out.splitlines():
+        if len(line) < 4:
+            continue
+        entry = line[3:].strip()
+        if " -> " in entry:                      # "R  old -> new" / "C  old -> new"
+            old, new = (s.strip().strip('"') for s in entry.split(" -> ", 1))
+            paths.add(old)
+            paths.add(new)
+            renames.append((old, new))
+        else:
+            paths.add(entry.strip('"'))
+    return {"paths": paths, "renames": renames}
+
+
+def _fs_snapshot(root, policy):
+    """Состояние до shell-операции: HEAD + грязные пути. None -> сторож неприменим."""
+    if not getattr(policy, "shell_path_guard", False):
+        return None
+    # нечего защищать -> не платим двумя git status за каждую shell-операцию (петля делает их десятки)
+    if not policy.protected and not (getattr(policy, "shell_scope_guard", False) and policy.write_scope):
+        return None
+    st = _porcelain(root)
+    if st is None:
+        return None      # не git-дерево: пост-фактум сверка невозможна, честно ничего не обещаем
+    rc, head = _git_q(root, "rev-parse", "HEAD")
+    return {"dirty": st["paths"], "head": head.strip() if rc == 0 else None}
+
+
+def _shell_violations(root, policy, pre):
+    """Что shell РЕАЛЬНО изменил в запрещённых путях: рабочее дерево + новые коммиты."""
+    check_scope = bool(getattr(policy, "shell_scope_guard", False))
+    touched, renames = set(), []
+    now = _porcelain(root)
+    if now is not None:
+        touched |= (now["paths"] - pre["dirty"])   # только delta: чужую грязь до операции не судим
+        renames = now["renames"]
+    rc, head_now = _git_q(root, "rev-parse", "HEAD")
+    head_now = head_now.strip() if rc == 0 else None
+    committed = []
+    if pre["head"] and head_now and head_now != pre["head"]:
+        rc2, names = _git_q(root, "diff", "--name-only", f"{pre['head']}..{head_now}")
+        if rc2 == 0:
+            committed = [n for n in names.splitlines() if n.strip()]
+            touched |= set(committed)
+    # вынос содержимого ИЗ запрещённого пути: целевая сторона переноса тоже подлежит откату,
+    # иначе `git mv security/x public/x` оставлял бы копию снаружи и обход работал бы.
+    carried = {new: old for old, new in renames
+               if policy.path_violation(old, check_scope=check_scope) and new in touched}
+    violations = []
+    for rel in sorted(touched):
+        why = policy.path_violation(rel, check_scope=check_scope)
+        if not why and rel in carried:
+            why = f"перенос из запрещённого пути '{carried[rel]}'"
+        if why:
+            violations.append({"path": rel, "reason": why, "committed": rel in committed})
+    return violations, head_now
+
+
+def _revert_violations(root, pre, head_now, violations):
+    """Откатить ровно нарушения. Коммиты операции снимаются (движок коммитит сам, не модель)."""
+    undone = {"reset_from": None, "restored": [], "removed": [], "failed": []}
+    if head_now and pre["head"] and head_now != pre["head"] and any(v["committed"] for v in violations):
+        rc, _ = _git_q(root, "reset", "--mixed", pre["head"])
+        if rc == 0:
+            undone["reset_from"] = head_now
+        else:
+            undone["failed"].append(f"reset к {pre['head'][:12]} не удался")
+    for v in violations:
+        rel = v["path"]
+        rc, _ = _git_q(root, "cat-file", "-e", f"HEAD:{rel}")
+        if rc == 0:
+            rc2, _ = _git_q(root, "checkout", "HEAD", "--", rel)
+            (undone["restored"] if rc2 == 0 else undone["failed"]).append(rel)
+        else:
+            fp = Path(root) / rel
+            try:
+                if fp.is_file() or fp.is_symlink():
+                    fp.unlink()
+                    undone["removed"].append(rel)
+                elif fp.is_dir():
+                    # с -uall сюда попасть не должно; если попали — не молчим (тихий no-op в
+                    # security-откате хуже отказа: он выглядел бы как успешный откат)
+                    undone["failed"].append(f"{rel}: каталог, автоматический откат не выполнен")
+                # путь уже отсутствует -> откатывать нечего, это не ошибка
+            except OSError as e:
+                undone["failed"].append(f"{rel}: {e}")
+    return undone
+
+
 def execute(action: dict, root, policy: Policy) -> dict:
     """Единственная точка исполнения. ВСЕГДА проверяет policy.decide() первым."""
     root = Path(root)
@@ -460,6 +616,8 @@ def execute(action: dict, root, policy: Policy) -> dict:
             # Для production рекомендуется shell=False + list args, но tool-loop требует shell
             # для поддержки pipe/redirect/glob, которые генерирует модель.
             timeout = action.get("timeout", SHELL_TIMEOUT_DEFAULT)
+            # v3.36: снимок ДО команды — основа пост-фактум сторожа путей (см. _fs_snapshot)
+            _pre = _fs_snapshot(root, policy)
             try:
                 r = subprocess.run(action["command"], shell=True, cwd=str(root),
                                    capture_output=True, text=True, env=scrub_env(),
@@ -471,6 +629,21 @@ def execute(action: dict, root, policy: Policy) -> dict:
                 # finding аудита: без timeout shell мог висеть вечно
                 ev.update({"ok": False, "exit_code": None, "command": action["command"],
                            "timed_out": True, "output_tail": f"timeout {timeout}s"})
+            # v3.36 Containment: статически shell не проверить, но его ПОСЛЕДСТВИЯ проверяемы.
+            # Если команда изменила protected-путь (или, при shell_scope_guard, путь вне
+            # write_scope) — правка откатывается, а операция помечается ЗАПРЕЩЁННОЙ. Иначе
+            # `sed -i .github/workflows/...` проходил там, где эквивалентный write отклонялся.
+            if _pre is not None:
+                _viol, _head_now = _shell_violations(root, policy, _pre)
+                if _viol:
+                    _undone = _revert_violations(root, _pre, _head_now, _viol)
+                    ev["allowed"] = False
+                    ev["ok"] = False
+                    ev["fs_guard"] = {"violations": _viol, "reverted": _undone}
+                    ev["reason"] = ("shell изменил запрещённые пути — правка откачена: "
+                                    + "; ".join(f"{v['path']}: {v['reason']}" for v in _viol[:5]))
+                elif _pre["dirty"] is not None:
+                    ev["fs_guard"] = {"violations": []}
     except (OSError, KeyError) as e:
         ev.update({"ok": False, "error": str(e)})
     return ev

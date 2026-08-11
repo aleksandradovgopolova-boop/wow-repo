@@ -8,7 +8,7 @@
         -> RECONSTRUCT  восстановить всё, что можно ДОКАЗАТЬ
         -> AUDIT        сравнить с моделью продуктового репозитория
         -> ASK          одним пакетом запросить недостающее ЧЕЛОВЕЧЕСКОЕ знание
-        -> BOOTSTRAP    создать базовые артефакты (записывает CLI, не этот модуль)
+        -> BOOTSTRAP    создать направление и план из фактов (`product_bootstrap.py`, не этот модуль)
         -> PLAN         roadmap + delivery plan + состояние работы
         -> RECOMMEND    «вот что имеет смысл делать следующим» (`next_work.py`)
 
@@ -94,7 +94,13 @@ def discover(child_root) -> dict:
         for p in root.rglob("*"):
             if not p.is_file():
                 continue
-            if any(part in _SKIP_DIRS for part in p.parts):
+            # ОТНОСИТЕЛЬНО корня, а не абсолютно. `p.parts` включает предков корня, поэтому
+            # репозиторий, лежащий под каталогом с именем `build`, `dist`, `vendor` или
+            # `.claude/worktrees/*` (штатное место работы агентов Claude Code), терял ВЕСЬ код:
+            # `source_files: 0` -> класс NEW_PRODUCT с уверенностью high и «работающей системы я не
+            # нашёл» на живом продукте. Ниже, в `_find`, фильтр с самого начала был относительным —
+            # два разных правила в одном модуле.
+            if any(part in _SKIP_DIRS for part in p.relative_to(root).parts):
                 continue
             if p.suffix.lower() in _SRC_EXT:
                 src += 1
@@ -225,6 +231,88 @@ def classify(evidence: dict, model: dict | None = None) -> dict:
             "reasons": reasons, "onboarding": "reconstruct_then_bootstrap"}
 
 
+ANSWERS_REL = ".ai/project/onboarding-answers.yaml"
+
+
+def answers_path(child_root) -> Path:
+    return Path(child_root) / ANSWERS_REL
+
+
+def read_answers(child_root) -> dict:
+    """Ответы человека из файла онбординга. Пустое значение — это «ещё не ответил», а не ответ."""
+    p = answers_path(child_root)
+    if not p.is_file():
+        return {}
+    try:
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return {}
+    ans = (data.get("answers") or {}) if isinstance(data, dict) else {}
+    return {k: v for k, v in ans.items()
+            if v not in (None, "", [], {}) and str(v).strip() not in ("", "?")}
+
+
+def write_question_file(child_root, ask: dict):
+    """Создать/дополнить файл, в который человек ВПИШЕТ ответы. -> путь.
+
+    Прежде `ai-ops model` печатал вопросы и ЗАВЕРШАЛСЯ: куда писать ответы, не сказано, интерактива
+    нет — человек прочитал двенадцать вопросов и не может ответить. Тупик на главном шаге первого
+    сценария, при том что онбординг обещал «соберу материалы и покажу на проверку».
+
+    Существующие ответы НЕ затираются никогда: файл дополняется новыми вопросами, ответы остаются.
+
+    ЛИШНЕЙ ЗАПИСИ НЕ ДЕЛАЕМ. Если содержимое не изменилось, файл не перезаписывается: `ai-ops model`
+    зовут и просто «посмотреть состояние», и трогать mtime (а в чужом репозитории — показывать файл
+    изменённым в `git status`) ради того же текста команда не вправе. Это единственный файл, который
+    она создаёт, и создаёт ровно потому, что вопросам нужно место для ответа.
+    """
+    p = answers_path(child_root)
+    existing = read_answers(child_root)
+    lines = [
+        "# Ответы владельца на вопросы онбординга AI Ops.",
+        "#",
+        "# Здесь только то, что из кода честно не выводится: цели продукта, его пользователи,",
+        "# границы, которые нельзя нарушать. Кит эти вещи не выдумывает — поэтому спрашивает.",
+        "#",
+        "# Как отвечать: впишите значение после двоеточия. Пустая строка означает «ещё не ответил»,",
+        "# и вопрос останется. Ответ сильнее любого вывода кита: он становится подтверждённым фактом",
+        "# (`user_confirmed`) и больше не переспрашивается.",
+        "#",
+        "# После заполнения запустите снова:  ./ai-ops model",
+        "answers:",
+    ]
+    seen = set()
+    for q in ask.get("questions") or []:
+        qid = q.get("id")
+        if not qid or qid in seen:
+            continue
+        seen.add(qid)
+        lines.append(f"  # {q.get('ask', '')}")
+        if q.get("proposal") and q["proposal"].get("value"):
+            lines.append(f"  #   по коду предполагаю: {q['proposal']['value']} — подтвердите или "
+                         f"замените")
+        val = existing.get(qid)
+        lines.append(f"  {qid}: " + (yaml.safe_dump(val, allow_unicode=True,
+                                                   default_flow_style=True).strip()
+                                     if val is not None else '""'))
+        lines.append("")
+    # Ответы на вопросы, которых больше не задают, сохраняем: человек их дал, они факт.
+    for qid, val in existing.items():
+        if qid not in seen:
+            lines.append(f"  {qid}: " + yaml.safe_dump(val, allow_unicode=True,
+                                                       default_flow_style=True).strip())
+    body = "\n".join(lines).rstrip() + "\n"
+    if p.is_file():
+        try:
+            if p.read_text(encoding="utf-8") == body:
+                return p                       # тот же текст — писать нечего
+        except OSError:
+            pass                               # прочитать не смогли — перезапишем, это не потеря
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
 def owner_confirmed(child_root) -> dict:
     """Факты, ПОДТВЕРЖДЁННЫЕ владельцем: `.ai-ops.yaml -> product_operating_model.confirmed`.
 
@@ -233,14 +321,22 @@ def owner_confirmed(child_root) -> dict:
     реестре, которого не вычисляет никто, — ровно та «capability без реализации», которую
     инварианты кита запрещают (то же правило уже применено к `stale`).
     """
+    # Файл ответов читается НЕЗАВИСИМО от наличия `.ai-ops.yaml`: человек отвечает на вопросы
+    # онбординга ДО того, как у репозитория появится настроенная конфигурация, и ранний выход по
+    # отсутствию конфига обнулял его ответы молча.
+    data = {}
     cfg = Path(child_root) / ".ai-ops.yaml"
-    if not cfg.is_file():
-        return {}
-    try:
-        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
-        return {}                                      # битый конфиг — забота doctor'а
-    conf = (data.get("product_operating_model") or {}).get("confirmed") or {}
+    if cfg.is_file():
+        try:
+            data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            data = {}                                  # битый конфиг — забота doctor'а
+    if not isinstance(data, dict):
+        data = {}
+    conf = dict((data.get("product_operating_model") or {}).get("confirmed") or {})
+    # Файл ответов онбординга — ВТОРОЙ законный источник подтверждений и основной по факту: человек
+    # отвечает там, а не правит конфигурацию руками. Ответ из файла имеет тот же вес.
+    conf.update(read_answers(child_root))
     return {k: v for k, v in conf.items() if v not in (None, "")}
 
 
@@ -319,9 +415,18 @@ def reconstruct(child_root, evidence: dict, model: dict | None = None) -> dict:
 
     # То, что из кода НЕ выводится. Молчать об этом нельзя: молчание читается как «нечего сказать».
     for key, note in (("primary_user", "пользователи продукта из репозитория не выводятся"),
-                      ("product_goal", "цель продукта из репозитория не выводится"),
+                      # Ключ назван так же, как id ВОПРОСА в модели (`main_goal_now`): иначе ответ
+                      # человека никогда не встретится со своим вопросом — ровно тот дефект, что был
+                      # у `production_env` (ключ реконструкции не совпадал с id вопроса).
+                      ("main_goal_now", "цель продукта из репозитория не выводится"),
                       ("sensitive_data", "чувствительность данных определяет владелец")):
-        out[key] = {"value": None, "status": UNKNOWN, "evidence": [], "note": note}
+        # `asks_human: True` — ключ, который кит НЕ ВЫВОДИТ ПО ОПРЕДЕЛЕНИЮ, а не «пока не нашёл».
+        # Разница машиночитаемая, потому что от неё зависит, задавать ли вопрос: `languages`
+        # неизвестны на пустом репозитории, но выводятся из манифестов — спрашивать их у человека
+        # неуважительно. И у каждого такого ключа обязан быть ПАРНЫЙ вопрос в модели, иначе ответ
+        # никогда не встретится со своим вопросом (так уже случилось дважды).
+        out[key] = {"value": None, "status": UNKNOWN, "evidence": [], "note": note,
+                    "asks_human": True}
 
     # Ключ реконструкции обязан совпадать с id ВОПРОСА (`production_env` в модели), иначе
     # предложение «по коду предполагаю X — подтвердить?» не доходит до вопроса никогда — именно так
@@ -331,17 +436,21 @@ def reconstruct(child_root, evidence: dict, model: dict | None = None) -> dict:
         out["production_env"] = {
             "value": "окружение, куда деплоит существующий конвейер", "status": INFERRED,
             "evidence": list(evidence.get("containers") or evidence.get("ci") or []),
-            "note": "какое окружение считается production — решение владельца"}
+            "note": "какое окружение считается production — решение владельца",
+            "asks_human": True}
     else:
         out["production_env"] = {"value": None, "status": UNKNOWN, "evidence": [],
-                                 "note": "признаков деплоя не найдено"}
+                                 "note": "признаков деплоя не найдено", "asks_human": True}
 
     # ПОСЛЕДНИМ: подтверждение владельца перебивает и `inferred`, и `unknown`. Порядок не случаен —
     # человек сильнее любого вывода кита, и обратное затирание сделало бы подтверждение бесполезным.
+    _answers = read_answers(child_root)
     for key, value in owner_confirmed(child_root).items():
+        where = (ANSWERS_REL if key in _answers else ".ai-ops.yaml")
         out[key] = {"value": value, "status": USER_CONFIRMED,
-                    "evidence": ["подтверждено владельцем в .ai-ops.yaml"],
-                    "note": "подтверждение человека сильнее вывода кита"}
+                    "evidence": [f"подтверждено владельцем ({where})"],
+                    "note": "подтверждение человека сильнее вывода кита",
+                    "asks_human": (out.get(key) or {}).get("asks_human", False)}
     return out
 
 
@@ -381,7 +490,7 @@ def _is_stale(root: Path, rels, today=None) -> bool:
     return False
 
 
-def _contour_state(child_root, c: dict, evidence: dict) -> dict:
+def _contour_state(child_root, c: dict, evidence: dict, model: dict) -> dict:
     """Состояние контура в терминах семи статусов + что с ним делать.
 
     Логика намеренно скучная: есть обязательные источники истины -> `verified`; часть есть ->
@@ -390,8 +499,13 @@ def _contour_state(child_root, c: dict, evidence: dict) -> dict:
     дерево не читается: тогда неизвестно даже отсутствие.
     """
     root = Path(child_root)
-    req = [s for s in (c.get("source_of_truth") or []) if s.get("required")]
-    opt = [s for s in (c.get("source_of_truth") or []) if not s.get("required")]
+    # `sot_for`, а не поле контура. Прежде онбординг читал ТОЛЬКО дефолт кита, поэтому `ai-ops model`
+    # — единственное, что видит человек — давал ответ, ПРОТИВОПОЛОЖНЫЙ `contours.sot_state`:
+    # владелец объявил, где лежит его правда, а кит продолжал требовать свой путь и переспрашивать
+    # вечно. Правило «объявление владельца сильнее догадки кита» до этого модуля не доехало.
+    _sot = _contours.sot_for(model, c["id"], root)
+    req = [s for s in _sot if s.get("required")]
+    opt = [s for s in _sot if not s.get("required")]
 
     def _has(rel):
         for pre in ("", ".ai/project/", ".ai/custom/"):
@@ -410,6 +524,15 @@ def _contour_state(child_root, c: dict, evidence: dict) -> dict:
             state = PARTIAL
         else:
             state = MISSING
+
+    # Заготовка плана НЕ закрывает контур планирования: файл есть, а плана нет.
+    if state == VERIFIED and c.get("id") == "planning_execution":
+        try:
+            from ai_ops_kit.planning import delivery_plan as _dp
+            if _dp.is_template(_dp.load(root)):
+                state = PARTIAL
+        except Exception:                              # noqa: BLE001 — план не обязан разбираться
+            pass
 
     rec = c.get("reconstruction") or {}
     qs = c.get("questions") or []
@@ -437,7 +560,8 @@ def audit(child_root, evidence: dict | None = None, model: dict | None = None) -
     """
     model = model or _contours.load_model()
     evidence = evidence if evidence is not None else discover(child_root)
-    rows = [_contour_state(child_root, c, evidence) for c in (model.get("contours") or [])]
+    rows = [_contour_state(child_root, c, evidence, model)
+            for c in (model.get("contours") or [])]
     by_state = {}
     for r in rows:
         by_state[r["state"]] = by_state.get(r["state"], 0) + 1

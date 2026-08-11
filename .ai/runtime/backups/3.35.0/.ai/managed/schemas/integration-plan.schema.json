@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/integration-plan.schema.json",
+  "title": "IntegrationPlan",
+  "description": "IntegrationPlan — v3.3.2. КОНТРАКТ fan-in: порядок интеграции пакетов WorkGraph, стратегия слияния (shared-contract-first), агрегатные проверки. КЛЮЧЕВОЙ ИНВАРИАНТ: успешные package-SHA НЕ доказывают успешность всей работы — после fan-in обязателен НОВЫЙ integration-SHA и полный повтор проверок (requires_new_integration_sha=true). Реализация — v3.6; здесь только контракт.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "work_graph", "integration_order", "fan_in",
+               "aggregate_checks", "requires_new_integration_sha", "new_base_binding"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "IntegrationPlan" },
+    "id": { "type": "string", "pattern": "^IP-[0-9]{3,}$" },
+    "work_graph": { "type": "string", "pattern": "^WG-[0-9]{3,}$" },
+    "integration_order": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "fan_in": { "type": "string", "minLength": 1,
+      "description": "стратегия слияния (напр. integration worktree, shared-contract-first)" },
+    "aggregate_checks": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "requires_new_integration_sha": { "type": "boolean",
+      "description": "ИНВАРИАНТ: обязан быть true — после fan-in нужен новый integration-SHA + повтор проверок" },
+    "new_base_binding": { "type": "boolean" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "IntegrationPlan", "id": "IP-001", "work_graph": "WG-001",
+      "integration_order": ["api", "ui", "wiring"],
+      "fan_in": "integration worktree; shared-contract-first (OrderContract фиксируется до слияния UI/API)",
+      "aggregate_checks": ["tests_passed", "code_review", "integration_smoke"],
+      "requires_new_integration_sha": true,
+      "new_base_binding": true
+    }
+  ]
+}

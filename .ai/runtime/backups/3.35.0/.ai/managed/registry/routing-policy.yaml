@@ -1,0 +1,96 @@
+# routing-policy.example.yaml — Декларативная explainable routing policy (AI Ops Platform V2)
+# Правила выбора workflow/provider/model_class/runtime/mode + fallback.
+# Названия конкретных моделей НЕ зашиты (принцип 17) — используются model_classes.
+schema_version: 1
+registry_type: routing-policy
+
+inputs:
+  - reasoning_complexity        # low | medium | high
+  - context_size                # small | medium | large
+  - language                    # ru | en | mixed
+  - confidentiality             # public | internal | confidential
+  - closed_loop_required        # bool
+  - task_type                   # QUICK|ENGINEERING|PRODUCT|RESEARCH|...
+  - risk                        # low | medium | high | critical
+  - data_residency_required     # null | ru | eu | us
+
+# Классификация -> workflow (первый матч). Здесь — только эскалации и грубые имена;
+# детальные task_type (ui-change, instrumentation, launch, ...) движок маршрутизирует
+# по selection_criteria.task_type из registry/workflows.yaml (единый источник, v2.1.1).
+# Неизвестный task_type -> ENGINEERING с причиной в reasons (сквозного passthrough нет).
+workflow_rules:
+  # critical-эскалация объявлена ПЕРВОЙ (приоритет над task_type). CRITICAL зарегистрирован
+  # в workflows.yaml (v2.15) — движок возвращает его как workflow с эскалацией и ручным
+  # одобрением. Guard в ai_route всё равно не даёт вернуть НЕзарегистрированный контракт.
+  - when: {risk: critical}
+    workflow: CRITICAL
+    escalate_reason: "critical risk overrides declared task_type"
+  - when: {task_type: QUICK}
+    workflow: QUICK
+  - when: {task_type: ENGINEERING}
+    workflow: ENGINEERING
+  - when: {task_type: PRODUCT}
+    workflow: PRODUCT
+  - when: {task_type: RESEARCH}
+    workflow: RESEARCH
+
+# Провайдер/модель/рантайм.
+provider_rules:
+  - when: {confidentiality: confidential}
+    prefer_provider: [gigachat, local]
+    forbid_provider: [anthropic, openai, google]
+    reason: "confidentiality requirement"
+  - when: {data_residency_required: ru}
+    prefer_provider: [gigachat, local]
+    reason: "data residency RU"
+  - when: {language: ru}
+    prefer_model_class: enterprise-russian
+    reason: "Russian-language task"
+  - when: {reasoning_complexity: high}
+    prefer_model_class: high-reasoning
+  - when: {reasoning_complexity: low}
+    prefer_model_class: fast
+  - default:
+    prefer_model_class: balanced
+
+runtime_rules:
+  - when: {confidentiality: confidential}
+    prefer_runtime: [generic-orchestrator]
+    reason: "keep execution inside controlled runtime"
+  - when: {available_runtime: claude-code}
+    prefer_runtime: [claude-code]
+  - default:
+    prefer_runtime: [generic-orchestrator, generic-api]
+
+execution_mode_rules:
+  - when: {runtime_has: native_subagents}
+    mode: native
+  # generic-orchestrator: orchestrated-режим планируется; пока исполняет sequential (default)
+  - default:
+    mode: sequential
+
+approval_rules:
+  - when: {risk: critical}
+    human_approval_required: true
+  - when: {task_type: QUICK}
+    human_approval_required: false
+  - default:
+    human_approval_required: conditional   # по protected-paths / destructive
+
+# --- Полный пример machine-readable route decision (соответствует schemas/route-decision.schema.json) ---
+example_route_decision:
+  schema_version: 1
+  workflow: PRODUCT
+  selected_provider: gigachat
+  selected_runtime: generic-orchestrator
+  selected_model_class: enterprise-russian
+  execution_mode: orchestrated
+  reasons:
+    - confidentiality requirement
+    - Russian-language task
+    - approved corporate provider
+  required_capabilities: [structured_output, file_read]
+  missing_capabilities: []
+  fallbacks:
+    - {provider: local, runtime: generic-orchestrator}
+  human_approval_required: false

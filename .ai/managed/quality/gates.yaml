@@ -86,7 +86,8 @@ gates:
     human_approval: false
     applicability: [ENGINEERING, PRODUCT, VISUAL, AI_FEATURE, CRITICAL]
     required_evidence: [affects, changed_files, verdict]   # verdict ∈ ok|inconsistent
-    findings: [undeclared_change, declared_not_updated, unknown_contour]
+    findings: [source_of_truth_behind, undeclared_change, declared_not_changed,
+               unknown_contour, unknown_contour_declared]
     never: >
       `not_changed` НЕ требует обновления документов — бюрократия «восемь документов на задачу»
       запрещена явно; незатронутый контур закрывается сам собой.

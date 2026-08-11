@@ -465,6 +465,13 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "source_of_truth": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "v3.35: где у ЭТОГО продукта лежит правда контура. Объявление владельца сильнее догадки кита: пути кита остаются в списке, но перестают быть обязательными. Найдено обкаткой: ADR в docs/architecture/decisions/ вместо decisions/registry.yaml давали находку «истина не обновлена» на каждом коммите."
               }
             },
             "additionalProperties": false

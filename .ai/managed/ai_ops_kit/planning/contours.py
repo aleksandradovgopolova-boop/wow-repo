@@ -47,6 +47,28 @@ CHANGED, NOT_CHANGED, UNKNOWN = "changed", "not_changed", "unknown"
 # механизм 3.12: managed-слой кита отдельно от правды репозитория).
 _OVERLAYS = ("", ".ai/project/", ".ai/custom/")
 
+# Каталоги, которые НЕ являются продуктом: внутренности кита, вендор, сборка, бэкапы. Поиск
+# сигнального пути обязан их пропускать, иначе кит принимает свои же файлы за факт о продукте.
+# Обкатка на wow-repo (стек node/react/astro): контур архитектуры заявлял `not_changed`, потому что
+# нашёл Dockerfile в `.ai/runtime/backups/3.27.6/.ai/managed/containers/` — бэкапе СОБСТВЕННОГО
+# managed-слоя. Это подмена признания утверждением: честный ответ был `unknown`. Тот же класс, что
+# доказательства, указывавшие внутрь `.claude/worktrees/*`.
+# `.ai/project/` и `.ai/custom/` из-под запрета выведены отдельно (см. _under_excluded): там лежит
+# правда РЕПОЗИТОРИЯ, а не кита.
+_NOT_PRODUCT = (".git", ".ai", ".claude", "node_modules", "dist", "build", "target", "vendor",
+                ".venv", "venv", "__pycache__", ".next", ".mypy_cache", ".pytest_cache",
+                ".ruff_cache")
+
+
+def _under_excluded(rel: str) -> bool:
+    """Лежит ли путь внутри каталога, не являющегося продуктом. project/custom-оверлей — исключение."""
+    parts = [x for x in str(rel).replace("\\", "/").split("/") if x and x != "."]
+    if not parts:
+        return False
+    if parts[:2] in (([".ai", "project"]), ([".ai", "custom"])):
+        return False                                   # правда репозитория, а не кита
+    return any(x in _NOT_PRODUCT for x in parts)
+
 
 class ModelCorrupt(Exception):
     """Модель контуров недостоверна — по ней работают детект, гейт и doctor, догадки запрещены."""
@@ -79,6 +101,96 @@ def contour(model: dict, cid: str) -> dict | None:
     return next((c for c in model.get("contours") or [] if c.get("id") == cid), None)
 
 
+# Кэш разобранной конфигурации репозитория по СОСТОЯНИЮ файла (путь, mtime, размер). Прежде
+# `.ai-ops.yaml` разбирался на каждый вызов: до восьми разборов YAML за одно срабатывание гейта
+# (`repo_overrides` + `repo_sot` на каждый контур).
+#
+# ЭТО ПРАВКА ПРОИЗВОДИТЕЛЬНОСТИ, А НЕ СОГЛАСОВАННОСТИ, и путать нельзя: mtime в ключе означает, что
+# изменённый файл ПЕРЕЧИТЫВАЕТСЯ. Именно перечитывание живьём испортило один из замеров обкатки —
+# конфигурацию правили, пока прогон шёл, и находки исчезали посреди выборки. Снимок обязан делать
+# АНАЛИЗ (прочитать конфигурацию один раз и передать дальше), а не читатель: читатель не знает, где
+# границы анализа, и молча замороженная конфигурация была бы дефектом хуже лишнего разбора.
+_CFG_CACHE = {}
+
+
+def _child_config(child_root) -> dict:
+    """Разобранный `.ai-ops.yaml` репозитория. -> dict (пустой, если файла нет или он битый).
+
+    Битый конфиг даёт ПУСТОЙ словарь, а не исключение: доопределение путей — не то место, где стоит
+    ронять прогон, а невалидный конфиг ловят `doctor` и `validate_ai_ops_child`.
+    """
+    cfg = Path(child_root) / ".ai-ops.yaml"
+    try:
+        st = cfg.stat()
+    except OSError:
+        return {}
+    key = (str(cfg), st.st_mtime_ns, st.st_size)
+    hit = _CFG_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+    except (yaml.YAMLError, OSError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    _CFG_CACHE.clear()                             # состояние файла сменилось — прежнее не нужно
+    _CFG_CACHE[key] = data
+    return data
+
+
+def _declared_contours(child_root) -> dict:
+    return (_child_config(child_root).get("product_operating_model") or {}).get("contours") or {}
+
+
+class ConfigInvalid(Exception):
+    """Объявление репозитория недостоверно. Молча взять дефолт значило бы работать не там, где сказано."""
+
+
+def declared_path(child_root, key: str, default: str) -> str:
+    """Путь артефакта, объявленный репозиторием: `product_operating_model.paths.<key>`.
+
+    ЗАЧЕМ. Кит требовал `planning/plan.yaml` и `ROADMAP.md` строго в корне. Монорепозиторий, где
+    продукт живёт в `apps/web/`, не мог описать себя вовсе: `next` отвечал «плана нет» на репозиторий
+    с планом (тир 3 разбора перед квалификацией).
+
+    Абсолютный путь и выход за корень — ОШИБКА, а не повод взять дефолт: и то и другое означает, что
+    кит писал бы и читал не в том месте, о котором думает владелец.
+    """
+    rel = ((_child_config(child_root).get("product_operating_model") or {}).get("paths")
+           or {}).get(key)
+    if rel is None:
+        return default
+    rel = str(rel).strip()
+    if not rel:
+        return default
+    p = Path(rel)
+    if p.is_absolute() or ".." in p.parts:
+        raise ConfigInvalid(
+            f".ai-ops.yaml -> product_operating_model.paths.{key} = '{rel}': путь обязан быть "
+            f"относительным и внутри репозитория")
+    return rel
+
+
+def repo_signal_rules(child_root) -> dict:
+    """Правила репозитория поверх сигналов кита. -> {cid: {"remove": [...], "replace": bool}}.
+
+    ДОПОЛНЯТЬ КИТ БЫЛО МОЖНО, СПОРИТЬ С НИМ — НЕТ. Кит объявляет `**/entities/**` сигналом модели
+    данных; в проекте на Feature-Sliced Design `entities` — слой ИНТЕРФЕЙСА, и на обкатке niti это
+    дало 6 ложных находок из 9. Убрать чужой сигнал можно было только правкой самого кита — то есть
+    нельзя. Теперь у владельца есть два способа: снять конкретный паттерн (`change_signals_remove`)
+    или объявить свой список единственным (`change_signals_replace: true`).
+    """
+    out = {}
+    for cid, v in (_declared_contours(child_root) or {}).items():
+        v = v or {}
+        rm = [str(x) for x in (v.get("change_signals_remove") or [])]
+        rep = bool(v.get("change_signals_replace"))
+        if rm or rep:
+            out[cid] = {"remove": rm, "replace": rep}
+    return out
+
+
 def repo_overrides(child_root: Path) -> dict:
     """Сигналы, доопределённые репозиторием в `.ai-ops.yaml -> product_operating_model.contours`.
 
@@ -86,21 +198,62 @@ def repo_overrides(child_root: Path) -> dict:
     `src/telemetry/`. Доопределение — способ превратить `unknown` в проверяемое состояние
     руками владельца, а не выдумкой кита.
     """
-    cfg = Path(child_root) / ".ai-ops.yaml"
-    if not cfg.is_file():
-        return {}
-    try:
-        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
-        return {}                                  # битый конфиг — забота doctor'а, не наша
-    pom = (data.get("product_operating_model") or {}).get("contours") or {}
-    return {k: list((v or {}).get("change_signals") or []) for k, v in pom.items()}
+    return {k: list((v or {}).get("change_signals") or [])
+            for k, v in _declared_contours(child_root).items()}
 
 
-def signals_for(model: dict, cid: str, overrides: dict | None = None) -> list:
-    """Сигнальные пути контура: объявленные китом + доопределённые репозиторием."""
+def repo_sot(child_root) -> dict:
+    """Источники истины, объявленные РЕПОЗИТОРИЕМ: `.ai-ops.yaml -> …contours.<id>.source_of_truth`.
+
+    Кит знает типовые места, но где лежит правда ЭТОГО продукта, знает только владелец. Обкатка на
+    живом репозитории показала цену пробела: ADR лежали в `docs/architecture/decisions/`, сигнал их
+    ловил верно, а объявленного китом `decisions/registry.yaml` в репозитории нет — и находка
+    «истина не обновлена» срабатывала ВЕЧНО на контуре, который поддерживается как надо.
+    Объявленное репозиторием ДОПОЛНЯЕТ дефолт кита, а не заменяет: путь кита мог существовать тоже.
+    """
+    return {k: list((v or {}).get("source_of_truth") or [])
+            for k, v in _declared_contours(child_root).items()}
+
+
+def sot_for(model: dict, cid: str, child_root=None) -> list:
+    """Источники истины контура: объявленные китом + доопределённые репозиторием.
+
+    -> список {"path", "required"}. Пути репозитория считаются обязательными: владелец назвал их
+    сам, значит это и есть его правда, а не необязательное дополнение.
+    """
+    base = [dict(s) for s in ((contour(model, cid) or {}).get("source_of_truth") or [])]
+    declared = (repo_sot(child_root) if child_root is not None else {}).get(cid) or []
+    if declared:
+        # ОБЪЯВЛЕНИЕ ВЛАДЕЛЬЦА СИЛЬНЕЕ ДОГАДКИ КИТА. Пути кита остаются в списке (они могли
+        # существовать тоже), но перестают быть ОБЯЗАТЕЛЬНЫМИ: иначе `ok` у контура недостижим
+        # никогда, и doctor вечно требует файл, которого в этом продукте не будет. Ровно этот
+        # случай дала обкатка: ADR лежат не там, где кит по умолчанию их ищет.
+        for s in base:
+            s["required"] = False
+            s["superseded_by"] = "repository"
+    known = {s.get("path") for s in base}
+    for rel in declared:
+        if rel not in known:
+            base.append({"path": rel, "required": True, "declared_by": "repository"})
+    return base
+
+
+def signals_for(model: dict, cid: str, overrides: dict | None = None,
+                rules: dict | None = None) -> list:
+    """Сигнальные пути контура: сигналы кита + доопределённые репозиторием − снятые репозиторием.
+
+    Порядок именно такой: сначала база (или её отмена через `replace`), потом добавления владельца,
+    и только потом снятия — иначе владелец не мог бы снять свой же паттерн, добавленный шаблоном.
+    """
     base = list((contour(model, cid) or {}).get("change_signals") or [])
-    return base + list((overrides or {}).get(cid) or [])
+    r = (rules or {}).get(cid) or {}
+    if r.get("replace"):
+        base = []
+    out = base + list((overrides or {}).get(cid) or [])
+    remove = {str(x).replace("\\", "/") for x in (r.get("remove") or [])}
+    if remove:
+        out = [p for p in out if str(p).replace("\\", "/") not in remove]
+    return out
 
 
 def _resolve(child_root: Path, rel: str) -> Path | None:
@@ -125,7 +278,9 @@ def sot_state(child_root: Path, model: dict | None = None) -> dict:
     out = {}
     for c in model.get("contours") or []:
         req_missing, opt_missing, present = [], [], []
-        for s in c.get("source_of_truth") or []:
+        # sot_for, а не поле контура: репозиторий вправе объявить свой источник истины, и тогда
+        # догадка кита перестаёт быть обязательной (иначе `ok` недостижим никогда).
+        for s in sot_for(model, c["id"], root):
             rel = s.get("path") or ""
             if _resolve(root, rel):
                 present.append(rel)
@@ -138,6 +293,42 @@ def sot_state(child_root: Path, model: dict | None = None) -> dict:
                         "required_missing": req_missing, "optional_missing": opt_missing,
                         "ok": not req_missing}
     return out
+
+
+def unquote_git_path(path: str) -> str:
+    """Путь из git как есть -> настоящее имя. Второй эшелон защиты от `core.quotePath`.
+
+    Источник уже чинится ключом `-z` (`engine/pipeline_git.py`), но сюда пути приходят и из других
+    мест (CLI `--files`, ручные вызовы, чужие обёртки). Если имя пришло в кавычках с
+    octal-escape'ами, оно не совпадёт ни с одним паттерном и `changed` станет `not_changed` —
+    молча. Разбираем: кавычки снимаем, восьмеричные escape'ы собираем в байты и декодируем UTF-8.
+    """  # noqa: D301
+    s = str(path or "")
+    if not (len(s) >= 2 and s[0] == '"' and s[-1] == '"'):
+        return s
+    body = s[1:-1]
+    out = bytearray()
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == "\\" and i + 3 < len(body) + 1 and body[i + 1:i + 4].isdigit():
+            try:
+                out.append(int(body[i + 1:i + 4], 8))
+                i += 4
+                continue
+            except ValueError:
+                pass
+        if ch == "\\" and i + 1 < len(body):
+            out.extend({"n": b"\n", "t": b"\t", '"': b'"', "\\": b"\\"}.get(body[i + 1],
+                                                                          body[i + 1].encode()))
+            i += 2
+            continue
+        out.extend(ch.encode("utf-8"))
+        i += 1
+    try:
+        return out.decode("utf-8")
+    except UnicodeDecodeError:
+        return s
 
 
 def _matches(rel_path: str, pattern: str) -> bool:
@@ -170,20 +361,45 @@ def _matches(rel_path: str, pattern: str) -> bool:
     return False
 
 
+def _product_dirs(child_root: Path):
+    """Каталоги ПРОДУКТА: обход с ПОДРЕЗКОЙ на не-продуктовых каталогах.
+
+    Подрезка, а не фильтрация после обхода. Обкатка на niti (Next.js, 488 коммитов) показала цену
+    разницы: один вызов гейта тратил 12 СЕКУНД на поиск сигнальных путей, а гейт зовут на КАЖДОМ
+    прогоне конвейера. Причём предыдущая правка (исключение внутренностей кита) это усугубила: до
+    неё `rglob` останавливался на первом попадании — часто внутри `node_modules` — а после стала
+    обходить дерево целиком, чтобы отфильтровать исключённое. `os.walk` с подрезкой `dirnames`
+    в исключённые каталоги не заходит вовсе.
+    """
+    import os
+    root = Path(child_root)
+    for cur, dirnames, filenames in os.walk(root, topdown=True):
+        rel = Path(cur).relative_to(root)
+        # Подрезка НА МЕСТЕ: os.walk не пойдёт в удалённые из dirnames каталоги.
+        dirnames[:] = [d for d in dirnames
+                       if not _under_excluded(str(rel / d) if str(rel) != "." else d)]
+        yield Path(cur), filenames
+
+
 def _repo_has_signal(child_root: Path, patterns: list) -> bool:
     """Есть ли в репозитории ХОТЬ ОДИН путь, попадающий под сигналы контура.
 
     Это и есть граница между `not_changed` и `unknown`. Обход ограничен: заглядываем в объявленные
     префиксы, а не сканируем дерево целиком — на большом продукте полный обход стоил бы дороже
     самой проверки, а ответ нужен один бит.
+
+    Для ОДНОГО контура. Когда контуров много (гейт, `model`), звать надо `signals_present`: она
+    делает один обход на все, а не по обходу на каждый.
     """
     root = Path(child_root)
+    unanchored = []
     for pat in patterns or []:
         pat = pat.replace("\\", "/")
         head = pat.split("*")[0].rstrip("/")
         if head:
-            p = root / head
-            if p.exists():
+            if _under_excluded(head):
+                continue                               # сигнал, указывающий внутрь кита/вендора
+            if (root / head).exists():
                 return True
             # `context/product/MetricCatalog.md` мог уехать в project/custom-оверлей
             if _resolve(root, head):
@@ -196,17 +412,74 @@ def _repo_has_signal(child_root: Path, patterns: list) -> bool:
         segs = [s for s in pat.split("/") if s and s != "**"]
         if not segs:
             continue                               # паттерн из одних `**` не является сигналом
-        tail = segs[-1]
-        try:
-            if next(root.rglob(tail), None) is not None:
-                return True
-        except OSError:
-            continue
+        unanchored.append(segs[-1])
+
+    if not unanchored:
+        return False
+    # ОДИН подрезанный обход на все безякорные паттерны: прежде их было до восьми, и каждый гнал
+    # свой полный rglob по дереву.
+    import fnmatch as _fn
+    try:
+        for cur, filenames in _product_dirs(root):
+            names = filenames + [cur.name]
+            for tail in unanchored:
+                if any(_fn.fnmatch(n, tail) for n in names):
+                    return True
+    except OSError:
+        return False
     return False
 
 
+def signals_present(child_root: Path, patterns_by_contour: dict) -> set:
+    """У каких контуров сигнальные пути в репозитории ЕСТЬ. -> множество id. ОДИН обход дерева.
+
+    ПОЧЕМУ ОДИН. `_repo_has_signal` звался по контуру — до восьми раз за вызов гейта, и каждый гнал
+    свой обход дерева. На монорепозитории (обкатка niti: Next.js, 488 коммитов) обход стоил секунды,
+    а гейт зовут на КАЖДОМ прогоне конвейера. Здесь безякорные хвосты всех контуров собираются в
+    один проход, и проход прекращается, как только каждому нашёлся путь.
+    """
+    root = Path(child_root)
+    present, pending = set(), {}
+    for cid, pats in (patterns_by_contour or {}).items():
+        tails, anchored = [], False
+        for pat in pats or []:
+            pat = str(pat).replace("\\", "/")
+            head = pat.split("*")[0].rstrip("/")
+            if head:
+                if _under_excluded(head):
+                    continue                           # сигнал, указывающий внутрь кита/вендора
+                if (root / head).exists() or _resolve(root, head):
+                    anchored = True
+                    break
+                continue
+            # Хвост берём ПОСЛЕДНИМ ЗНАЧАЩИМ сегментом: у `**/migrations/**` последний сегмент —
+            # `**`, и он совпал бы с любым каталогом, свернув `unknown` в `not_changed`.
+            segs = [s for s in pat.split("/") if s and s != "**"]
+            if segs:
+                tails.append(segs[-1])
+        if anchored:
+            present.add(cid)
+        elif tails:
+            pending[cid] = tails
+    if not pending:
+        return present
+    import fnmatch as _fn
+    try:
+        for cur, filenames in _product_dirs(root):
+            names = filenames + [cur.name]
+            for cid, tails in list(pending.items()):
+                if any(_fn.fnmatch(n, t) for t in tails for n in names):
+                    present.add(cid)
+                    del pending[cid]
+            if not pending:
+                break
+    except OSError:
+        return present
+    return present
+
+
 def derive_affects(child_root: Path, changed_files: list, model: dict | None = None,
-                   overrides: dict | None = None) -> dict:
+                   overrides: dict | None = None, rules: dict | None = None) -> dict:
     """Затронутые контуры — ВЫВОД из фактического изменения, а не заявление автора.
 
     -> {contour_id: {"state": changed|not_changed|unknown, "matched": [...], "signals": N,
@@ -219,26 +492,23 @@ def derive_affects(child_root: Path, changed_files: list, model: dict | None = N
     model = model or load_model()
     root = Path(child_root)
     overrides = repo_overrides(root) if overrides is None else overrides
-    files = [str(f).replace("\\", "/") for f in (changed_files or [])]
+    rules = repo_signal_rules(root) if rules is None else rules
+    files = [unquote_git_path(f).replace("\\", "/") for f in (changed_files or [])]
 
     # ПРАВИЛО СПЕЦИФИЧНОСТИ: точный путь сильнее чужого glob. `context/system/DataMap.md` — явный
     # сигнал и источник истины контура данных, но он же попадает под `context/system/**` контура
     # архитектуры; без этого правила КОРРЕКТНОЕ обновление модели данных давало ложную находку
     # `undeclared_change` по архитектуре. Гейт, выдающий шум, перестают читать — и он становится
     # хуже отсутствующего, поэтому шум здесь не косметика, а дефект. Найдено живой проверкой 3.35.
+    pats_by = {cid: signals_for(model, cid, overrides, rules) for cid in contour_ids(model)}
     exact_owner = {}
-    for _cid in contour_ids(model):
-        for _p in signals_for(model, _cid, overrides):
+    for _cid, _pats in pats_by.items():
+        for _p in _pats:
             if "*" not in _p and not _p.endswith("/"):
                 exact_owner.setdefault(_p.replace("\\", "/"), set()).add(_cid)
 
-    out = {}
-    for cid in contour_ids(model):
-        pats = signals_for(model, cid, overrides)
-        if not pats:
-            out[cid] = {"state": UNKNOWN, "matched": [], "signals": 0,
-                        "reason": "у контура нет сигнальных путей — состояние не определяется"}
-            continue
+    matched_by = {}
+    for cid, pats in pats_by.items():
         exact_pats = [p for p in pats if "*" not in p and not p.endswith("/")]
         matched = []
         for f in files:
@@ -252,10 +522,23 @@ def derive_affects(child_root: Path, changed_files: list, model: dict | None = N
                 continue
             if any(_matches(f, p) for p in pats):
                 matched.append(f)
-        if matched:
-            out[cid] = {"state": CHANGED, "matched": matched, "signals": len(pats),
-                        "reason": f"изменение затрагивает сигнальные пути контура ({len(matched)})"}
-        elif _repo_has_signal(root, pats):
+        matched_by[cid] = matched
+
+    # Присутствие сигналов нужно ТОЛЬКО там, где ничего не совпало, и считается одним обходом на
+    # весь вызов: прежде обход шёл по контуру, до восьми раз за гейт.
+    present = signals_present(root, {cid: pats for cid, pats in pats_by.items()
+                                     if pats and not matched_by[cid]})
+
+    out = {}
+    for cid, pats in pats_by.items():
+        if not pats:
+            out[cid] = {"state": UNKNOWN, "matched": [], "signals": 0,
+                        "reason": "у контура нет сигнальных путей — состояние не определяется"}
+        elif matched_by[cid]:
+            out[cid] = {"state": CHANGED, "matched": matched_by[cid], "signals": len(pats),
+                        "reason": f"изменение затрагивает сигнальные пути контура "
+                                  f"({len(matched_by[cid])})"}
+        elif cid in present:
             out[cid] = {"state": NOT_CHANGED, "matched": [], "signals": len(pats),
                         "reason": "сигнальные пути контура в репозитории есть и не затронуты"}
         else:
@@ -269,9 +552,9 @@ def derive_affects(child_root: Path, changed_files: list, model: dict | None = N
 def _sot_touched(child_root: Path, cid: str, changed_files: list, model: dict) -> list:
     """Какие источники истины контура попали в изменение (с учётом оверлея пути)."""
     c = contour(model, cid) or {}
-    files = [str(f).replace("\\", "/") for f in (changed_files or [])]
+    files = [unquote_git_path(f).replace("\\", "/") for f in (changed_files or [])]
     hit = []
-    for s in c.get("source_of_truth") or []:
+    for s in sot_for(model, cid, child_root):
         rel = (s.get("path") or "").replace("\\", "/")
         if not rel:
             continue
@@ -305,6 +588,7 @@ def reconcile(child_root: Path, declared: dict, changed_files: list,
     """
     model = model or load_model()
     derived = derive_affects(child_root, changed_files, model, overrides)
+    known = set(contour_ids(model))
     decl = {}
     for k, v in (declared or {}).items():
         if isinstance(v, bool):
@@ -314,25 +598,52 @@ def reconcile(child_root: Path, declared: dict, changed_files: list,
         else:
             decl[k] = UNKNOWN
     findings = []
+
+    # ЗАЯВЛЕНИЕ ОБ ОПЕЧАТКЕ НЕ ПРОВЕРЯЕТ НИЧЕГО, И МОЛЧАТЬ ОБ ЭТОМ НЕЛЬЗЯ. `affects: {data_contract:
+    # true}` (id — `data_contracts`) выглядел как заполненное поле: сверка шла по известным контурам,
+    # лишний ключ игнорировался, автор считал, что связь объявлена. Тир 3: опечатка — `major`,
+    # потому что она создаёт ЛОЖНУЮ уверенность, а не просто пропуск.
+    for k in sorted(set(decl) - known):
+        findings.append({"id": "unknown_contour_declared", "contour": k, "severity": "major",
+                         "detail": f"в affects заявлен контур '{k}', которого в модели нет "
+                                   f"(похоже на опечатку) — это заявление не проверяет ничего; "
+                                   f"известные: {', '.join(sorted(known))}"})
     for cid in contour_ids(model):
         d = derived[cid]
         want = decl.get(cid)
+
         if d["state"] == UNKNOWN:
             findings.append({"id": "unknown_contour", "contour": cid, "severity": "info",
                              "detail": d["reason"]})
             continue
-        if d["state"] == CHANGED and want != CHANGED:
-            findings.append({"id": "undeclared_change", "contour": cid, "severity": "major",
-                             "detail": f"изменение трогает {', '.join(d['matched'][:4])} — "
-                                       f"контур не заявлен в affects "
-                                       f"(заявлено: {want or 'ничего'})"})
-        if want == CHANGED:
+
+        # ── ГЛАВНАЯ НАХОДКА: ОПИСАНИЕ ОТСТАЛО ОТ КОДА ──────────────────────────────────────────
+        # Это ФАКТ, и он не зависит от того, заполнил ли человек `affects`: сигналы контура тронуты,
+        # источник истины — нет. Прежде находка требовала заявления, и на документированном пути
+        # (`run` создаёт id из хеша задачи, элемента плана с таким id нет) поле было пустым ВСЕГДА —
+        # гейт структурно не мог дать не-`pass`. Мутационное ревью поймало это как выжившего мутанта:
+        # «файлов 5, включая миграции и CI -> verdict ok».
+        if d["state"] == CHANGED:
             touched = _sot_touched(child_root, cid, changed_files, model)
             if not touched:
-                sot = [s.get("path") for s in (contour(model, cid) or {}).get("source_of_truth") or []]
-                findings.append({"id": "declared_not_updated", "contour": cid, "severity": "major",
-                                 "detail": "контур заявлен изменённым, но источник истины не "
-                                           f"обновлён (ожидался один из: {', '.join(sot)})"})
+                sot = [s.get("path") for s in sot_for(model, cid, child_root)]
+                findings.append({
+                    "id": "source_of_truth_behind", "contour": cid, "severity": "major",
+                    "detail": f"изменение трогает {', '.join(d['matched'][:4])}, а описание контура "
+                              f"не обновлено (ожидался один из: {', '.join(sot)})"})
+
+        # ── УЧЁТ ЗАЯВЛЕНИЯ: полезно, но это не тот дефект, ради которого гейт существует ─────────
+        # `info` осознанно. Незаполненное поле не делает работу несогласованной, а шум на каждой
+        # задаче гарантирует, что гейт перестанут читать — модель запрещает это прямо.
+        if d["state"] == CHANGED and want != CHANGED:
+            findings.append({"id": "undeclared_change", "contour": cid, "severity": "info",
+                             "detail": f"контур затронут, но не заявлен в affects "
+                                       f"(тронуто: {', '.join(d['matched'][:3])})"})
+        if want == CHANGED and d["state"] == NOT_CHANGED:
+            findings.append({"id": "declared_not_changed", "contour": cid, "severity": "info",
+                             "detail": "контур заявлен изменённым, но ни один его сигнальный путь "
+                                       "не тронут — заявление шире изменения"})
+
     return {"comparable": bool(changed_files), "derived": derived, "declared": decl,
             "findings": findings,
             "verdict": ("ok" if not [f for f in findings if f["severity"] == "major"]

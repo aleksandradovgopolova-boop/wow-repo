@@ -1,0 +1,21 @@
+# rules/meta/skill-authoring.yaml — конвенция авторинга скиллов кита (v2.11).
+# Взято из anthropics/skills — skill-creator (методология, не вендорим сам скилл).
+# Применяется ко всем скиллам в skills/*/SKILL.md; частично проверяется машинно
+# (validate_references.py: наличие frontmatter name/description у shipped-скиллов).
+# Находки ссылаются на id.
+schema_version: 1
+kind: meta-checklist
+id: skill-authoring
+used_by: [documentation-steward]
+adapted_from: "anthropics/skills — skill-creator"
+items:
+  - {id: frontmatter-name-desc, check: "Есть YAML-frontmatter с name и description; проверяется validate_references", severity_default: critical}
+  - {id: description-triggers, check: "description «pushy»: описывает и что делает, и КОГДА срабатывать (триггер-фразы) — против недосрабатывания", severity_default: major}
+  - {id: opt-in-declared, check: "Если скилл не для всех задач — opt_in: true и applies_when с явным условием применимости", severity_default: major}
+  - {id: checklist-linked, check: "Если у скилла есть машиночитаемые гейты — поле checklist указывает на существующий rules/*.yaml", severity_default: major}
+  - {id: progressive-disclosure, check: "Прогрессивное раскрытие: метаданные всегда, тело по триггеру, тяжёлые ресурсы — по необходимости; тело ≲500 строк", severity_default: minor}
+  - {id: attribution-if-adapted, check: "Если методология адаптирована извне — поле adapted_from с источником и лицензией; код не копируется", severity_default: critical}
+  - {id: explanation-over-must, check: "Инструкции объясняют «почему», а не только жёсткие MUST; есть раздел отказов (чего скилл не делает)", severity_default: minor}
+  - {id: no-surprise, check: "Нет вредоносного/неожиданного поведения; границы данных соблюдены (governance/information-boundaries)", severity_default: critical}
+  - {id: registered-in-manifest, check: "Shipped-скилл зарегистрирован в manifest.skills.shipped (id, path, opt_in, checklist)", severity_default: major}
+  - {id: lintable-optional, check: "Опционально: SKILL.md/CLAUDE.md проходят внешний линтер AI-конфигов (agnix, registry/tools — status: declared)", severity_default: minor}

@@ -899,6 +899,7 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
     return {
         "schema_version": 1, "kind": "execution-pipeline",
         "workitem_id": plan["workitem_id"],
+        "child_root": str(child_root),          # нужен вывода: уровень детализации берётся из репо
         "base_workflow": plan["base_workflow"],
         "profile": {"stacks": [s.get("language") for s in profile.get("stacks", [])],
                     "undetermined": profile.get("undetermined", [])},
@@ -906,8 +907,18 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
         # enforced в этом прогоне) — sandbox сужает shell до allowlist; block_push всегда True.
         "containment": {"sandbox": sandbox, "shell_mode": pol.shell_mode,
                         "block_push": pol.block_push, "allow_network": pol.allow_network,
-                        "note": "enforceable-подмножество на уровне брокера; полная FS/сеть/ресурс-"
-                                "изоляция — контейнерный runtime"},
+                        # v3.36: пути enforced на ДВА канала, а не на один — shell сверяется
+                        # пост-фактум (нарушение откатывается). shell_path_violations>0 означает,
+                        # что модель пыталась обойти границу через shell.
+                        "shell_path_guard": getattr(pol, "shell_path_guard", False),
+                        "shell_scope_guard": getattr(pol, "shell_scope_guard", False),
+                        "shell_path_violations": sum(
+                            len(((e.get("fs_guard") or {}).get("violations")) or [])
+                            for e in (loop.get("evidence") or [])),
+                        "note": "enforceable-подмножество на уровне брокера: пути закрыты на обоих "
+                                "каналах (write — до, shell — пост-фактум с откатом); запись вне "
+                                "корня репозитория, сеть и не-git деревья — по-прежнему нет; полная "
+                                "FS/сеть/ресурс-изоляция — контейнерный runtime"},
         "loop": {"stopped": loop["stopped"], "steps": loop["steps"],
                  "applied_writes": len(applied), "denied": len(loop["denied"]),
                  # observability (finding живого прогона): без трейса не понять, ПОЧЕМУ петля
@@ -947,6 +958,10 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
                   "tested_revision": committed_sha},
         # v2.121 (P1.2 п.4): покрыло ли человеко-одобрение фактически изменённые пути (после диффа)
         "approval_recheck": approval_recheck,
+        # v3.35.2: НАХОДКИ ГЕЙТА СВЯЗНОСТИ ДОХОДЯТ ДО ЧЕЛОВЕКА. Гейт исполнялся и писал evidence, но
+        # вывод прогона о нём молчал: «описание продукта отстало от кода» существовало только внутри
+        # yaml-артефакта. Гейт, чьи находки не видны, — это гейт, которого нет.
+        "contour_consistency": contour_consistency,
         # v2.83 Full RunPlan: трейс независимых ревью (какие ai-review гейты судились, вердикт,
         # что читал судья, что отклонено). None -> ревью не запускалось (нет --review/reviewer).
         "reviews": reviews,

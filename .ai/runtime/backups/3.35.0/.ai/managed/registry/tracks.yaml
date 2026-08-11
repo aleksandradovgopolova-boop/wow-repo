@@ -1,0 +1,63 @@
+# tracks.yaml — Quality tracks (v2.32, Execution Engine Фаза 1).
+# Реальная фича почти всегда многослойна: base_workflow задаёт основной характер, а
+# tracks — обязательные области качества, выводимые из ЗАТРОНУТЫХ зон. Трек добавляет
+# свои гейты к гейтам base_workflow. Это делает «Design/Analytics/Docs by Default»
+# механическим: пользователь не обязан помнить про loading/error states, события,
+# документацию и rollback — система выводит их из сигналов.
+#
+# signal — булев признак задачи (из intake/discovery). kind: required | conditional.
+# gates — id из quality/gates.yaml (проверяется validate_workflow_gates.py; он же
+# требует непустой реестр и обязательные поля — пустой tracks молча отключал треки).
+# skip_reason — что пишется в RunPlan.skipped_tracks, когда signal=false (explainable skip).
+schema_version: 1
+registry_type: tracks
+
+tracks:
+  VISUAL:
+    signal: ui_changed
+    kind: required            # by default, если тронут UI
+    gates: [ux_review, design_system_usage, accessibility_review, visual_regression]
+    reason: "user-facing UI изменён — нужны состояния экранов, дизайн-система, доступность"
+    skip_reason: "UI не менялся — визуальный трек не нужен"
+
+  ANALYTICS:
+    signal: measurable_behavior
+    kind: required
+    gates: [analytics_design_readiness]  # v3.27.2 WP3: design до merge; runtime verification — после deploy
+    reason: "появилось измеримое поведение — нужны события и метрики"
+    skip_reason: "нет нового измеримого поведения — аналитика не нужна"
+
+  SECURITY:
+    signal: security_surface_changed    # внешняя интеграция / граница аутентификации / внешний ввод
+    kind: required
+    gates: [security]
+    reason: "изменена граница безопасности (интеграция/аутентификация/внешний ввод)"
+    skip_reason: "граница безопасности не менялась — security-трек не обязателен"
+
+  DOCUMENTATION:
+    signal: user_facing_change
+    kind: required
+    gates: [documentation_updated]
+    reason: "изменение видно пользователю — нужна пользовательская документация"
+    skip_reason: "нет пользовательски-заметных изменений — доки не требуются"
+
+  EVENTS:
+    signal: events_changed
+    kind: required
+    gates: [event_contract_consistency]
+    reason: "изменены события — имена согласовать в едином каталоге"
+    skip_reason: "события не менялись"
+
+  AI:
+    signal: ai_component
+    kind: conditional
+    gates: [ai_eval, ai_red_team]
+    reason: "LLM/агентный компонент — нужны eval и adversarial red team"
+    skip_reason: "AI-компонента нет"
+
+  RELEASE:
+    signal: deploy_touched
+    kind: conditional
+    gates: [release_safety, observability_readiness]
+    reason: "затронут релиз/деплой — нужны feature flag, rollback и observability"
+    skip_reason: "релизный контур не затронут"

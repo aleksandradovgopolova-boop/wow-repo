@@ -27,7 +27,7 @@ jobs:
       - name: Клонировать parent-кит (инструменты)
         run: |
           PARENT=$(python3 -c "import yaml; s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source']; print(s[4:] if s.startswith('git+') else s)")
-          git clone --depth 1 "$PARENT" /tmp/ai-ops-kit
+          git clone --depth 1 "$PARENT" "$RUNNER_TEMP/ai-ops-kit"
       - name: Записать срезы по затронутым фичам
         run: |
           BEFORE="${{ github.event.before }}"
@@ -39,7 +39,7 @@ jobs:
           for fid in $CHANGED; do
             [ -f "features/$fid/blueprint.yaml" ] || { echo "features/$fid: нет blueprint — пропуск"; continue; }
             echo "срез: features/$fid"
-            python3 /tmp/ai-ops-kit/tools/run_report.py "features/$fid" --record || echo "features/$fid: run_report не смог — пропуск"
+            python3 "$RUNNER_TEMP"/ai-ops-kit/tools/run_report.py "features/$fid" --record || echo "features/$fid: run_report не смог — пропуск"
           done
       - name: Закоммитить снимки
         run: |

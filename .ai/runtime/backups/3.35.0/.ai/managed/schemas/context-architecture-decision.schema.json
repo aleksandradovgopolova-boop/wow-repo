@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/context-architecture-decision.schema.json",
+  "title": "ContextArchitectureDecision",
+  "description": "ContextArchitectureDecision (CAD) — v3.3.2 Operational Architecture Backbone. КОНТРАКТ архитектуры retrieval'а контекста (развитие существующего Context Compiler, НЕ отдельная векторная память). Repository = источник истины; семантический индекс — лишь один из retrieval-инструментов в конце цепочки. Фиксирует порядок retrieval, инварианты (exact-revision binding, provenance, access-filter ДО retrieval, stale detection), role-views и cache-key. Это контракт-намерение (как ADR), НЕ рантайм-движок: v3.3.2 вводит только контракты, реализация Context Engine v2 — v3.6.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "title", "status", "retrieval_pipeline",
+               "invariants", "role_views", "cache_key", "builds_on"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "ContextArchitectureDecision" },
+    "id": { "type": "string", "pattern": "^CAD-[0-9]{3,}$" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["proposed", "accepted", "superseded", "deprecated"] },
+    "retrieval_pipeline": {
+      "type": "array",
+      "description": "УПОРЯДОЧЕННАЯ цепочка retrieval: policy/metadata -> repository_graph -> full_text -> semantic_fallback -> reranking -> budgeted_role_view",
+      "items": { "type": "string", "enum": ["policy_metadata", "repository_graph", "full_text",
+        "semantic_fallback", "reranking", "budgeted_role_view"] },
+      "minItems": 2
+    },
+    "invariants": {
+      "type": "object",
+      "required": ["exact_revision_binding", "provenance", "access_filter_before_retrieval",
+                   "stale_detection"],
+      "additionalProperties": false,
+      "properties": {
+        "exact_revision_binding": { "type": "boolean" },
+        "provenance": { "type": "boolean" },
+        "access_filter_before_retrieval": { "type": "boolean" },
+        "stale_detection": { "type": "boolean" }
+      }
+    },
+    "role_views": {
+      "type": "array",
+      "description": "context views под роли",
+      "items": { "type": "string", "enum": ["planner", "executor", "ui_reviewer",
+        "security_reviewer", "integration"] }
+    },
+    "cache_key": {
+      "type": "array",
+      "description": "компоненты ключа кэша; обязаны включать repository + sha + policy + view",
+      "items": { "type": "string", "enum": ["repository", "sha", "policy", "view"] }
+    },
+    "builds_on": { "type": "string", "minLength": 1,
+      "description": "существующее основание (напр. tools/context_compiler.py) — CAD развивает его, не заменяет" },
+    "supersedes": { "type": ["string", "null"], "pattern": "^CAD-[0-9]{3,}$" },
+    "superseded_by": { "type": ["string", "null"], "pattern": "^CAD-[0-9]{3,}$" }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "ContextArchitectureDecision",
+      "id": "CAD-001",
+      "title": "Repository-first budgeted retrieval поверх Context Compiler",
+      "status": "accepted",
+      "retrieval_pipeline": ["policy_metadata", "repository_graph", "full_text",
+        "semantic_fallback", "reranking", "budgeted_role_view"],
+      "invariants": { "exact_revision_binding": true, "provenance": true,
+        "access_filter_before_retrieval": true, "stale_detection": true },
+      "role_views": ["planner", "executor", "ui_reviewer", "security_reviewer", "integration"],
+      "cache_key": ["repository", "sha", "policy", "view"],
+      "builds_on": "tools/context_compiler.py",
+      "supersedes": null,
+      "superseded_by": null
+    }
+  ]
+}

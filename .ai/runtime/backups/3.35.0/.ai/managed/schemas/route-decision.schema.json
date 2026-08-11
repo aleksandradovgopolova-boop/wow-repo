@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/route-decision.schema.json",
+  "title": "RouteDecision",
+  "description": "Explainable machine-readable routing result (workflow/provider/model/runtime/mode).",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "workflow": { "type": "string" },
+    "selected_provider": { "type": "string" },
+    "selected_runtime": { "type": "string" },
+    "selected_model_class": { "type": "string" },
+    "execution_mode": { "type": "string", "enum": ["native", "orchestrated", "sequential", "manual-assisted"] },
+    "reasons": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "required_capabilities": { "type": "array", "items": { "type": "string" } },
+    "missing_capabilities": { "type": "array", "items": { "type": "string" } },
+    "fallbacks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "provider": { "type": "string" },
+          "runtime": { "type": "string" },
+          "model_class": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "human_approval_required": { "type": "boolean" }
+  },
+  "required": ["schema_version", "workflow", "selected_provider", "selected_runtime", "selected_model_class", "execution_mode", "reasons", "human_approval_required"],
+  "additionalProperties": false,
+  "x-extensibility": "additionalProperties false: adding a field is a minor bump with default.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "workflow": "PRODUCT",
+      "selected_provider": "gigachat",
+      "selected_runtime": "generic-orchestrator",
+      "selected_model_class": "enterprise-russian",
+      "execution_mode": "orchestrated",
+      "reasons": ["confidentiality requirement", "Russian-language task", "approved corporate provider"],
+      "required_capabilities": ["structured_output", "file_read"],
+      "missing_capabilities": [],
+      "fallbacks": [{ "provider": "local", "runtime": "generic-orchestrator" }],
+      "human_approval_required": false
+    }
+  ]
+}

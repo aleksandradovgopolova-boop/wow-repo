@@ -6,7 +6,7 @@ schema_version: 1
 kind: ai-ops-manifest
 
 ai_ops:
-  package_version: 3.35.0
+  package_version: 3.36.1
   schema_version: 1
   minimum_runtime_contract: 1
 
@@ -891,13 +891,38 @@ session_orchestration:
     package: ai_ops_kit/planning                      # контур Planning & Execution в коде
     validator: ai_ops_kit/validation/validate_product_model.py
     gate: contour_consistency                         # advisory до обкатки на child-репозиториях
-    commands: [next, model]                           # четыре вопроса / понимание репозитория
+    commands: [next, model, bootstrap]                # четыре вопроса / понимание / первый план
+    # v3.35.2 (тир 4): BOOTSTRAP БЫЛ СТРОКОЙ. Первый сценарий объявлял
+    # `… ASK -> BOOTSTRAP -> PLAN -> RECOMMEND`, но кит не создавал ни направления, ни плана:
+    # владелец после онбординга оставался с пониманием и без работы. Теперь создаёт — из фактов
+    # аудита, не перезаписывая существующее, и с пометками «нужно ваше слово» там, где факта нет.
+    bootstrap:
+      module: ai_ops_kit/planning/product_bootstrap.py
+      writes: [ROADMAP.md, planning/plan.yaml]        # по объявленным `paths`, если объявлены
+      never_writes: "существующие файлы (кроме собственной заготовки `template: true`)"
+      dry_run_by_default: true                        # запись в чужой репозиторий видна ДО записи
+      invariant: >
+        продуктовые факты не выдумываются: цели, боли и «следующий результат» из кода не выводятся,
+        и на их месте стоит пометка владельцу, а не правдоподобный текст
     required_repo_artifacts:                          # обязательные артефакты контура планирования
       - ROADMAP.md                                    # направление: четыре горизонта
       - planning/plan.yaml                            # delivery plan: kind: delivery-plan
     templates:
       roadmap: templates/planning/ROADMAP.md
       plan: templates/planning/plan.yaml
+    # v3.35.2 (тир 3): РЕПОЗИТОРИЙ ВПРАВЕ ОПИСАТЬ СЕБЯ. Пути артефактов были жёсткими, и монорепо,
+    # где продукт живёт в `apps/web/`, не мог описать себя вовсе. Дополнить сигналы кита было можно,
+    # снять — нельзя (`**/entities/**` в Feature-Sliced Design: 6 ложных находок из 9).
+    child_declarations:                               # `.ai-ops.yaml -> product_operating_model`
+      paths:
+        plan: "где лежит delivery plan (по умолчанию planning/plan.yaml)"
+        roadmap: "где лежит направление (по умолчанию ROADMAP.md)"
+        note: "относительный путь внутри репозитория; абсолютный и `..` — ОШИБКА, не дефолт"
+      contours:
+        source_of_truth: "чем описывается контур в ЭТОМ продукте (сильнее догадки кита)"
+        change_signals: "что считать изменением контура — ДОПОЛНЯЕТ сигналы кита"
+        change_signals_remove: "снять конкретный сигнал кита (точное совпадение паттерна)"
+        change_signals_replace: "объявить свой список единственным — догадки кита выключены"
     invariants:
       - "unknown != not_changed: контур без сигнальных путей кит видеть не умеет и говорит об этом"
       - "выводимый статус (ready/blocked/waiting) не объявляется — он считается из графа и гейтов"

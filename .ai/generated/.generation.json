@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "package_version": "3.35.0",
+  "package_version": "3.36.1",
   "sources": {
     "registry/workflows.yaml": "36bdf139ef95902355053eac2c882caba1449de51a7f0e859b5b8dde0b312f92",
     "registry/agents.yaml": "d1ae7f5c0a44f83e432692125fb06adf8e3c867ec2abc50a2ab7d15f129677b4"

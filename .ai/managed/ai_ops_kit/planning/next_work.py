@@ -212,14 +212,29 @@ def compute(child_root, budget_left=None):
     model = _contours.load_model()
     plan = _plan.load(child_root)
     rm = _roadmap.check(child_root, plan)
+    # Путь называем ФАКТИЧЕСКИЙ, а не дефолтный: монорепозиторий объявляет свой, и сообщение
+    # «нет planning/plan.yaml» отправило бы владельца искать файл не там, где он у него лежит.
+    plan_rel = _plan.plan_rel(child_root)
 
     if plan is None:
         return {"schema_version": 1, "plan_present": False,
                 "roadmap": {"errors": rm["errors"], "warnings": rm["warnings"]},
                 "where_are_we": None, "in_progress": [], "blocked": [], "ready": [],
                 "next_best": None, "parallel_with": [], "not_ready": [],
-                "gap": f"нет {_plan.PLAN_REL} — контур Planning & Execution не заполнен; "
+                "gap": f"нет {plan_rel} — контур Planning & Execution не заполнен; "
                        f"шаблон: templates/planning/plan.yaml"}
+
+    # ЗАГОТОВКА — НЕ ПЛАН. Иначе кит советует работу из своего примера как настоящую (найдено тремя
+    # ревью независимо). Отвечаем тем же, чем на отсутствие плана: назван пробел и способ его закрыть.
+    if _plan.is_template(plan):
+        return {"schema_version": 1, "plan_present": True, "plan_is_template": True,
+                "plan_errors": [], "plan_warnings": [],
+                "roadmap": {"errors": rm["errors"], "warnings": rm["warnings"]},
+                "where_are_we": None, "in_progress": [], "blocked": [], "ready": [],
+                "next_best": None, "parallel_with": [], "parallel_skipped": [], "not_ready": [],
+                "gap": f"{plan_rel} — это ещё ЗАГОТОВКА кита (пример работы, не ваш план). "
+                       f"Впишите свою работу и снимите строку `template: true`; советовать из "
+                       f"примера кит не станет."}
 
     val = _plan.validate(plan, model)
     res = _plan.resolve(plan, child_root, model)
@@ -284,6 +299,13 @@ def compute(child_root, budget_left=None):
 def render(rep) -> str:
     """Человеческий ответ. Четыре вопроса — четыре раздела, в том же порядке, всегда."""
     L = []
+    if rep.get("plan_is_template"):
+        L.append("ПЛАНИРОВАНИЕ: в плане пока ПРИМЕР из шаблона, а не ваша работа")
+        L.append(f"  {rep.get('gap')}")
+        for e in rep["roadmap"]["errors"]:
+            L.append(f"  ✗ {e}")
+        return "\n".join(L)
+
     if not rep.get("plan_present"):
         L.append("ПЛАНИРОВАНИЕ: контур не заполнен")
         L.append(f"  {rep.get('gap')}")

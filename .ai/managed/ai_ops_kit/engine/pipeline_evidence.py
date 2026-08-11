@@ -206,14 +206,30 @@ def contour_consistency_evidence(child_root, wid, changed_files, timeout=120):
         args += ["--workitem", str(wi)]
     try:
         r = _sp.run(args, capture_output=True, text=True, timeout=timeout, check=False)
-        rep = json.loads((r.stdout or "").strip() or "{}")
-    except (OSError, _sp.SubprocessError, json.JSONDecodeError) as e:
+    except (OSError, _sp.SubprocessError) as e:
         return {"status": "warn", "provided": [], "report": None,
                 "evidence": [f"сверка контуров не выполнена ({type(e).__name__}) — "
                              f"проверка НЕ проведена"]}
+    # КОД ВОЗВРАТА ОБЯЗАТЕЛЕН. Прежде он игнорировался, и недостоверный реестр (ModelCorrupt внутри
+    # подпроцесса) давал пустой stdout -> дальше срабатывала ветка «изменений не предъявлено», хотя
+    # файлы изменены. Битый реестр становился неотличим от пустого диффа: признание подменялось
+    # утверждением. Сбой проверки — это `warn` с честной причиной, а не молчание про дифф.
+    if r.returncode != 0:
+        why = ((r.stderr or r.stdout or "").strip().splitlines() or ["без сообщения"])[0][:200]
+        return {"status": "warn", "provided": [], "report": None,
+                "evidence": [f"сверка контуров НЕ ПРОВЕДЕНА (код {r.returncode}): {why}"]}
+    try:
+        rep = json.loads((r.stdout or "").strip() or "{}")
+    except json.JSONDecodeError:
+        return {"status": "warn", "provided": [], "report": None,
+                "evidence": ["сверка контуров вернула неразбираемый ответ — проверка НЕ проведена"]}
     major = [f for f in (rep.get("findings") or []) if f.get("severity") == "major"]
+    behind = [f for f in major if f.get("id") == "source_of_truth_behind"]
     unknown = [f for f in (rep.get("findings") or []) if f.get("id") == "unknown_contour"]
     lines = [f"изменённых путей {len(changed_files or [])} · вердикт {rep.get('verdict')}"]
+    if behind:
+        lines.append("описание контура отстало от кода: "
+                     + ", ".join(f["contour"] for f in behind))
     lines += [f"{f['id']} / {f['contour']}: {f['detail']}" for f in major[:6]]
     if unknown:
         lines.append(f"контуров без сигнальных путей (состояние не определяется): "
