@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/work-graph.schema.json",
+  "title": "WorkGraph",
+  "description": "WorkGraph — v3.3.2 Operational Architecture Backbone. КОНТРАКТ структуры многопакетной работы: пакеты, зависимости, зоны записи, общие контракты, режим исполнения и порядок интеграции. Развивает существующий WorkPackage Executor и active-work (affected-areas/shared-contracts/depends_on), НЕ вводит второй executor/scheduler. Реализация параллельного исполнения — v3.6; здесь только контракт.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "feature", "execution_mode", "packages",
+               "integration_order", "aggregate_verification"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "WorkGraph" },
+    "id": { "type": "string", "pattern": "^WG-[0-9]{3,}$" },
+    "feature": { "type": "string", "minLength": 1 },
+    "execution_mode": { "type": "string", "enum": ["single", "sequential", "parallel", "hybrid"] },
+    "packages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "write_scope"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "depends_on": { "type": "array", "items": { "type": "string" } },
+          "write_scope": { "type": "array", "items": { "type": "string" }, "minItems": 1,
+            "description": "пути/глобы, куда пакет пишет (для классификации parallel-safety)" },
+          "shared_contracts": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "integration_order": { "type": "array", "items": { "type": "string" }, "minItems": 1,
+      "description": "порядок fan-in (топологический относительно depends_on)" },
+    "aggregate_verification": { "type": "array", "items": { "type": "string" }, "minItems": 1,
+      "description": "проверки, прогоняемые ПОСЛЕ fan-in на integration-SHA" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "WorkGraph", "id": "WG-001", "feature": "feature:checkout",
+      "execution_mode": "hybrid",
+      "packages": [
+        { "id": "api", "depends_on": [], "write_scope": ["src/api/**"], "shared_contracts": ["OrderContract"] },
+        { "id": "ui", "depends_on": [], "write_scope": ["src/ui/**"], "shared_contracts": ["OrderContract"] },
+        { "id": "wiring", "depends_on": ["api", "ui"], "write_scope": ["src/app/**"], "shared_contracts": [] }
+      ],
+      "integration_order": ["api", "ui", "wiring"],
+      "aggregate_verification": ["tests_passed", "code_review", "integration_smoke"]
+    }
+  ]
+}

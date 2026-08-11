@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ContextBundle",
+  "description": "Минимальный релевантный пакет контекста для WorkItem (Context Compiler, этап 1 эпика Context Engineering).",
+  "type": "object",
+  "required": ["schema_version", "kind", "workitem_id", "included", "excluded",
+               "estimated_tokens", "context_budget"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "ContextBundle"},
+    "workitem_id": {"type": "string"},
+    "base_workflow": {"type": "string"},
+    "revision": {"type": ["string", "null"]},
+    "included": {
+      "type": "object",
+      "required": ["project_context", "repository_context", "specifications",
+                   "decisions", "files", "rules", "skills", "agents"],
+      "properties": {
+        "project_context": {"type": "array"},
+        "repository_context": {"type": "array"},
+        "specifications": {"type": "array"},
+        "decisions": {"type": "array"},
+        "files": {"type": "array"},
+        "rules": {"type": "array"},
+        "skills": {"type": "array"},
+        "agents": {"type": "array"}
+      }
+    },
+    "included_reasons": {"type": "object"},
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "reason"],
+        "properties": {"source": {"type": "string"}, "reason": {"type": "string"}}
+      }
+    },
+    "assumptions": {"type": "array"},
+    "open_questions": {"type": "array"},
+    "estimated_tokens": {"type": "integer", "minimum": 0},
+    "context_budget": {"type": "integer", "minimum": 1},
+    "overflow": {"type": "boolean"}
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/package-capability-scope.schema.json",
+  "title": "PackageCapabilityScope",
+  "description": "PackageCapabilityScope (PCS) — v3.4 Security, Permissions & Economics. Привязывает пакет WorkGraph к разрешённым permission-уровням (те же, что registry/tools.yaml permission_level: read-only/local/controlled-write/network/execution). Least-privilege: повышенные уровни (network/execution) требуют обоснования. Инвариант фазы: никакой package без capability-scope (проверяется покрытием: каждый пакет WorkGraph обязан иметь PCS).",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "work_graph", "package", "allowed_permissions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "PackageCapabilityScope" },
+    "id": { "type": "string", "pattern": "^PCS-[0-9]{3,}$" },
+    "work_graph": { "type": "string", "pattern": "^WG-[0-9]{3,}$" },
+    "package": { "type": "string", "minLength": 1 },
+    "allowed_permissions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string",
+        "enum": ["read-only", "local", "controlled-write", "network", "execution"] },
+      "description": "минимально необходимый набор (least-privilege)"
+    },
+    "justification": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "обоснование ПОВЫШЕННЫХ уровней (network/execution обязаны нести причину)",
+      "properties": {
+        "network": { "type": "string", "minLength": 1 },
+        "execution": { "type": "string", "minLength": 1 }
+      }
+    },
+    "human_approval_for": { "type": "array", "items": { "type": "string" },
+      "description": "действия, требующие человека (напр. destructive) — как tools.yaml requires_human_approval_for" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "PackageCapabilityScope", "id": "PCS-001",
+      "work_graph": "WG-001", "package": "api",
+      "allowed_permissions": ["read-only", "local", "controlled-write"],
+      "human_approval_for": []
+    }
+  ]
+}

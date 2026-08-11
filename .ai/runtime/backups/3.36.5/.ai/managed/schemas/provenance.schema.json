@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/provenance.schema.json",
+  "title": "Provenance",
+  "description": ".ai/managed/.provenance.json — origin of an installed managed layer in a child repo.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "package": { "type": "string" },
+    "source": { "type": "string", "description": "parent package source (git url / path)" },
+    "installed_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+" },
+    "installed_at": { "type": ["string", "null"], "format": "date-time" },
+    "managed_root": { "type": "string" },
+    "presets": { "type": "array", "items": { "type": "string" } },
+    "checksums_file": { "type": "string" },
+    "note": { "type": "string" }
+  },
+  "required": ["schema_version", "package", "source", "installed_version", "managed_root"],
+  "additionalProperties": false,
+  "x-no-secrets": "No credentials; source is a repo URL/path only.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "package": "ai-first-system",
+      "source": "git+https://example.com/org/ai-ops-kit.git",
+      "installed_version": "0.3.0",
+      "installed_at": null,
+      "managed_root": ".ai/managed",
+      "presets": ["software-product"],
+      "checksums_file": ".checksums.json",
+      "note": "Illustrative example of a child install (Phase 4)."
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+# ai-ops-record.yml — автонакопление истории эффекта (report-history) без участия человека.
+# Устанавливается `ai-ops init` в .github/workflows/ (или скопируйте вручную).
+#
+# На каждый push фиксирует срез (run_report --record) по фичам, затронутым в этом пуше,
+# и коммитит снимок в .ai/project/report-history/ с [skip ci] (без рекурсии). Так фича
+# за свой жизненный цикл естественно набирает ≥3 срезов, и baseline метрик эффекта
+# закрывается сам — в дополнение к стадийной записи внутри сессии (plan/implement/
+# verify/finish). Инструменты кита не в репо — берутся из parent (как в ai-ops-update).
+#
+# Опт-аут: удалить этот файл. Снимки — машиночитаемые jsonl, PII не содержат
+# (см. tools/run_report.py). GITHUB_TOKEN-пуш не перезапускает workflow (нет петли).
+name: ai-ops-record
+on:
+  push: {}
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  record:
+    # Раннер выбирается ПЕРЕМЕННОЙ, а не зашит. `ubuntu-latest` существует только у
+    # GitHub: в организации со своими раннерами джоба с этим ярлыком просто висит в
+    # очереди и никогда не стартует. Задайте `vars.CI_RUNNER_LINUX` (Settings ->
+    # Secrets and variables -> Actions -> Variables) — и кит поедет на вашей машине.
+    # Обкатано на живом self-hosted стенде ии-среды, а не придумано.
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      # Python ставим ТОЛЬКО на раннерах GitHub. На своей машине `setup-python` уходит в
+      # tool cache по пути раннеров GitHub (`/Users/runner`), которого там нет, а `pip install`
+      # в системный python Ubuntu 24.04 запрещён (PEP 668, externally-managed-environment).
+      - uses: actions/setup-python@v5
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+      # На своём раннере предустановку не молчим, а ПРОВЕРЯЕМ: иначе первое падение случится
+      # глубже и невнятнее — так у ии-среды `net::ERR_CONNECTION_REFUSED` прятал отсутствие
+      # утилиты. Здесь причина названа сразу.
+      - name: Проверить python и pyyaml (свой раннер)
+        if: ${{ vars.CI_RUNNER_LINUX }}
+        run: |
+          python3 -c 'import sys, yaml; print("python", sys.version.split()[0], "· pyyaml", yaml.__version__)' \
+            || { echo "на раннере '${{ vars.CI_RUNNER_LINUX }}' нет python3 с pyyaml — поставьте их на машину раннера (кит ставить их в системный python не будет: PEP 668)"; exit 1; }
+      - name: Клонировать parent-кит (инструменты)
+        run: |
+          PARENT=$(python3 -c "import yaml; s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source']; print(s[4:] if s.startswith('git+') else s)")
+          git clone --depth 1 "$PARENT" "$RUNNER_TEMP/ai-ops-kit"
+      - name: Записать срезы по затронутым фичам
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            BEFORE=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+          fi
+          CHANGED=$(git diff --name-only "$BEFORE" HEAD -- 'features/*' | cut -d/ -f2 | sort -u)
+          [ -z "$CHANGED" ] && { echo "фичи не затронуты — срезы не нужны"; exit 0; }
+          for fid in $CHANGED; do
+            [ -f "features/$fid/blueprint.yaml" ] || { echo "features/$fid: нет blueprint — пропуск"; continue; }
+            echo "срез: features/$fid"
+            python3 "$RUNNER_TEMP"/ai-ops-kit/tools/run_report.py "features/$fid" --record || echo "features/$fid: run_report не смог — пропуск"
+          done
+      - name: Закоммитить снимки
+        run: |
+          if [ -z "$(git status --porcelain .ai/project/report-history 2>/dev/null)" ]; then
+            echo "новых срезов нет"; exit 0
+          fi
+          git config user.name "ai-ops-recorder"
+          git config user.email "ai-ops-recorder@users.noreply.github.com"
+          git add .ai/project/report-history
+          git commit -m "chore: record effect snapshot [skip ci]"
+          git push

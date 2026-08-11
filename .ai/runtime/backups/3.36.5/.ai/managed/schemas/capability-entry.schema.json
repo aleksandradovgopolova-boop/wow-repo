@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/capability-entry.schema.json",
+  "title": "CapabilityEntry",
+  "description": "One normalized capability record in the capability index (Section 15). MUST NOT contain credentials.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "entity_kind": { "type": "string", "enum": ["provider", "model", "runtime", "tool", "adapter"] },
+    "entity_id": { "type": "string" },
+    "capability": { "type": "string" },
+    "status": { "type": "string", "enum": ["declared", "documented", "verified", "inferred", "degraded", "unsupported", "unknown"] },
+    "value": {},
+    "verification_required": { "type": "boolean" },
+    "last_documented_at": { "type": ["string", "null"], "format": "date" },
+    "last_verified_at": { "type": ["string", "null"], "format": "date-time" },
+    "model_or_version": { "type": ["string", "null"] },
+    "source": { "type": ["string", "null"], "description": "official source URL or reference" },
+    "limitations": { "type": ["string", "null"] },
+    "fallback": { "type": ["string", "null"] }
+  },
+  "required": ["schema_version", "entity_kind", "entity_id", "capability", "status", "verification_required"],
+  "additionalProperties": false,
+  "x-no-secrets": "Only env var names / secret-reference names allowed anywhere; real credentials are rejected by the secrets validator.",
+  "x-extensibility": "status vocabulary is fixed; new capabilities are just new entity rows.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "entity_kind": "provider",
+      "entity_id": "gigachat",
+      "capability": "structured_output",
+      "status": "documented",
+      "value": true,
+      "verification_required": true,
+      "last_documented_at": "2026-07-08",
+      "last_verified_at": null,
+      "model_or_version": "GigaChat-2-*",
+      "source": "github.com/ai-forever/gigachat",
+      "limitations": "Beta",
+      "fallback": "emulate via function calling"
+    }
+  ]
+}

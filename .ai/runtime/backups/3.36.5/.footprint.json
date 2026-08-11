@@ -1,0 +1,7 @@
+{
+  ".ai/managed": true,
+  ".claude/skills": true,
+  ".claude/commands": true,
+  ".ai/generated": true,
+  ".ai-ops.yaml": true
+}

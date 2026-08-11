@@ -35,24 +35,63 @@ PROFILES = {
 }
 
 
-def validate_dir(feature_dir: Path):
-    errors = []
+
+# ── Долг доказательства поставки ──────────────────────────────────────────────────────────────
+# Правило «`released` требует SHA-verified DeliveryReceipt» появилось в 3.27.4. У репозиториев,
+# выпускавших функции ДО этого, доказательства нет и восстановить его нечем: `sha_verified` ставится
+# только сверкой записанного DeliveryIntent с remote, а интента тогда не записывали. Подделать флаг
+# нельзя — это переопределение проверенного факта, ровно то, что кит запрещает.
+#
+# Поэтому отсутствие доказательства признаётся ОТДЕЛЬНЫМ состоянием: `.ai/project/
+# delivery-proof-debt.yaml` говорит «доказательства нет», а не «доказательство есть». Для функций из
+# этого списка находка перестаёт валить прогон, но НЕ исчезает: она остаётся долгом с числом и в
+# `doctor`, и в выводе валидатора. «Не знаю» не превращается в «в порядке» — оно перестаёт
+# блокировать то, что закрыть нечем.
+DEBT_REL = ".ai/project/delivery-proof-debt.yaml"
+
+
+def _debt_ids(feature_dir: Path) -> set:
+    """id функций, за которыми признан долг доказательства. -> множество.
+
+    Учитывается только запись с `status_at_record: released`: иначе дописанная руками строка
+    про запланированную функцию давала бы обход правила, а не признание истории.
+    """
+    root = feature_dir.parent.parent            # features/<id>/ -> корень репозитория
+    p = root / DEBT_REL
+    if not p.is_file():
+        return set()
+    try:
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return set()                            # нечитаемый файл — не оправдание, правило в силе
+    if data.get("kind") != "DeliveryProofDebt":
+        return set()
+    return {str(f.get("id")) for f in (data.get("features") or [])
+            if isinstance(f, dict) and f.get("status_at_record") == "released"}
+
+
+def validate_dir_full(feature_dir: Path):
+    errors, advisories = [], []
 
     def fail(msg):
         errors.append(f"{feature_dir.name}: {msg}")
 
+    def debt(msg):
+        """Находка, которую закрыть нечем: остаётся видимой, но не валит прогон."""
+        advisories.append(f"{feature_dir.name}: {msg}")
+
     bp_path = feature_dir / "blueprint.yaml"
     if not bp_path.exists():
         fail("нет blueprint.yaml")
-        return errors
+        return errors, advisories
     try:
         bp = yaml.safe_load(bp_path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         fail(f"невалидный YAML: {exc}")
-        return errors
+        return errors, advisories
     if not isinstance(bp, dict):
         fail("верхний уровень не словарь")
-        return errors
+        return errors, advisories
     if bp.get("kind") != "feature-blueprint":
         fail(f"kind '{bp.get('kind')}' != feature-blueprint")
     if bp.get("schema_version") != 1:
@@ -61,7 +100,7 @@ def validate_dir(feature_dir: Path):
     feature = bp.get("feature")
     if not isinstance(feature, dict):
         fail("нет секции feature")
-        return errors
+        return errors, advisories
     for f in ("id", "name", "status", "current_stage"):
         if not feature.get(f):
             fail(f"feature без поля '{f}'")
@@ -70,21 +109,21 @@ def validate_dir(feature_dir: Path):
     profile = feature.get("profile", "full")
     if profile not in PROFILES:
         fail(f"feature.profile '{profile}' вне {sorted(PROFILES)}")
-        return errors
+        return errors, advisories
     stage = feature.get("current_stage")
     if stage not in STAGES:
         fail(f"current_stage '{stage}' вне словаря стадий")
-        return errors
+        return errors, advisories
     if profile == "lean" and stage not in PROFILES["lean"]:
         fail(f"current_stage '{stage}' вне lean-профиля {PROFILES['lean']}")
-        return errors
+        return errors, advisories
     reached = set(STAGES[:STAGES.index(stage) + 1])
     reached_required = reached & set(PROFILES[profile])
 
     artifacts = bp.get("artifacts")
     if not isinstance(artifacts, dict) or not artifacts:
         fail("нет непустого artifacts")
-        return errors
+        return errors, advisories
 
     for st, entries in artifacts.items():
         if st not in STAGES:
@@ -144,11 +183,19 @@ def validate_dir(feature_dir: Path):
                 except Exception:
                     pass
         if not receipt_found:
-            fail("feature.status=released, но нет SHA-verified DeliveryReceipt — "
-                 "done-артефакт недостаточно для доказательства поставки. "
-                 "Требуется DeliveryReceipt с sha_verified=true (PR смержён, SHA совпадает с remote).")
+            _msg = ("feature.status=released, но нет SHA-verified DeliveryReceipt — "
+                    "done-артефакт недостаточно для доказательства поставки. "
+                    "Требуется DeliveryReceipt с sha_verified=true (PR смержён, SHA совпадает с "
+                    "remote).")
+            if str(feature.get("id")) in _debt_ids(feature_dir):
+                # Историческая поставка: доказательства нет и восстановить его нечем. Долг признан
+                # явно (см. DEBT_REL) — находка остаётся видимой, но прогон не валит.
+                debt(_msg + " Признано долгом: функция выпущена до появления требования "
+                            "(закрывается следующей настоящей доставкой или записью SHA владельцем).")
+            else:
+                fail(_msg)
 
-    return errors
+    return errors, advisories
 
 
 def make_demo(root: Path, *, break_file=False, break_stage=False):
@@ -173,13 +220,25 @@ def make_demo(root: Path, *, break_file=False, break_stage=False):
     return fdir
 
 
+def validate_dir(feature_dir: Path):
+    """Совместимость: только блокирующие ошибки (так её зовёт `run_report`)."""
+    return validate_dir_full(feature_dir)[0]
+
+
 def main(argv):
     if not argv:
         print("использование: validate_feature_blueprint.py <feature-dir> [...] | --selftest")
         return 1
-    all_errors = []
+    all_errors, all_debt = [], []
     for d in argv:
-        all_errors += validate_dir(Path(d).resolve())
+        _e, _a = validate_dir_full(Path(d).resolve())
+        all_errors += _e
+        all_debt += _a
+    if all_debt:
+        # Долг печатается ВСЕГДА и до вердикта: невидимый долг перестаёт быть долгом.
+        print(f"ДОЛГ ДОКАЗАТЕЛЬСТВА ПОСТАВКИ ({len(all_debt)}) — не блокирует, но остаётся:")
+        for a in all_debt:
+            print(f"  · {a}")
     if all_errors:
         print(f"НАЙДЕНЫ ПРОБЛЕМЫ В FEATURE BLUEPRINT ({len(all_errors)}):")
         for e in all_errors:

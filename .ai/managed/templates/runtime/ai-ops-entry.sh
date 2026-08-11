@@ -39,7 +39,7 @@ case "$cmd" in
     echo "Укажите: AI_OPS_HOME=/путь/к/ai-ops-kit ./ai-ops kit-status" >&2
     exit 2
     ;;
-  init|update|diff|doctor|validate|migrate|verify-capabilities|selftest)
+  init|update|diff|doctor|validate|migrate|verify-capabilities|selftest|delivery-proof)
     if inst=$(find_installer); then
       exec python3 "$inst" "$@"
     fi

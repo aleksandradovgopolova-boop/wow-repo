@@ -1,0 +1,34 @@
+version: 1
+
+agent_groups:
+  core:
+    - repository-explorer
+    - context-builder
+    - task-planner
+    - development-orchestrator
+    - implementation-integrator
+    - final-verifier
+  product:
+    - product-manager
+    - business-analyst
+    - product-analyst
+    - ui-ux-designer
+    - experiment-designer
+  engineering:
+    - solution-architect
+    - system-analyst
+    - frontend-developer
+    - backend-developer
+    - fullstack-developer
+    - database-engineer
+    - integration-engineer
+    - migration-engineer
+    - devops-engineer
+  quality:
+    - test-engineer
+    - code-reviewer
+    - security-reviewer
+    - accessibility-reviewer
+    - performance-reviewer
+    - regression-analyst
+    - requirements-reviewer

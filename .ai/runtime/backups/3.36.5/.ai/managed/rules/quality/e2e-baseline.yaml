@@ -1,0 +1,21 @@
+# rules/quality/e2e-baseline.yaml — гейты e2e-проверок в браузере (v2.11).
+# Машиночитаемый чек-лист к скиллу skills/e2e-browser-testing/SKILL.md.
+# Замыкает пункт e2e-viewport-matrix из rules/design/responsive-baseline.yaml.
+# Находки ссылаются на id. Opt-in: фичи с UI.
+schema_version: 1
+kind: quality-checklist
+id: e2e-baseline
+used_by: [final-verifier]
+skill: skills/e2e-browser-testing/SKILL.md
+default_tool: playwright
+adapted_from: "lackeyjb/playwright-skill (MIT)"
+items:
+  - {id: user-flow-not-pageload, check: "Тест проходит реальный путь пользователя (клик/ввод/переход), а не только факт рендера страницы", severity_default: critical}
+  - {id: states-asserted, check: "Проверены состояния Empty/Loading/Error/Success с ассертами, а не просто отсутствие ошибки", severity_default: major}
+  - {id: viewport-matrix, check: "Прогон на viewport-матрице из DesignSystem (Playwright projects по классам), не только десктоп — замыкает e2e-viewport-matrix", severity_default: major}
+  - {id: stable-selectors, check: "Селекторы стабильны (роль/data-testid), не хрупкие CSS-цепочки и не текст, зависящий от локали", severity_default: major}
+  - {id: deterministic-waits, check: "Ожидания по состоянию, а не sleep; в CI headless и фиксированные размеры вьюпорта", severity_default: major}
+  - {id: artifacts-on-failure, check: "При падении сохраняются скриншоты и консоль; визуальные снапшоты для регрессий по классам", severity_default: minor}
+  - {id: keyboard-a11y-path, check: "На ключевом пути проверены клавиатурный фокус и роль/имя элементов", severity_default: minor}
+  - {id: no-secrets-in-tests, check: "В тестах нет захардкоженных секретов/токенов (governance/information-boundaries)", severity_default: critical}
+  - {id: no-green-noop, check: "Нет 'зелёного' теста без ассертов на результат/состояние", severity_default: critical}
