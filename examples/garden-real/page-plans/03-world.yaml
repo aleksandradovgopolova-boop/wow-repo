@@ -1,0 +1,49 @@
+version: 1
+page:
+  id: world-of-garden
+  type: concept-explanation
+  path: /world
+  title: The world of Garden
+  order: 3
+  purpose: give-the-place-its-own-vocabulary
+  audience: a-visitor-exploring-the-model
+  primary_message: Garden has a small vocabulary, so the place has words of its own.
+  summary: The words Garden is made of — Place, Atmosphere, Ritual, Preview, History.
+  density: medium
+  tone:
+    - clear
+    - grounded
+
+narrative:
+  - orientation
+  - the-vocabulary
+  - a-door-for-engineers
+  - onward
+
+sections:
+  - component: editorial-hero
+    source: hero
+    emphasis: medium
+  - component: principle-statement
+    source: entities
+    intent: The eight entities, each named and defined — a quiet vocabulary.
+  # Projection in action: this section only renders for a viewer cleared for
+  # internal content (the engineer audience). A visitor never sees it.
+  - component: quiet-callout
+    source: implementation
+    visibility: internal
+    audiences:
+      - engineer
+    intent: "See implementation — the internal door, gated by clearance."
+  - component: related-links
+    source: related
+
+motion:
+  intensity: subtle
+  purpose:
+    - reveal
+
+relationships:
+  related:
+    - what-is-garden
+    - why-garden-exists

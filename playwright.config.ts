@@ -20,7 +20,11 @@ export default defineConfig({
   testDir: './tests/visual',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  retries: process.env.CI ? 2 : 0,
+  // Software-rendered WebGL atmospheres are CPU-heavy; running every viewport
+  // project at once starves navigation-timing on CI. Serialise there for
+  // stability (the suite is small).
+  workers: process.env.CI ? 1 : undefined,
   reporter: [['list'], ['html', { open: 'never' }]],
   outputDir: './test-results',
   timeout: 30_000,
@@ -29,7 +33,16 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:4321',
     trace: 'on-first-retry',
-    launchOptions: usePinned ? { executablePath: PINNED_CHROMIUM } : {},
+    launchOptions: {
+      // Software WebGL so the generative atmospheres render headlessly (CI has
+      // no GPU). The site is fully usable if WebGL is unavailable.
+      args: [
+        '--use-gl=swiftshader',
+        '--enable-unsafe-swiftshader',
+        '--ignore-gpu-blocklist',
+      ],
+      ...(usePinned ? { executablePath: PINNED_CHROMIUM } : {}),
+    },
   },
 
   // Build once, then preview the static output for the whole run.

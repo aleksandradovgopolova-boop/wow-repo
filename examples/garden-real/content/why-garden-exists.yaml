@@ -1,0 +1,23 @@
+# Content for "Why Garden exists".
+# Verbatim from Garden repository public/01-introduction/why-garden-exists.md.
+hero:
+  eyebrow: Why Garden exists
+  title: Most digital products ask people to produce, perform, react, optimize, or return on schedule.
+  lede: Garden begins from another premise.
+
+premise:
+  quote: A digital place may be valuable even when nothing is being completed.
+
+explores:
+  # From: "Garden explores software where absence creates no debt, time creates
+  # history rather than pressure, rituals are recognized rather than enforced,
+  # AI remains a proposal, and returning matters more than posting."
+  lines:
+    - Absence creates no debt.
+    - Time creates history rather than pressure.
+    - Rituals are recognized rather than enforced.
+    - AI remains a proposal, never a decision.
+    - Returning matters more than posting.
+
+onward:
+  label: Then

@@ -1,0 +1,725 @@
+---
+/**
+ * DocPage — renders one Markdown document (ingested via loadMarkdownRepo) in
+ * the WowRepo design, art-directed per section.
+ *
+ * One visual grammar runs through the whole site: meaning on the left (text),
+ * a living botanical form on the right. On the landing that form is the
+ * generative canopy (WebGL); on every chapter it is a hand-drawn motif chosen
+ * for the section's place in the journey — a day/growth arc from first sprout
+ * to evening leaves. Sub-pages inherit their chapter's scene, so a section
+ * reads as one room.
+ *
+ * Scenes are assigned by a section's position in the reading order, so the
+ * component stays generic (no site-specific strings) while each page still
+ * feels designed around its content. Reading bodies stay calm paper — the art
+ * lives in the chapter header, which is CSS + inline SVG (no per-page WebGL),
+ * so pages paint instantly.
+ */
+import '../styles/tokens.css';
+import '../styles/base.css';
+import Atmosphere from './atmosphere/Atmosphere.astro';
+import type { MdRepo, MdPage } from '@engine/markdown-repo.ts';
+import { readingNeighbours } from '@engine/markdown-repo.ts';
+
+interface Props {
+  repo: MdRepo;
+  page: MdPage;
+  base: string; // site base path, e.g. "/garden"
+}
+
+const { repo, page, base } = Astro.props;
+const href = (p: string) => (p === '/' ? base || '/' : `${base}${p}`);
+const { prev, next } = readingNeighbours(repo, page.path);
+const isLanding = page.path === '/';
+const title = isLanding ? repo.site.title : `${page.title} · ${repo.site.title}`;
+
+// Sidebar: reading order grouped into sections, expanded at the current one.
+const sections = repo.nav.map((n) => ({
+  label: n.label,
+  entry: n.path,
+  pages: repo.pages.filter((p) => p.section === n.label),
+}));
+
+// Landing: the guided journey into each section.
+const journey = repo.nav.map((n, i) => {
+  const entry = repo.pages.find((p) => p.section === n.label);
+  return { n: i + 1, label: n.label, path: n.path, title: entry?.title ?? n.label };
+});
+const landingIntro = isLanding
+  ? page.bodyHtml.split(/<(?:h1|h2|h3|ul|ol)[\s>]/i)[0]
+  : '';
+
+const sectionIndex = page.section
+  ? repo.nav.findIndex((n) => n.label === page.section)
+  : 0;
+const chapterNo = String((sectionIndex < 0 ? 0 : sectionIndex) + 1).padStart(2, '0');
+const sectionTotal = repo.nav.length;
+const sectionOrdinal = String((sectionIndex < 0 ? 0 : sectionIndex) + 1).padStart(2, '0');
+const sectionTotalStr = String(sectionTotal).padStart(2, '0');
+// Position of this page within its own section, for the chapter meta line.
+const inSection = page.section
+  ? repo.pages.filter((p) => p.section === page.section)
+  : [];
+const pageInSection = inSection.findIndex((p) => p.path === page.path) + 1;
+---
+
+<!doctype html>
+<html lang={repo.site.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={repo.site.description} />
+    <meta name="generator" content="WowRepo" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
+  </head>
+  <body data-landing={isLanding ? 'true' : undefined}>
+    <a class="skip-link" href="#doc">Перейти к содержанию</a>
+
+    {isLanding && <Atmosphere variant="canopy-light" intensity="present" />}
+
+    <div class="doc" class:list={[{ 'doc--landing': isLanding }]}>
+      <aside class="doc__side">
+        <a class="doc__brand" href={href('/')}>
+          <span class="doc__seed" aria-hidden="true"></span>
+          <span>
+            {repo.site.title}
+            <span class="doc__brandsub">{repo.site.description}</span>
+          </span>
+        </a>
+        <nav class="doc__nav" aria-label="Разделы">
+          {
+            sections.map((s, i) => (
+              <div class="doc__group">
+                <a
+                  class="doc__section"
+                  href={href(s.entry)}
+                  aria-current={page.section === s.label ? 'true' : undefined}
+                >
+                  <span class="doc__secnum">{String(i + 1).padStart(2, '0')}</span>
+                  {s.label}
+                </a>
+                {page.section === s.label && s.pages.length > 1 && (
+                  <ul class="doc__pages">
+                    {s.pages.map((p) => (
+                      <li>
+                        <a
+                          href={href(p.path)}
+                          aria-current={p.path === page.path ? 'page' : undefined}
+                        >
+                          {p.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))
+          }
+        </nav>
+      </aside>
+
+      <main class="doc__main" id="doc" tabindex="-1">
+        {
+          isLanding ? (
+            <div class="landing">
+              <header class="hero">
+                <p class="hero__kicker">{repo.site.description}</p>
+                <h1 class="hero__title">{repo.site.title}</h1>
+                {landingIntro && (
+                  <div class="hero__lead doc-prose" set:html={landingIntro} />
+                )}
+              </header>
+
+              <section class="journey" aria-label="С чего начать">
+                <p class="journey__eyebrow">Путь по саду</p>
+                <ol class="journey__list">
+                  {journey.map((j) => (
+                    <li>
+                      <a class="journey__row" href={href(j.path)}>
+                        <span class="journey__num">
+                          {String(j.n).padStart(2, '0')}
+                        </span>
+                        <span class="journey__body">
+                          <span class="journey__label">{j.label}</span>
+                          <span class="journey__title">{j.title}</span>
+                        </span>
+                        <span class="journey__arrow" aria-hidden="true">
+                          →
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            </div>
+          ) : (
+            <article class="doc__article">
+              <header class="chapter">
+                <span class="chapter__numeral" aria-hidden="true">{chapterNo}</span>
+                <p class="chapter__kicker">
+                  {page.section && <span>{page.section}</span>}
+                  <span class="chapter__index">{sectionOrdinal} / {sectionTotalStr}</span>
+                </p>
+                <h1 class="chapter__title">{page.title}</h1>
+                {(page.updated || pageInSection > 0) && (
+                  <p class="doc__meta">
+                    {inSection.length > 1 && (
+                      <span>Материал {pageInSection} из {inSection.length}</span>
+                    )}
+                    {page.updated && <span>Обновлено {page.updated}</span>}
+                  </p>
+                )}
+              </header>
+
+              <div class="doc-prose" set:html={page.bodyHtml} />
+
+              <nav class="doc__reading" aria-label="Дальше">
+                {prev && (
+                  <a class="doc__step doc__step--prev" href={href(prev.path)}>
+                    <span class="doc__steplabel">Назад</span>
+                    <span class="doc__steptitle">{prev.title}</span>
+                  </a>
+                )}
+                {next && (
+                  <a class="doc__step doc__step--next" href={href(next.path)}>
+                    <span class="doc__steplabel">Дальше</span>
+                    <span class="doc__steptitle">{next.title}</span>
+                  </a>
+                )}
+              </nav>
+            </article>
+          )
+        }
+
+        <footer class="doc__foot">
+          <span>{repo.site.title}</span>
+          <span class="doc__colophon">Собрано с WowRepo</span>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
+
+<style>
+  .doc {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: minmax(15rem, 18rem) 1fr;
+    min-height: 100vh;
+    max-width: var(--width-full);
+    margin-inline: auto;
+  }
+
+  /* --- Sidebar --- */
+  .doc__side {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: var(--space-l) var(--space-m) var(--space-l) var(--gutter);
+    border-inline-end: var(--border-hairline);
+  }
+  .doc--landing .doc__side {
+    border-inline-end-color: transparent;
+  }
+  .doc__brand {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2xs);
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    color: var(--color-text);
+    text-decoration: none;
+    margin-bottom: var(--space-xl);
+    line-height: var(--leading-snug);
+  }
+  .doc__brandsub {
+    display: block;
+    font-family: var(--font-body);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    letter-spacing: 0;
+    margin-top: var(--space-3xs);
+    max-width: 22ch;
+  }
+  .doc__seed {
+    flex: none;
+    inline-size: 0.66em;
+    block-size: 0.66em;
+    margin-top: 0.15em;
+    background: var(--color-accent);
+    border-radius: 60% 20% 60% 20% / 60% 20% 60% 20%;
+    transform: rotate(45deg);
+  }
+  .doc__nav {
+    display: grid;
+    gap: var(--space-2xs);
+  }
+  .doc__section {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    font-size: var(--step-0);
+    color: var(--color-text-soft);
+    text-decoration: none;
+    padding-block: var(--space-3xs);
+    border-inline-start: 2px solid transparent;
+    padding-inline-start: var(--space-s);
+    margin-inline-start: calc(var(--space-s) * -1);
+    transition: color var(--dur-quick) var(--ease-standard);
+  }
+  .doc__secnum {
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+  }
+  .doc__section:hover {
+    color: var(--color-text);
+  }
+  .doc__section[aria-current='true'] {
+    color: var(--color-accent-strong);
+    border-inline-start-color: var(--color-accent);
+    font-weight: var(--weight-semibold);
+  }
+  .doc__section[aria-current='true'] .doc__secnum {
+    color: var(--color-accent);
+  }
+  .doc__pages {
+    list-style: none;
+    margin: var(--space-2xs) 0 var(--space-xs);
+    padding-inline-start: calc(var(--space-s) + 1.6rem);
+    display: grid;
+    gap: var(--space-3xs);
+  }
+  .doc__pages a {
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    text-decoration: none;
+  }
+  .doc__pages a:hover {
+    color: var(--color-text-soft);
+  }
+  .doc__pages a[aria-current='page'] {
+    color: var(--color-accent-strong);
+  }
+
+  /* --- Reading column --- */
+  .doc__main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 0 var(--gutter) var(--space-xl);
+  }
+  .doc--landing .doc__main {
+    padding-top: var(--space-2xl);
+  }
+  .doc__article,
+  .landing {
+    width: 100%;
+    flex: 1;
+  }
+  .doc__article {
+    max-width: var(--width-wide);
+    margin-inline: auto;
+    padding-top: var(--space-xl);
+  }
+  /* Reading blocks stay at a comfortable measure inside the wider column. */
+  .doc__article > .doc-prose,
+  .doc__article > .doc__reading {
+    max-width: var(--measure);
+  }
+
+  /* --- Chapter header — premium editorial, no illustration --- */
+  .chapter {
+    position: relative;
+    padding: var(--space-2xl) 0 var(--space-xl);
+    margin-bottom: var(--space-2xl);
+    border-bottom: var(--border-hairline);
+    isolation: isolate;
+    overflow: hidden;
+  }
+  /* A large, quiet chapter numeral set in the display face — a typographic
+     mark, not an illustration. It anchors the header and gives each chapter a
+     sense of place in the sequence. */
+  .chapter__numeral {
+    position: absolute;
+    top: var(--space-l);
+    inset-inline-end: 0;
+    z-index: -1;
+    font-family: var(--font-display);
+    font-size: clamp(8rem, 20vw, 17rem);
+    line-height: 0.8;
+    font-weight: var(--weight-normal);
+    letter-spacing: var(--tracking-tight);
+    color: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    pointer-events: none;
+    user-select: none;
+  }
+  .chapter__kicker {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-m);
+    margin: 0 0 var(--space-m);
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    font-weight: var(--weight-semibold);
+    color: var(--color-accent-strong);
+  }
+  .chapter__index {
+    font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide);
+    color: var(--color-text-faint);
+    font-weight: var(--weight-normal);
+  }
+  .chapter__title {
+    font-family: var(--font-display);
+    font-size: var(--step-5);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+    margin: 0;
+    max-width: 16ch;
+  }
+  .doc__meta {
+    display: flex;
+    gap: var(--space-m);
+    flex-wrap: wrap;
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+    margin: var(--space-l) 0 0;
+  }
+
+  /* --- Landing hero --- */
+  .hero {
+    padding-block: var(--space-l) var(--space-2xl);
+    max-width: 26rem;
+  }
+  .hero__kicker {
+    font-size: var(--step-0);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-accent-strong);
+    font-weight: var(--weight-semibold);
+    margin: 0 0 var(--space-m);
+    max-width: 30ch;
+  }
+  .hero__title {
+    font-family: var(--font-display);
+    font-size: var(--step-6);
+    line-height: 0.95;
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text);
+    margin: 0;
+  }
+  .hero__lead {
+    margin-top: var(--space-l);
+    font-size: var(--step-1);
+    max-width: 22ch;
+  }
+
+  /* --- Landing journey index --- */
+  .journey {
+    border-top: var(--border-hairline);
+    padding-top: var(--space-l);
+    max-width: 28rem;
+  }
+  .journey__eyebrow {
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+    font-weight: var(--weight-semibold);
+    margin: 0 0 var(--space-s);
+  }
+  .journey__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .journey__row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-s);
+    margin-inline: calc(var(--space-s) * -1);
+    border-radius: var(--radius-m);
+    text-decoration: none;
+    border-bottom: var(--border-hairline);
+    transition:
+      background-color var(--dur-quick) var(--ease-standard),
+      transform var(--dur-quick) var(--ease-standard);
+  }
+  .journey__list li:last-child .journey__row {
+    border-bottom: 0;
+  }
+  .journey__row:hover {
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
+  .journey__num {
+    font-family: var(--font-mono);
+    font-size: var(--step-0);
+    color: var(--color-accent);
+    letter-spacing: var(--tracking-wide);
+  }
+  .journey__body {
+    display: grid;
+    gap: 0.15em;
+    min-width: 0;
+  }
+  .journey__label {
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+  .journey__title {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+  }
+  .journey__row:hover .journey__title {
+    color: var(--color-accent-strong);
+  }
+  .journey__arrow {
+    font-size: var(--step-1);
+    color: var(--color-accent);
+    transition: transform var(--dur-quick) var(--ease-standard);
+  }
+  .journey__row:hover .journey__arrow {
+    transform: translateX(0.35em);
+  }
+
+  /* --- Reading path --- */
+  .doc__reading {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-m);
+    flex-wrap: wrap;
+    margin-top: var(--space-2xl);
+    padding-top: var(--space-l);
+    border-top: var(--border-hairline);
+  }
+  .doc__step {
+    display: grid;
+    gap: var(--space-3xs);
+    text-decoration: none;
+    color: var(--color-text);
+    max-width: 22rem;
+  }
+  .doc__step--next {
+    text-align: end;
+    margin-inline-start: auto;
+  }
+  .doc__steplabel {
+    font-size: var(--step--1);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--color-text-faint);
+  }
+  .doc__steptitle {
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    color: var(--color-accent-strong);
+  }
+
+  .doc__foot {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-m);
+    margin-top: var(--space-2xl);
+    padding-top: var(--space-l);
+    border-top: var(--border-hairline);
+    font-size: var(--step--1);
+    color: var(--color-text-faint);
+  }
+
+  @media (max-width: 52rem) {
+    .doc {
+      grid-template-columns: 1fr;
+    }
+    .doc__side {
+      position: static;
+      height: auto;
+      border-inline-end: 0;
+      border-block-end: var(--border-hairline);
+    }
+    .doc__brand {
+      margin-bottom: var(--space-m);
+    }
+    .doc--landing .doc__main {
+      padding-top: var(--space-xl);
+    }
+    .chapter {
+      padding: var(--space-l) 0 var(--space-m);
+      margin-bottom: var(--space-xl);
+    }
+    .chapter__numeral {
+      font-size: clamp(6rem, 30vw, 10rem);
+      top: 0;
+    }
+    .hero__title {
+      font-size: var(--step-5);
+    }
+  }
+</style>
+
+<style is:global>
+  /* On the landing, hold the left reading zone as calm paper so the hero and
+     journey stay legible over the bright canopy light; the tree lives right. */
+  body[data-landing] .atmos-veil {
+    background: linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--color-bg) 95%, transparent) 0%,
+      color-mix(in srgb, var(--color-bg) 86%, transparent) 34%,
+      color-mix(in srgb, var(--color-bg) 40%, transparent) 54%,
+      transparent 68%
+    );
+  }
+  @media (max-width: 48rem) {
+    body[data-landing] .atmos-veil {
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--color-bg) 82%, transparent) 40%,
+        color-mix(in srgb, var(--color-bg) 55%, transparent) 70%,
+        transparent 100%
+      );
+    }
+  }
+
+  /* --- Prose: the Markdown body, styled with tokens only --- */
+  .doc-prose {
+    font-size: var(--step-1);
+    line-height: var(--leading-loose);
+    color: var(--color-text-soft);
+    overflow-wrap: break-word;
+  }
+  /* Long unbroken tokens (filenames, ids in code) must wrap, not widen the page. */
+  .doc-prose code {
+    overflow-wrap: anywhere;
+  }
+  .hero__lead.doc-prose {
+    color: var(--color-text-soft);
+    line-height: var(--leading-normal);
+  }
+  .doc-prose > * + * {
+    margin-top: var(--space-m);
+  }
+  /* Opening paragraph of a content body reads as a lead. */
+  .doc__article .doc-prose > p:first-child {
+    font-size: var(--step-2);
+    line-height: var(--leading-normal);
+    color: var(--color-text);
+  }
+  .doc-prose h2 {
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+    margin-top: var(--space-2xl);
+    max-width: 26ch;
+  }
+  .doc-prose h2::before {
+    content: '';
+    display: block;
+    inline-size: 1.6rem;
+    block-size: 2px;
+    background: var(--scene-accent, var(--color-accent));
+    margin-block-end: var(--space-s);
+  }
+  .doc-prose h3 {
+    font-family: var(--font-display);
+    font-size: var(--step-1);
+    color: var(--color-text);
+    margin-top: var(--space-xl);
+  }
+  .doc-prose p {
+    max-width: var(--measure);
+  }
+  .doc-prose a {
+    color: var(--color-accent-strong);
+    text-underline-offset: 0.15em;
+    text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+  .doc-prose a:hover {
+    text-decoration-color: currentColor;
+  }
+  .doc-prose strong {
+    color: var(--color-text);
+    font-weight: var(--weight-semibold);
+  }
+  .doc-prose ul,
+  .doc-prose ol {
+    max-width: var(--measure);
+    padding-inline-start: var(--space-l);
+    display: grid;
+    gap: var(--space-2xs);
+  }
+  .doc-prose li {
+    padding-inline-start: var(--space-3xs);
+  }
+  .doc-prose li::marker {
+    color: var(--scene-accent, var(--color-accent));
+  }
+  .doc-prose blockquote {
+    margin: var(--space-l) 0;
+    padding: var(--space-s) 0 var(--space-s) var(--space-l);
+    border-inline-start: 2px solid var(--scene-accent, var(--color-accent));
+    font-family: var(--font-display);
+    font-size: var(--step-2);
+    line-height: var(--leading-snug);
+    color: var(--color-text);
+  }
+  .doc-prose blockquote p {
+    margin: 0;
+  }
+  .doc-prose code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--color-surface-sunken);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius-s);
+  }
+  .doc-prose pre {
+    background: var(--color-surface-sunken);
+    border: var(--border-hairline);
+    border-radius: var(--radius-m);
+    padding: var(--space-m);
+    overflow-x: auto;
+    font-size: var(--step--1);
+    line-height: var(--leading-normal);
+  }
+  .doc-prose pre code {
+    background: none;
+    padding: 0;
+  }
+  .doc-prose hr {
+    border: 0;
+    border-top: var(--border-hairline);
+    margin: var(--space-xl) 0;
+  }
+  .doc-prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--step-0);
+    display: block;
+    overflow-x: auto;
+  }
+  .doc-prose th,
+  .doc-prose td {
+    text-align: start;
+    padding: var(--space-2xs) var(--space-s);
+    border-bottom: var(--border-hairline);
+  }
+  .doc-prose th {
+    color: var(--color-text);
+    font-weight: var(--weight-semibold);
+  }
+</style>

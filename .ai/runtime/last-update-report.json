@@ -16,10 +16,26 @@
   "backup_ref": null,
   "pull_request": null,
   "human_approval_required": false,
-  "report": "Обновление не требуется. Пустые зоны `.ai/` получили README, чтобы раскладка пережила клон: .ai/custom/README.md.",
+  "report": "Обновление не требуется. Политика общения подключена к runtime (блок в CLAUDE.md между маркерами; текст вне них не тронут).",
   "context_backfilled": [],
   "ci_workflows": [],
-  "zone_markers": [
-    ".ai/custom/README.md"
+  "zone_markers": [],
+  "entry_point": {
+    "action": "unchanged",
+    "path": "/Users/sasad/projects/wow-repo/ai-ops"
+  },
+  "communication_adapter": {
+    "action": "updated",
+    "path": "/Users/sasad/projects/wow-repo/CLAUDE.md"
+  },
+  "planning_seeded": [
+    {
+      "artifact": "ROADMAP.md",
+      "action": "exists"
+    },
+    {
+      "artifact": "planning/plan.yaml",
+      "action": "exists"
+    }
   ]
 }

@@ -19,6 +19,14 @@ const PAGES = [
   { slug: '/safety', name: 'safety', title: 'Safety & autonomy' },
 ] as const;
 
+// Atmospheres animate continuously via WebGL; under headless software rendering
+// that loop saturates the CPU and starves the runner. We exercise the site in
+// its reduced-motion form — which is also the accessible experience we must
+// guarantee. Real GPUs animate smoothly; this only affects the test run.
+test.beforeEach(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+});
+
 function trackConsoleErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg: ConsoleMessage) => {

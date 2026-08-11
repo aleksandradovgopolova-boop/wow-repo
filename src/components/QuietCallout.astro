@@ -30,29 +30,18 @@ const tone = c.tone ?? 'plain';
     padding-block: var(--space-l);
   }
 
+  /* A margin note, not a boxed alert: a quiet left rule and text on the page. */
   .callout__inner {
     max-width: var(--measure);
-    padding: var(--space-l) var(--space-l) var(--space-l) var(--space-xl);
+    padding-inline-start: var(--space-l);
     position: relative;
-    border-radius: var(--radius-m);
   }
 
-  .callout--plain .callout__inner {
-    background: var(--color-surface);
-    border: var(--border-hairline);
-  }
-
-  .callout--care .callout__inner {
-    background: color-mix(in srgb, var(--color-care) 6%, var(--color-surface));
-    border: 1px solid color-mix(in srgb, var(--color-care) 24%, transparent);
-  }
-
-  /* A soft vertical mark, like a margin note, rather than a boxed alert. */
   .callout__inner::before {
     content: '';
     position: absolute;
-    inset-block: var(--space-l);
-    inset-inline-start: var(--space-m);
+    inset-block: 0.15em;
+    inset-inline-start: 0;
     inline-size: 2px;
     border-radius: 1px;
     background: var(--color-accent);
