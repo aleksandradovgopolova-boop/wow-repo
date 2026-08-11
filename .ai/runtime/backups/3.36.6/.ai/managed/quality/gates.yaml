@@ -1,0 +1,518 @@
+# quality/gates.yaml — единый gate registry (package v0.2.0)
+# Каждый gate возвращает machine-readable результат (schemas/gate-result.schema.json):
+# status/blocking/tested_revision/artifact_hashes -> stale-detection.
+# responsible_role read-only относительно проверяемого артефакта (write_scope ∩ reviewed = ∅).
+# Расширяет config/quality-gates.yaml (фазовые списки остаются рабочими).
+schema_version: 1
+registry_type: quality-gates
+
+mvp_blocking_gates:
+  - intake_completeness
+  - requirements
+  - specification
+  - plan_readiness
+  - implementation_verification
+  - code_review
+  - security
+  - spec_synchronization
+
+gates:
+  intake_completeness:
+    id: intake_completeness
+    purpose: Полнота intake и классификации до старта.
+    stage: intake
+    blocking: true
+    responsible_role: intake-classifier
+    review_mode: writer
+    validator: validate-intake
+    human_approval: false
+    bypass_policy: forbidden
+    applicability: [QUICK, ENGINEERING, PRODUCT, RESEARCH, VISUAL, ANALYTICS, INSIGHTS, ADOPTION, AI_FEATURE, DECISION, CRITICAL]
+    stale_detection: {bind_to: intake_hash}
+    required_evidence: [classified_type, size, risk]
+
+  regression_test_evidence:
+    id: regression_test_evidence
+    purpose: >
+      Правка ПОДТВЕРЖДЕНА: тест, приехавший вместе с ней, падает на коде ДО правки и проходит
+      после. implementation_verification доказывает, что ничего не сломалось; этот гейт — что
+      починилось то, что чинили. Класс: непроверенное исправление (раунд C живой квалификации,
+      T1/T2/T4 — writer правил код, тесты и до правки проходили, гейты вставали зелёными).
+    stage: implementation
+    blocking: false          # advisory до обкатки на живых прогонах; MVP-blocking ≤ 8 не трогаем
+    responsible_role: final-verifier
+    review_mode: read-only
+    validator: validate-regression-evidence   # runnable: tools/regression_evidence.py
+    human_approval: false
+    applicability: [QUICK, ENGINEERING, PRODUCT, VISUAL, AI_FEATURE, CRITICAL]   # пишущие в код
+    required_evidence: [regression_proven]
+    exemption_policy: >
+      Рефакторинг без смены поведения закрывается объявлением writer'а
+      {"done": true, "behavior_unchanged": "<причина>"} — причина попадает в warnings и в отчёт.
+      Отсутствие команды тестов в стеке даёт unverifiable, НЕ «доказано».
+
+  concurrency_preflight:
+    id: concurrency_preflight
+    purpose: >
+      До старта проверить коллизии параллельной работы: открытые PR и свежие мержи в base
+      по целевым файлам + перепроверка премиссы против актуального main. Класс
+      concurrent-edit collision + stale premise (инцидент: удаляли «мёртвый» контрол,
+      который параллельный PR оживлял).
+    stage: intake
+    blocking: false          # advisory до обкатки; MVP-blocking ≤ 8 не трогаем (см. ROADMAP)
+    responsible_role: intake-classifier
+    review_mode: writer
+    validator: validate-concurrency          # runnable: tools/concurrency_preflight.py
+    human_approval: false
+    applicability: [QUICK, ENGINEERING, PRODUCT, VISUAL, AI_FEATURE, CRITICAL]   # пишущие в код
+    required_evidence: [checked_paths, verdict]   # verdict ∈ clean|collision
+    collision_policy: "verdict=collision -> координация / rebase на актуальный main / сузить scope / согласовать владельца (OwnershipMap)"
+
+  contour_consistency:
+    id: contour_consistency
+    purpose: >
+      Связность контуров продукта (v3.35 Product Operating Model): изменение обязано быть
+      согласовано с источниками истины тех контуров, которые оно затрагивает. Класс дефекта —
+      «закрыли WorkItem, обновив React-компонент, при изменившейся модели данных»: код и
+      представление о нём расходятся молча, и следующая сессия читает устаревшее описание как
+      правду. Кит выводит затронутые контуры из diff и сверяет с объявленным `affects` WorkItem'а.
+      Три состояния, и `unknown` НЕ равен `not_changed`: контур без сигнальных путей в этом
+      репозитории кит видеть не умеет и говорит об этом, а не зеленит.
+    stage: verification
+    blocking: false          # advisory до обкатки на child-репозиториях (правило движения по roadmap)
+    responsible_role: architecture-reviewer
+    review_mode: read-only
+    validator: validate-product-model        # runnable: tools/contours.py + validate_product_model.py
+    human_approval: false
+    applicability: [ENGINEERING, PRODUCT, VISUAL, AI_FEATURE, CRITICAL]
+    required_evidence: [affects, changed_files, verdict]   # verdict ∈ ok|inconsistent
+    findings: [source_of_truth_behind, undeclared_change, declared_not_changed,
+               unknown_contour, unknown_contour_declared]
+    never: >
+      `not_changed` НЕ требует обновления документов — бюрократия «восемь документов на задачу»
+      запрещена явно; незатронутый контур закрывается сам собой.
+
+  event_contract_consistency:
+    id: event_contract_consistency
+    purpose: >
+      Имена событий согласованы во всех слоях: единый каталог, каноничная грамматика,
+      audit/analytics ссылаются на domain через maps_to, domain не подменён AuditEvent.
+      Класс contract<->code<->analytics naming drift.
+    stage: specification
+    blocking: false          # advisory до обкатки
+    responsible_role: solution-architect
+    review_mode: writer
+    validator: validate-event-catalog        # runnable: ai_ops_kit/validation/validate_event_catalog.py
+    human_approval: false
+    applicability: [ENGINEERING, PRODUCT, ANALYTICS, AI_FEATURE]
+    required_evidence: [catalog_valid, names_reconciled]
+
+  surface_wiring_consistency:
+    id: surface_wiring_consistency
+    purpose: >
+      Поверхность согласована во всех слоях: каждый путь, который умеет ядро, подключён в КАЖДОЙ
+      обёртке (прод/dev/serverless), и каждый путь, который вызывает клиент, кем-то обслуживается.
+      Класс core<->wrapper<->client wiring drift: эндпоинт написан и покрыт тестами (ядра и клиента),
+      но запрос до него не доходит — молча падает в раздачу статики. Тот же класс, что
+      event_contract_consistency (naming drift), другая сущность — МАРШРУТ. Вывод 2 «дефектов сессии».
+    stage: verify
+    blocking: false          # advisory до обкатки (как соседние consistency-гейты)
+    responsible_role: solution-architect
+    review_mode: writer
+    validator: validate-surface-wiring        # runnable: ai_ops_kit/validation/validate_surface_wiring.py (по манифесту поверхности child)
+    human_approval: false
+    applicability: [ENGINEERING, PRODUCT, AI_FEATURE, CRITICAL]
+    required_evidence: [routes_declared, wrappers_matched, client_paths_matched]
+    # ПРИМЕЧАНИЕ: гейт работает на child-ПРОДУКТЕ (у кита нет обёрток/контуров). Live diff-эвристика
+    # двух триггеров (новый маршрут ядра / вызов клиента) — сигнал #6 seam_scan (уже подключён advisory).
+
+  requirements:
+    id: requirements
+    purpose: Требования проверяемы, полны, тестируемы.
+    stage: requirements-review
+    blocking: true
+    responsible_role: requirements-reviewer
+    review_mode: read-only
+    validator: validate-requirements
+    human_approval: false
+    # override разрешён только с человеком и записью причины (не forbidden — иначе
+    # противоречие с override_policy; enforcement — tools/gate_executor.override_effective)
+    override_policy: {allowed: true, requires: human, records: override_reason}
+    applicability: [ENGINEERING, PRODUCT]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [testable_requirements, acceptance_scenarios]
+
+  specification:
+    id: specification
+    purpose: Спецификация полна и тестируема (delta specs валидны).
+    stage: specification
+    blocking: true
+    responsible_role: final-verifier
+    review_mode: read-only
+    validator: openspec-validate-strict
+    human_approval: false
+    applicability: [ENGINEERING, PRODUCT]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [openspec_valid, requirements_covered]
+
+  plan_readiness:
+    id: plan_readiness
+    purpose: План исполним; зависимости и write-scope определены.
+    stage: plan-critique
+    blocking: true
+    responsible_role: plan-reviewer
+    review_mode: read-only
+    validator: validate-plan
+    human_approval: false
+    applicability: [ENGINEERING, PRODUCT, CRITICAL]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [work_packages, dependencies, write_scope]
+
+  implementation_verification:
+    id: implementation_verification
+    purpose: Сборка/линт/тесты пройдены на конкретной ревизии.
+    stage: verify
+    blocking: true
+    responsible_role: final-verifier
+    review_mode: read-only
+    validator: validate-evidence
+    human_approval: false
+    bypass_policy: forbidden
+    applicability: [QUICK, ENGINEERING, PRODUCT, VISUAL, ANALYTICS, AI_FEATURE, CRITICAL]
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [build_passed, lint_passed, typecheck_passed, tests_passed, tested_revision]
+    # Вывод 1 «дефектов одной сессии»: «сборка/линт/тесты» необходимо, но почти ничего не гарантирует —
+    # пять дефектов сессии ВСЕ его прошли, т.к. тесты смотрели на слой/функцию, а не на пользовательский
+    # сценарий тем же путём, что продукт. ADVISORY до обкатки (warn, НЕ блок): для applicable task_type
+    # evidence должен нести названный сценарий + покрывающий его тест. Graduation: перенос в
+    # required_evidence + сквозной тест (тогда станет blocking). Правило «сценарий, а не слой» из
+    # SEAM_DEFECTS перестаёт быть чек-листом и становится полем гейта.
+    advisory_evidence: [named_user_scenario, scenario_test]
+    advisory_applicability: [ENGINEERING, PRODUCT, CRITICAL]
+    advisory_validator: validate-scenario-evidence   # runnable: ai_ops_kit/validation/validate_scenario_evidence.py
+    # v2.33: детерминированный evidence-контракт — что должен вернуть исполняемый runner
+    # (не «pass словом»). Enforcement формы — validate_evidence_schema.py; в gate_executor
+    # применяется, когда evidence подан в структурной форме (иначе required_evidence-дисциплина).
+    evidence_schema:
+      build:  {command: string, exit_code: integer, revision: git_sha, log_path: path}
+      lint:   {command: string, exit_code: integer, revision: git_sha}
+      typecheck: {command: string, exit_code: integer, revision: git_sha}
+      tests:  {command: string, passed: integer, failed: integer, revision: git_sha, log_path: path}
+
+  code_review:
+    id: code_review
+    purpose: Независимое ревью кода (judge != writer).
+    stage: review
+    blocking: true
+    responsible_role: code-reviewer
+    review_mode: read-only
+    human_approval: false
+    checklist: rules/quality/code-review-etiquette.yaml
+    applicability: [ENGINEERING, CRITICAL, PRODUCT]  # v3.27.1 WP2: PRODUCT добавлен — продуктовая full-stack функция требует независимого ревью кода
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [reviewed_revision, blockers_closed]
+
+  security:
+    id: security
+    purpose: Проверка безопасности; блокирует рискованные/необратимые изменения.
+    stage: review
+    blocking: true
+    responsible_role: security-reviewer
+    review_mode: read-only
+    human_approval: {required_when: [privileged, destructive, secret_boundary_change]}
+    applicability: [ENGINEERING, CRITICAL, PRODUCT]   # v3.27.1 WP2: PRODUCT добавлен; INCIDENT — post-MVP (не определён); инциденты идут через CRITICAL
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [no_secrets, no_injection_surface, deps_approved]
+
+  architecture_review:
+    id: architecture_review
+    purpose: >
+      Независимая архитектурная проверка (judge != writer) при архитектурно значимых изменениях:
+      границы модулей, совместимость API, модель данных/миграции, интеграции, режимы отказа, деплой,
+      ADR-дрейф. Обязательный судья ТОЛЬКО при архитектурных сигналах (required_when); иначе гейт
+      неприменим (честный non-blocking skip). Вход — детерминированный снимок ai-ops audit architecture.
+    stage: review
+    blocking: true
+    responsible_role: architecture-reviewer
+    review_mode: read-only
+    human_approval: false
+    required_when: [architecture_change, new_service, cross_boundary_change, breaking_api, data_migration, new_integration, deployment_change]
+    applicability: [ENGINEERING, AI_FEATURE, PRODUCT, CRITICAL]   # v3.27.1 WP2: PRODUCT и CRITICAL добавлены — архитектурно значимые изменения требуют проверки независимо от base workflow
+    checklist: rules/quality/architecture-review.yaml
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [reviewed_revision, architecture_boundaries_ok]
+
+  deploy_readiness:
+    id: deploy_readiness
+    purpose: >
+      ЧЕСТНАЯ зрелость поставки при изменении деплоя: лестница absent/configured/runnable/verified
+      (tools/deploy_readiness.py). Кит НЕ деплоит — он не даёт врать о готовности. Обязателен ТОЛЬКО
+      при сигналах изменения поставки (required_when); иначе честный non-blocking skip. Провал =
+      поставка заявлена как изменяемая, а исполняемого пути в репозитории нет (configured/absent).
+      Вердикт детерминированный: его даёт инструмент на текущем SHA, не судья.
+    stage: verify
+    blocking: true
+    responsible_role: devops-engineer
+    review_mode: writer                        # детерминированный гейт: вердикт инструмента, не ревью
+    validator: validate-deploy-readiness       # runnable: tools/deploy_readiness.py
+    human_approval: false
+    required_when: [deployment_change, new_service, infrastructure_change]
+    applicability: [ENGINEERING, AI_FEATURE, PRODUCT, CRITICAL]   # v3.27.1 WP2: PRODUCT и CRITICAL добавлены — изменение поставки требует проверки зрелости независимо от base workflow
+    checklist: rules/quality/deploy-readiness.yaml
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [deploy_maturity, rollback_declared]
+
+  spec_synchronization:
+    id: spec_synchronization
+    purpose: Delta specs синхронизированы с main specs (детерминированный CLI).
+    stage: sync
+    blocking: true
+    responsible_role: documentation-steward
+    review_mode: writer
+    validator: openspec-validate-and-guard
+    # Детерминированный OpenSpec-гейт: enforced НЕ per-task gate_executor'ом, а OpenSpec CLI
+    # + ai_ops_kit/validation/validate_openspec_change.py в CI (см. openspec/README). Поэтому он не в
+    # workflow.quality_gates — enforced_by фиксирует реальный путь исполнения (честность).
+    enforced_by: openspec-ci-guard
+    human_approval: false
+    applicability: [ENGINEERING, PRODUCT]
+    stale_detection: {bind_to: specs_hash}
+    required_evidence: [openspec_valid, no_parallel_conflict]
+
+  # --- non-blocking / для будущих workflow (объявлены) ---
+  evidence:
+    id: evidence
+    purpose: Каждый существенный вывод имеет источник и статус.
+    stage: fact-check
+    blocking: true
+    responsible_role: final-verifier
+    review_mode: read-only
+    applicability: [RESEARCH, INSIGHTS]
+    required_evidence: [source_per_claim, capability_status]
+  stakeholder_readiness:
+    id: stakeholder_readiness
+    purpose: Материал готов к передаче стейкхолдерам.
+    stage: stakeholder-handoff
+    blocking: false
+    responsible_role: product-manager
+    review_mode: read-only
+    applicability: [PRODUCT]
+  documentation_drift:
+    id: documentation_drift
+    purpose: Документация не отстаёт от кода/поведения (advisory до обкатки).
+    stage: result
+    blocking: false
+    responsible_role: documentation-steward
+    review_mode: writer
+    applicability: [all]
+  archive_readiness:
+    id: archive_readiness
+    purpose: Изменение архивируется только если проверено.
+    stage: archive
+    blocking: true
+    responsible_role: final-verifier
+    review_mode: read-only
+    validator: validate-archive-readiness
+    # Детерминированный OpenSpec archive-гейт: enforced OpenSpec CLI archive-шагом в CI, не
+    # per-task gate_executor'ом (мета-гейт: «архивируем, только если все blocking прошли»).
+    enforced_by: openspec-ci-guard
+    applicability: [ENGINEERING, PRODUCT]   # OpenSpec-tracked workflows (было [all] — overclaim)
+    required_evidence: [all_blocking_gates_pass, no_stale_gate]
+
+  # --- Ф1 roadmap (v1.3): gates полного продуктового цикла ---
+  # Ф3 (v1.5): discovery_completeness / ux_review / design_system_usage / analytics_readiness
+  # переведены в blocking (их applicability целиком в PRODUCT/VISUAL/ANALYTICS).
+  # documentation_updated / release_safety / observability_readiness остаются non-blocking:
+  # они применимы и к QUICK/ENGINEERING — перевод после обкатки в этих workflow.
+  discovery_completeness:
+    id: discovery_completeness
+    purpose: Discovery завершён — проблема, аудитория, гипотезы и метрики успеха зафиксированы.
+    stage: discovery-review
+    blocking: true
+    responsible_role: product-reviewer
+    review_mode: read-only
+    applicability: [PRODUCT]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [problem_statement, target_users, hypotheses, success_metrics]
+
+  ux_review:
+    id: ux_review
+    purpose: UX проверен — flow, состояния Empty/Loading/Error/Success, responsive, copy.
+    stage: design-review
+    blocking: true
+    responsible_role: ux-reviewer
+    review_mode: read-only
+    checklist: rules/design/ux-heuristics.yaml
+    applicability: [PRODUCT, VISUAL]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [ux_flow, screen_states, device_matrix_defined, responsive_checked, copy_reviewed]
+    # тяжесть находки -> вердикт: critical всегда fail (override запрещён), major — fail
+    # ИЛИ documented override (override с reason фиксируется), minor/nit — не блокируют
+    severity_policy: {critical: fail, major: fail_or_documented_override, minor: nonblocking}
+
+  accessibility_review:
+    id: accessibility_review
+    purpose: Доступность проверена — клавиатура, фокус, контраст (WCAG AA), screen-reader метки, состояния не только цветом.
+    stage: accessibility-review
+    blocking: true
+    responsible_role: accessibility-reviewer
+    review_mode: read-only
+    checklist: rules/design/accessibility-checklist.yaml
+    applicability: [VISUAL, PRODUCT]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [keyboard_operable, focus_visible, contrast_aa, screen_reader_labels, no_color_only_state]
+    # a11y-политика тяжести: критичная находка блокирует безусловно, major — fail или documented override
+    severity_policy: {critical: fail, major: fail_or_documented_override, minor: nonblocking}
+
+  visual_regression:
+    id: visual_regression
+    purpose: Изменённые экраны сверены с визуальным baseline — незапланированных регрессий нет.
+    stage: verify
+    blocking: true
+    applies_when: "изменены экраны/компоненты с визуальным представлением; иначе гейт неприменим"
+    responsible_role: final-verifier
+    review_mode: read-only
+    applicability: [VISUAL]
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [baseline_snapshots, screens_diffed, unintended_diffs_none_or_approved]
+
+  design_system_usage:
+    id: design_system_usage
+    purpose: Использована дизайн-система — существующие компоненты и токены; новые обоснованы.
+    stage: design-system-review
+    blocking: true
+    responsible_role: design-system-reviewer
+    review_mode: read-only
+    checklist: rules/design/design-system-checklist.yaml
+    source_of_truth: context/product/DesignSystem.md
+    applicability: [PRODUCT, VISUAL]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [components_from_design_system, new_components_justified]
+
+  analytics_design_readiness:
+    id: analytics_design_readiness
+    purpose: >
+      Аналитика спроектирована ДО merge: tracking plan, event schema, product metrics,
+      dashboard spec. v3.27.2 WP3: разделён из analytics_readiness — design-часть применяется
+      до merge, runtime-verification (events_verified_live) — после deploy.
+    stage: analytics-review
+    blocking: true
+    responsible_role: analytics-reviewer
+    review_mode: read-only
+    source_of_truth: context/product/MetricCatalog.md
+    applicability: [PRODUCT, ANALYTICS, ADOPTION]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [tracking_plan, event_schema, product_metrics, dashboard_spec]
+
+  analytics_runtime_verification:
+    id: analytics_runtime_verification
+    purpose: >
+      Аналитика проверена ПОСЛЕ deploy: события реально приходят, свойства корректны,
+      нет PII, идентификация и cohort работают, dashboard получает данные.
+      v3.27.2 WP3: разделён из analytics_readiness — применяется после release.
+    stage: post-release
+    blocking: true
+    responsible_role: analytics-reviewer
+    review_mode: read-only
+    source_of_truth: context/product/MetricCatalog.md
+    applicability: [PRODUCT, ANALYTICS, ADOPTION]
+    stale_detection: {bind_to: release_sha}
+    required_evidence: [events_verified_live, no_pii_in_events, cohort_identification_works, dashboard_receives_data]
+    enforced_by: post-release-readout  # v3.27.6: связан с PostReleaseReadout (PRR), который проверяет delivery_receipt.sha_verified
+
+  documentation_updated:
+    id: documentation_updated
+    purpose: Документация обновлена вместе с изменением (Definition of Done).
+    stage: result
+    blocking: false
+    responsible_role: documentation-steward
+    review_mode: writer
+    applicability: [QUICK, ENGINEERING, PRODUCT, VISUAL, ANALYTICS, ADOPTION]
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [docs_updated_or_explicit_none, release_notes_entry]
+
+  release_safety:
+    id: release_safety
+    purpose: Релиз безопасен — feature flag предусмотрен, rollback описан, rollout спланирован.
+    stage: release
+    blocking: false
+    responsible_role: release-manager
+    review_mode: read-only
+    applicability: [ENGINEERING, PRODUCT]
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [feature_flag_or_justified_absence, rollback_strategy, rollout_plan]
+
+  ai_eval:
+    id: ai_eval
+    purpose: AI-фича прошла eval'ы против success criteria; guardrails и регрессии проверены.
+    stage: verify
+    blocking: true
+    applies_when: "функция содержит LLM/агентный компонент, видимый пользователю; иначе гейт неприменим"
+    responsible_role: ai-evaluator
+    review_mode: read-only
+    checklist: rules/ai/EvalPolicy.md
+    applicability: [ENGINEERING, PRODUCT, VISUAL, AI_FEATURE]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [success_criteria, eval_dataset, offline_results, guardrails, regression_checked]
+
+  ai_red_team:
+    id: ai_red_team
+    purpose: AI-фича проверена адверсариально — инъекции, jailbreak, утечки PII/промпта, границы агентности.
+    stage: red-team
+    blocking: true          # Ф0: безопасность AI-фичи — блокирующая по применимости (jailbreak/injection/PII)
+    applies_when: "LLM/агентный компонент, доступный пользователю; иначе гейт неприменим"
+    responsible_role: ai-red-teamer
+    review_mode: read-only
+    checklist: rules/ai/red-team-checklist.yaml
+    applicability: [AI_FEATURE, ENGINEERING, PRODUCT]
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [attack_scenarios_run, injection_resistance, pii_leak_checked, blockers_closed]
+
+  decision_quality:
+    id: decision_quality
+    purpose: Решение принято по recommendation-first; обратимость классифицирована; сверено с принципами.
+    stage: decision-review
+    blocking: false          # non-blocking до обкатки
+    applies_when: "принимается/фиксируется значимое решение; мелкие обратимые решения — вне гейта"
+    responsible_role: product-reviewer
+    review_mode: read-only
+    checklist: rules/thinking/decision-support.yaml
+    source_of_truth: decisions/registry.yaml
+    applicability: [DECISION, PRODUCT, ENGINEERING]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [human_recommendation, reversibility_classified, principles_checked]
+
+  knowledge_integrity:
+    id: knowledge_integrity
+    purpose: Ссылки пакета резолвятся и утверждения документации согласованы с кодом (drift-control).
+    stage: sync
+    blocking: false          # non-blocking до обкатки; ссылочная часть уже зелёная в CI
+    responsible_role: documentation-steward
+    review_mode: writer
+    validator: validate-references + validate-claims
+    applicability: [all]
+    stale_detection: {bind_to: artifact_hashes}
+    required_evidence: [references_resolve, claims_hold]
+
+  knowledge_freshness:
+    id: knowledge_freshness
+    purpose: Размеченные знания не протухли (класс устаревания из FreshnessPolicy).
+    stage: sync
+    blocking: false          # advisory: протухший документ — сигнал, не блок
+    responsible_role: documentation-steward
+    review_mode: writer
+    validator: validate-freshness
+    source_of_truth: rules/core/FreshnessPolicy.md
+    applicability: [all]
+    required_evidence: [no_stale_volatile_docs]
+
+  observability_readiness:
+    id: observability_readiness
+    purpose: Мониторинг определён — логи, метрики, алерты, SLO для нового поведения.
+    stage: release
+    blocking: false
+    responsible_role: observability-reviewer
+    review_mode: read-only
+    applicability: [ENGINEERING, PRODUCT]
+    stale_detection: {bind_to: tested_revision}
+    required_evidence: [logging_defined, metrics_defined, alerts_defined, slo_defined]

@@ -1,0 +1,175 @@
+# tools.yaml — Tool protocol & tool capability registry (AI Ops Platform V2)
+# Tool protocol отделён от provider/model/runtime (принцип 12.4).
+schema_version: 1
+registry_type: tools
+
+tool_protocols:
+  mcp:
+    display_name: Model Context Protocol
+    status: documented
+    supported_runtimes: [claude-code, codex, cursor, gemini-cli, opencode]
+    provider_native: {gigachat: false, anthropic: true, openai: true}
+    note: GigaChat не поддерживает MCP нативно -> использовать tool gateway.
+  native-tools:
+    display_name: Runtime-native tools
+    status: documented
+    supported_runtimes: [claude-code, codex, cursor]
+  function-calling:
+    display_name: Function calling (provider level)
+    status: documented
+    supported_providers: [anthropic, openai, gigachat, google, deepseek, qwen]
+  rest-api:
+    display_name: REST API tool
+    status: documented
+    universal: true
+  cli:
+    display_name: CLI invocation
+    status: documented
+    universal: true
+    note: OpenSpec CLI, ai-ops CLI, validators — вызываются как детерминированные tools.
+  shell:
+    display_name: Shell execution
+    status: documented
+    permission_level: execution
+    requires_human_approval_for: [destructive]
+  tool-gateway:
+    display_name: Internal tool gateway
+    status: documented
+    purpose: Единая обёртка над function-calling для провайдеров без MCP (напр. GigaChat).
+    implementations: [gpt2giga, litellm-gigachat, custom]
+  custom-adapter:
+    display_name: Custom tool adapter
+    status: declared
+
+tools:
+  - id: openspec-cli
+    protocol: cli
+    deterministic: true
+    purpose: "create/validate/archive/sync change packages, --json output"
+    permission_level: controlled-write
+    provides: [change_scaffold, delta_validation, deterministic_archive, deterministic_sync]
+    source: "@fission-ai/openspec"
+    status: documented
+  - id: ai-ops-cli
+    protocol: cli
+    deterministic: true
+    purpose: "init/status/diff/update/validate/doctor/migrate/verify-capabilities"
+    permission_level: controlled-write
+    status: declared
+  - id: validators
+    protocol: cli
+    deterministic: true
+    purpose: "registry/orphan/reference/stale-gate/secrets/managed-drift checks"
+    permission_level: read-only
+    reuses_existing: "02_tools/ci/ Python validators"
+    status: documented
+  - id: capability-selftest
+    protocol: cli
+    deterministic: true
+    purpose: "provider/runtime smoke tests -> verified capability + timestamp"
+    permission_level: network
+    requires_credentials: true
+    status: declared
+  - id: repo-search
+    protocol: native-tools
+    permission_level: read-only
+    status: documented
+  - id: git
+    protocol: cli
+    permission_level: controlled-write
+    requires_human_approval_for: [force_push, production_branch]
+    status: documented
+  - id: github-mcp
+    protocol: mcp
+    permission_level: network
+    purpose: "PR/issue/CI operations"
+    status: documented
+
+  # --- AI Product Pack (v2.4): opensource-инструменты eval/red-team/observability.
+  # Опции (status: declared — в бою китом не верифицированы), НЕ зависимости;
+  # связь CLI-and-protocol, как с OpenSpec. Карта артефактов -> инструментов:
+  # rules/ai/EvalTooling.md.
+  - id: promptfoo
+    protocol: cli
+    deterministic: true
+    purpose: "offline evals as config + red team (адверсариальные плагины); прогон AIFeatureEvalPlan/red-team-checklist в CI"
+    permission_level: network
+    provides: [offline_evals, red_team_scan, model_comparison]
+    source: "npm: promptfoo (MIT)"
+    requires_credentials: true
+    status: declared
+  - id: deepeval
+    protocol: cli
+    deterministic: true
+    purpose: "pytest-style LLM-тесты: quality-метрики как unit-тесты в CI (gate ai_eval)"
+    permission_level: network
+    provides: [ci_quality_gates, llm_as_judge_metrics]
+    source: "pip: deepeval (Apache-2.0)"
+    requires_credentials: true
+    status: declared
+  - id: ragas
+    protocol: cli
+    deterministic: true
+    purpose: "RAG-метрики: faithfulness, answer relevancy, context precision — для фич с retrieval"
+    permission_level: network
+    provides: [rag_metrics]
+    source: "pip: ragas (Apache-2.0)"
+    requires_credentials: true
+    status: declared
+  - id: langfuse
+    protocol: rest-api
+    purpose: "self-hosted LLM-наблюдаемость: traces, стоимость, latency, online-качество на живом трафике (вход для INSIGHTS/Product Health)"
+    permission_level: network
+    provides: [online_quality, cost_latency_tracing]
+    source: "langfuse (OSS, self-hosted)"
+    status: declared
+  - id: garak
+    protocol: cli
+    purpose: "сканер уязвимостей LLM: автоматизация части red-team-checklist (инъекции, jailbreak, утечки)"
+    permission_level: network
+    provides: [red_team_scan]
+    source: "pip: garak (Apache-2.0)"
+    requires_credentials: true
+    status: declared
+  # --- Hugging Face (DP-106, research-модуль): опции, не зависимости ---
+  - id: hf-mcp-server
+    protocol: mcp
+    purpose: "официальный MCP-сервер HF: поиск моделей/датасетов/Spaces/статей и fetch документации из агента; discovery-источник для выбора моделей и research-модуля"
+    permission_level: network
+    provides: [model_search, dataset_search, paper_search, doc_fetch]
+    source: "github: huggingface/hf-mcp-server (MIT); hosted: https://huggingface.co/mcp"
+    requires_credentials: true   # HF_TOKEN (для приватных ресурсов; публичный поиск может работать без)
+    status: declared
+  - id: hf-router
+    protocol: rest-api
+    purpose: "OpenAI-совместимый доступ к открытым моделям через HF Inference Providers (~17 провайдеров, цены без наценки); политика выбора провайдера фиксируется :cheapest. SCOPE: только маршруты confidentiality public/internal — конфиденциальные задачи идут по routing-policy (gigachat/local), данные через роутер уходят сторонним провайдерам разных юрисдикций (DP-106, EV-402)"
+    permission_level: network
+    provides: [open_models_chat, model_comparison]
+    source: "https://router.huggingface.co/v1 (HF_TOKEN)"
+    requires_credentials: true
+    status: declared
+  # --- v2.12: мета-качество AI-конфигов ---
+  - id: agnix
+    protocol: cli
+    deterministic: true
+    purpose: "линтер AI-конфигов (SKILL.md, CLAUDE.md, hooks, MCP): 156 правил, auto-fix, LSP; дополняет validate_references и rules/meta/skill-authoring"
+    permission_level: local
+    provides: [ai_config_lint]
+    source: "github: avifenesh/agnix (лицензию проверить до adoption)"
+    status: declared
+  - id: rendergit
+    protocol: cli
+    deterministic: true
+    purpose: "репозиторий -> одна статическая HTML-страница с навигацией/подсветкой/markdown + LLM-view; браузерная карта архива, дополняет текстовый FILE_INDEX.md"
+    permission_level: local
+    provides: [repo_html_render]
+    source: "github: karpathy/rendergit (BSD0)"
+    status: declared
+
+permission_levels:
+  - read-only
+  - controlled-write
+  - execution
+  - network
+  - privileged
+  - destructive

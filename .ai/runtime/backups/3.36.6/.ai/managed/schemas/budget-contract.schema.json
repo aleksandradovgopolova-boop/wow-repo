@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/budget-contract.schema.json",
+  "title": "BudgetContract",
+  "description": "BudgetContract — v3.4 Security, Permissions & Economics. Декларативный контракт бюджета для scope (run/loop/package/work_graph): границы, политика исчерпания, чем измеряется расход и ЧЕМ enforced. Не новый механизм — привязывается к существующему рантайм-энфорсеру (tools/budget.py Budget/BudgetExceeded) и учёту расхода (trace run_cost). Активирует инвариант из LoopPolicy: никакой loop (и — расширенно — run/package/work_graph) без бюджета. Честность (как в budget.py): экономика ДОЛЖНА быть enforced, а не только объявлена — потому enforced_by обязателен.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "scope", "scope_ref", "limits", "on_exhaustion",
+               "hard", "accounting", "enforced_by"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "BudgetContract" },
+    "id": { "type": "string", "pattern": "^BUD-[0-9]{3,}$" },
+    "scope": { "type": "string", "enum": ["run", "loop", "package", "work_graph"] },
+    "scope_ref": { "type": "string", "minLength": 1,
+      "description": "id ограничиваемой сущности (loop -> LP-NNN, work_graph -> WG-NNN, run/package -> строка)" },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "хотя бы одна граница должна быть задана (не-null); все положительны",
+      "properties": {
+        "max_model_calls": { "type": ["integer", "null"], "minimum": 1 },
+        "max_iterations": { "type": ["integer", "null"], "minimum": 1 },
+        "max_tokens": { "type": ["integer", "null"], "minimum": 1 },
+        "max_cost_usd": { "type": ["number", "null"], "minimum": 0 },
+        "max_wall_seconds": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "on_exhaustion": { "type": "string", "enum": ["fail_closed", "escalate", "degrade"],
+      "description": "поведение при исчерпании: fail_closed (стоп/блок), escalate (human), degrade (advisory-снижение объёма)" },
+    "hard": { "type": "boolean", "description": "жёсткий потолок (enforced) vs advisory" },
+    "accounting": { "type": "string", "minLength": 1,
+      "description": "чем измеряется расход (напр. trace run_cost.output_tokens + cost_usd_est)" },
+    "enforced_by": { "type": "string", "minLength": 1,
+      "description": "рантайм-энфорсер (напр. tools/budget.py Budget) — экономика enforced, не только объявлена" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "BudgetContract", "id": "BUD-001",
+      "scope": "loop", "scope_ref": "LP-001",
+      "limits": { "max_iterations": 1, "max_tokens": 200000, "max_model_calls": null,
+        "max_cost_usd": null, "max_wall_seconds": null },
+      "on_exhaustion": "fail_closed", "hard": true,
+      "accounting": "trace run_cost (output_tokens, cost_usd_est) per attempt",
+      "enforced_by": "tools/budget.py Budget + ai_ops_run review_fix_attempts"
+    }
+  ]
+}

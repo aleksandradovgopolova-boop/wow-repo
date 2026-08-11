@@ -6,7 +6,7 @@ schema_version: 1
 kind: ai-ops-manifest
 
 ai_ops:
-  package_version: 3.36.6
+  package_version: 3.36.7
   schema_version: 1
   minimum_runtime_contract: 1
 

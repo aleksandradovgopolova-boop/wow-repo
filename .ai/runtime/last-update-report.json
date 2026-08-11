@@ -1,18 +1,13 @@
 {
   "schema_version": 1,
   "command": "update",
-  "from_version": "3.36.5",
-  "to_version": "3.36.6",
+  "from_version": "3.36.6",
+  "to_version": "3.36.7",
   "status": "ok",
   "compatibility": "compatible",
   "managed_changes": [
     {
       "path": ".ai/managed/VERSION",
-      "action": "replace",
-      "reason": "обновлён в пакете"
-    },
-    {
-      "path": ".ai/managed/ai_ops_kit/validation/validate_feature_blueprint.py",
       "action": "replace",
       "reason": "обновлён в пакете"
     },
@@ -23,11 +18,6 @@
     },
     {
       "path": ".ai/managed/registry/release-claims.yaml",
-      "action": "replace",
-      "reason": "обновлён в пакете"
-    },
-    {
-      "path": ".ai/managed/templates/runtime/ai-ops-entry.sh",
       "action": "replace",
       "reason": "обновлён в пакете"
     }
@@ -58,15 +48,15 @@
       "status": "pass"
     }
   ],
-  "backup_ref": ".ai/runtime/backups/3.36.5",
+  "backup_ref": ".ai/runtime/backups/3.36.6",
   "pull_request": null,
   "human_approval_required": false,
-  "report": "Обновление 3.36.5 -> 3.36.6: 5 изменений, 551 файлов под контролем. Создайте PR с этим diff — silent update запрещён.",
+  "report": "Обновление 3.36.6 -> 3.36.7: 3 изменений, 551 файлов под контролем. Создайте PR с этим diff — silent update запрещён.",
   "context_backfilled": [],
   "ci_workflows": [],
   "zone_markers": [],
   "entry_point": {
-    "action": "unchanged",
+    "action": "updated",
     "path": "/Users/sasad/projects/wow-repo/ai-ops"
   },
   "communication_adapter": {
