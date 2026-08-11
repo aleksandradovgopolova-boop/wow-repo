@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "workitem",
+  "description": "Единая сущность продуктового изменения: один id связывает routed workflow, Feature Blueprint и прогон оркестратора; один статус + lifecycle_intent (v3.27.0 WP1).",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "workflow", "paths", "status"],
+  "properties": {
+    "schema_version": {"type": "integer"},
+    "kind": {"const": "workitem"},
+    "id": {"type": "string", "description": "единый id изменения = id фичи"},
+    "task": {"type": "string"},
+    "workflow": {"type": "string", "description": "маршрут, выбранный ai_route"},
+    "route_reasons": {"type": "array", "items": {"type": "string"}},
+    "human_approval_required": {"type": "boolean"},
+    "paths": {
+      "type": "object",
+      "required": ["blueprint", "run_state", "workitem"],
+      "properties": {
+        "blueprint": {"type": "string"},
+        "run_state": {"type": "string"},
+        "workitem": {"type": "string"}
+      }
+    },
+    "status": {"enum": ["draft", "done", "blocked", "needs_human_decision", "needs_more_evidence"]},
+    "lifecycle_intent": {
+      "type": "string",
+      "enum": ["discovery", "implementation", "review", "delivery", "completed", "cancelled", "superseded", "abandoned"],
+      "description": "v3.27.0 WP1: единая стадия жизненного цикла. Определяется детерминированно из состояния WorkItem (gates, evidence, blueprint, delivery receipt). Не требует явного указания пользователем."
+    }
+  }
+}

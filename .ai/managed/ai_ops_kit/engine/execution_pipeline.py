@@ -46,7 +46,7 @@ from ai_ops_kit.engine.pipeline_helpers import (  # noqa: E402,F401
     _gate_checklist, _parse_yaml_block, _openspec_validate, _authoring_specs,
 )
 from ai_ops_kit.engine.pipeline_git import (  # noqa: E402,F401
-    _git, _has_changes, _tree_clean, _TOOL_CACHE_RE, _tree_clean_after_checks,
+    _git, _has_changes, _head_advanced, _tree_clean, _TOOL_CACHE_RE, _tree_clean_after_checks,
     _untracked, _committed_changed_files, _commit_on_branch, _resolve_base,
     _verify_remote_base, _change_context, _change_context_range,
 )
@@ -329,6 +329,13 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
             if _spec_ctx:
                 ctx = _spec_ctx + "\n\n" + ctx
 
+    # HEAD НА СТАРТЕ — точка отсчёта «что произвёл ИМЕННО ЭТОТ прогон». Сравнивать с `base_sha`
+    # нельзя: при resume/reevaluate и при работе на ветке, уже ушедшей вперёд базы, HEAD отличается
+    # от базы ДО начала работы — и кит увидел бы работу там, где её не делали. Это была бы ложь в
+    # обратную сторону, не лучше исходной.
+    _rc_hb, _out_hb, _ = _git(work_root, "rev-parse", "HEAD") if is_git else (1, "", "")
+    head_before = _out_hb.strip() if _rc_hb == 0 else None
+
     # 4b. tool-loop: реализация. Пропускается, если pre-authoring дал невалидную спецификацию
     #     (Spec-First: нет валидной спеки -> нет кода — ноль tool-loop вызовов).
     if reevaluate_only:
@@ -347,14 +354,24 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
     # только из счётчика write-операций. Иначе правки через разрешённый shell (sed/форматтер)
     # не распознавались как «применено» -> коммит не создавался и работа терялась.
     shell_changed = bool(applied) or (is_git and _has_changes(work_root))
+    # НАХОДКА ИИ-СРЕДЫ: модель может закоммитить САМА (`git commit` в разрешённом shell). Тогда
+    # дерево чистое, `applied` пусто, `_has_changes` False — и все три признака говорят «правок
+    # нет», хотя коммит уже лежит на ветке. Третий факт: HEAD сдвинулся ЗА ЭТОТ прогон.
+    self_committed, head_sha = (_head_advanced(work_root, head_before)
+                                if is_git else (False, None))
 
     # 5. commit на рабочей ветке (finding аудита: evidence должен биться о ТОЧНЫЙ SHA, не
     #    о грязное дерево поверх старого HEAD). Коммитим ДО сбора evidence.
     committed_sha, work_branch = None, None
+    # ЧЕМ произведена работа — факт, который нужен человеку: «правок 0» при живом коммите читается
+    # как «кит не работает». Значения: broker (через write-операции), shell/writer (дерево было
+    # грязным), model-commit (модель закоммитила сама).
+    work_produced_by = ("broker" if applied else ("shell" if shell_changed else None))
     tree_clean_before_checks = None
     # v2.93: коммитим, если В ДЕРЕВЕ есть правки (git-diff/untracked) — включая правки через shell и
     # произведённые артефакты — а не только при непустом applied. Для не-git репо fallback на applied.
-    have_work = (is_git and _has_changes(work_root)) or bool(applied) or bool(authored)
+    have_work = ((is_git and _has_changes(work_root)) or bool(applied) or bool(authored)
+                 or self_committed)
     if reevaluate_only:
         # v3.8.4: существующий HEAD ветки — уже зафиксированная работа; НЕ создаём новый коммит,
         # план/SHA не меняются -> plan-bound ApprovalRecords остаются валидны.
@@ -366,6 +383,13 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
         work_branch = f"ai-ops/{wid}"
         committed_sha = _commit_on_branch(work_root, work_branch,
                                           f"ai-ops: {task[:60]}")
+        # Коммитить было нечего, но HEAD ушёл от базы — значит модель зафиксировала работу сама.
+        # Берём ЕЁ коммит вместо того, чтобы отчитаться об отсутствии работы: ground truth — git.
+        if committed_sha is None and self_committed:
+            _rc_b, _out_b, _ = _git(work_root, "rev-parse", "--abbrev-ref", "HEAD")
+            work_branch = _out_b.strip() if _rc_b == 0 and _out_b.strip() != "HEAD" else work_branch
+            committed_sha = head_sha
+            work_produced_by = "model-commit"
         # finding аудита (P0.5): после коммита дерево обязано быть чистым — иначе часть правок
         # не в SHA, и evidence соберётся о смешанном состоянии.
         tree_clean_before_checks = _tree_clean(work_root)
@@ -942,6 +966,10 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
                    # `applied_writes: 0` с коммитом на 2 файла. Ground truth — коммит, кладём его
                    # рядом, чтобы не приходилось выяснять это вручную.
                    "changed_files": list(_changed_for_verification or []),
+                   # ЧЕМ произведена работа. Без этого «правок 0» рядом с живым коммитом читается
+                   # как «кит не работает» — и читалось: ии-среда дважды за день получила
+                   # «код не написан» при сделанном коммите.
+                   "produced_by": work_produced_by,
                    "tree_clean_before_checks": tree_clean_before_checks,
                    "tree_clean_after_checks": tree_clean_after_checks},
         # v3.30: доказательство исправления — в отчёте, а не только в вердикте гейта: постфактум

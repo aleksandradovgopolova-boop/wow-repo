@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/provider-residency-policy.schema.json",
+  "title": "ProviderResidencyPolicy",
+  "description": "ProviderResidencyPolicy (PRP) — v3.4 Security, Permissions & Economics. Enforceable-контракт data-residency/retention: какому классу провайдера (confidentiality_class из registry/providers.yaml: external-cloud/ru-cloud/on-premise/configurable) можно отправлять данные каждого класса (public/internal/confidential/secret — как в AccessFilterPolicy) и с каким retention. Ужесточает routing-policy (preference) до safety-инварианта: секреты НИКОГДА не уходят в облако; confidential — не во external-cloud. Deny-by-default.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "default_deny", "rules"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "ProviderResidencyPolicy" },
+    "id": { "type": "string", "pattern": "^PRP-[0-9]{3,}$" },
+    "default_deny": { "type": "boolean", "description": "ИНВАРИАНТ: deny-by-default (allow-list)" },
+    "rules": {
+      "type": "array", "minItems": 1,
+      "description": "по одному правилу на класс данных",
+      "items": {
+        "type": "object",
+        "required": ["data_class", "allowed_provider_classes", "max_retention", "human_approval"],
+        "additionalProperties": false,
+        "properties": {
+          "data_class": { "type": "string",
+            "enum": ["public", "internal", "confidential", "secret"] },
+          "allowed_provider_classes": {
+            "type": "array",
+            "items": { "type": "string",
+              "enum": ["external-cloud", "ru-cloud", "on-premise", "configurable"] }
+          },
+          "max_retention": { "type": "string", "enum": ["zero", "ephemeral", "standard"] },
+          "human_approval": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "ProviderResidencyPolicy", "id": "PRP-001",
+      "default_deny": true,
+      "rules": [
+        { "data_class": "public", "allowed_provider_classes":
+          ["external-cloud", "ru-cloud", "on-premise", "configurable"],
+          "max_retention": "standard", "human_approval": false },
+        { "data_class": "internal", "allowed_provider_classes":
+          ["external-cloud", "ru-cloud", "on-premise", "configurable"],
+          "max_retention": "ephemeral", "human_approval": false },
+        { "data_class": "confidential", "allowed_provider_classes":
+          ["ru-cloud", "on-premise", "configurable"],
+          "max_retention": "ephemeral", "human_approval": false },
+        { "data_class": "secret", "allowed_provider_classes": ["on-premise"],
+          "max_retention": "zero", "human_approval": true }
+      ]
+    }
+  ]
+}

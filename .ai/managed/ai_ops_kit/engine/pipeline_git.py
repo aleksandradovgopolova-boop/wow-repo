@@ -115,6 +115,26 @@ def _has_changes(root):
     return not _tree_clean(root)
 
 
+def _head_advanced(root, base_sha):
+    """Ушёл ли HEAD вперёд от базы прогона. -> (bool, sha HEAD или None).
+
+    НАХОДКА ИИ-СРЕДЫ (ежедневная): модель может закоммитить сама — своим `git commit` в shell. Тогда
+    рабочее дерево ЧИСТОЕ, `applied` пусто, и движок делал вывод «правок нет»: коммит существовал на
+    ветке, а отчёт говорил «код не написан — правок 0» и помечал работу blocked. По отчёту выглядело,
+    будто кит не работает, хотя он работал.
+
+    Грязное дерево и продвинувшийся HEAD — два РАЗНЫХ факта, и оба означают «работа произведена».
+    Здесь второй: сравниваем HEAD с той базой, от которой прогон отрезан.
+    """
+    if not base_sha:
+        return False, None
+    rc, head, _ = _git(root, "rev-parse", "HEAD")
+    if rc != 0:
+        return False, None
+    head = head.strip()
+    return (head != str(base_sha).strip() and bool(head)), (head or None)
+
+
 def _resolve_base(root, base_ref):
     """v3.0.2/v3.0.7 (finding аудита P0): разрешение base-ветки. ТОЛЬКО ветка (локальная/origin), не tag/SHA.
 

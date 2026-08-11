@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/access-filter-policy.schema.json",
+  "title": "AccessFilterPolicy",
+  "description": "AccessFilterPolicy (AFP) — v3.4 Security, Permissions & Economics. Контракт фильтрации доступа к данным ДО retrieval (привязан к ContextArchitectureDecision.access_filter_before_retrieval). Замыкает инвариант фазы: никакой retrieval без access-filter. Deny-by-default allow-list по ролям × классам данных; секреты НИКОГДА не попадают в context ни для одной роли. Роли — те же role_views, что в CAD (planner/executor/ui_reviewer/security_reviewer/integration).",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "context_architecture", "data_classes",
+               "filter_stage", "default_deny", "rules", "secret_handling"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "AccessFilterPolicy" },
+    "id": { "type": "string", "pattern": "^AFP-[0-9]{3,}$" },
+    "context_architecture": { "type": "string", "pattern": "^CAD-[0-9]{3,}$",
+      "description": "ContextArchitectureDecision, к retrieval которого применяется фильтр (слабая ссылка по id)" },
+    "data_classes": {
+      "type": "array", "minItems": 1,
+      "items": { "type": "string", "enum": ["public", "internal", "confidential", "secret"] },
+      "description": "используемые классы данных (канонический taxonomy)"
+    },
+    "filter_stage": { "type": "string", "enum": ["before_retrieval"],
+      "description": "ИНВАРИАНТ: фильтр применяется ДО retrieval (не пост-фильтрация)" },
+    "default_deny": { "type": "boolean", "description": "ИНВАРИАНТ: deny-by-default (allow-list)" },
+    "rules": {
+      "type": "array", "minItems": 1,
+      "description": "по одному правилу на роль: какие классы данных роль может извлекать",
+      "items": {
+        "type": "object",
+        "required": ["role", "allowed_classes"],
+        "additionalProperties": false,
+        "properties": {
+          "role": { "type": "string",
+            "enum": ["planner", "executor", "ui_reviewer", "security_reviewer", "integration"] },
+          "allowed_classes": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["public", "internal", "confidential", "secret"] }
+          }
+        }
+      }
+    },
+    "secret_handling": { "type": "string", "minLength": 1,
+      "description": "как обрабатываются секреты (маскирование/исключение до retrieval)" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "AccessFilterPolicy", "id": "AFP-001",
+      "context_architecture": "CAD-001",
+      "data_classes": ["public", "internal", "confidential", "secret"],
+      "filter_stage": "before_retrieval", "default_deny": true,
+      "rules": [
+        { "role": "planner", "allowed_classes": ["public", "internal"] },
+        { "role": "executor", "allowed_classes": ["public", "internal", "confidential"] },
+        { "role": "ui_reviewer", "allowed_classes": ["public", "internal"] },
+        { "role": "security_reviewer", "allowed_classes": ["public", "internal", "confidential"] },
+        { "role": "integration", "allowed_classes": ["public", "internal", "confidential"] }
+      ],
+      "secret_handling": "секреты маскируются security-scan'ом и НИКОГДА не входят в context ни для одной роли"
+    }
+  ]
+}

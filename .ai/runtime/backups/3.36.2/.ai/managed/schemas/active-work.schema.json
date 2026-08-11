@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "active-work",
+  "description": "Машиночитаемая карта активных работ в репозитории: какие WorkItem'ы сейчас в работе, в каких ветках, какие зоны затрагивают и какая сессия владеет. Даёт новой сессии увидеть пересечения ДО старта (conflict forecast). Живёт в child по пути .ai/runtime/active-work.yaml; должна быть видна всем параллельным сессиям (коммитится/шарится).",
+  "type": "object",
+  "required": ["schema_version", "kind", "active"],
+  "properties": {
+    "schema_version": {"type": "integer"},
+    "kind": {"const": "active-work"},
+    "active": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "branch", "status", "affected_areas", "owner_session"],
+        "properties": {
+          "id": {"type": "string", "description": "= id WorkItem/фичи"},
+          "workitem": {"type": "string", "description": "путь к workitem.yaml"},
+          "branch": {"type": "string", "description": "ветка/worktree этой работы; не main"},
+          "status": {"enum": ["in-progress", "review", "blocked", "done"]},
+          "affected_areas": {"type": "array", "items": {"type": "string"}, "minItems": 1,
+            "description": "зоны продукта/кода, которые задача трогает — основа conflict forecast (kind=area)"},
+          "depends_on": {"type": "array", "items": {"type": "string"},
+            "description": "id других работ, от которых эта зависит; цикл — ошибка (kind=dependency)"},
+          "shared_contracts": {"type": "array", "items": {"type": "string"},
+            "description": "пути общих контрактов (схема данных/API/артефакт); пересечение -> риск расхождения (kind=contract)"},
+          "owner_session": {"type": "string", "description": "идентификатор владеющей сессии"},
+          "started_at": {"type": "string"}
+        }
+      }
+    }
+  }
+}

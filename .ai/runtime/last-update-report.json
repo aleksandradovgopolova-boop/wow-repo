@@ -1,13 +1,38 @@
 {
   "schema_version": 1,
   "command": "update",
-  "from_version": "3.36.1",
-  "to_version": "3.36.2",
+  "from_version": "3.36.2",
+  "to_version": "3.36.5",
   "status": "ok",
   "compatibility": "compatible",
   "managed_changes": [
     {
       "path": ".ai/managed/VERSION",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/ai_ops_run.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/execution_pipeline.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/pipeline_git.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/pipeline_helpers.py",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/engine/run_handoff.py",
       "action": "replace",
       "reason": "обновлён в пакете"
     },
@@ -18,6 +43,21 @@
     },
     {
       "path": ".ai/managed/registry/release-claims.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/templates/ci/ai-ops-record.yml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/templates/ci/ai-ops-update.yml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/templates/ci/ai-ops-validate.yml",
       "action": "replace",
       "reason": "обновлён в пакете"
     }
@@ -48,12 +88,34 @@
       "status": "pass"
     }
   ],
-  "backup_ref": ".ai/runtime/backups/3.36.1",
+  "backup_ref": ".ai/runtime/backups/3.36.2",
   "pull_request": null,
   "human_approval_required": false,
-  "report": "Обновление 3.36.1 -> 3.36.2: 3 изменений, 551 файлов под контролем. Создайте PR с этим diff — silent update запрещён.",
+  "report": "Обновление 3.36.2 -> 3.36.5: 11 изменений, 551 файлов под контролем. CI ребёнка обновлён вместе с китом: ai-ops-update.yml (refreshed), ai-ops-record.yml (refreshed), ai-ops-validate.yml (refreshed). Создайте PR с этим diff — silent update запрещён.",
   "context_backfilled": [],
-  "ci_workflows": [],
+  "ci_workflows": [
+    {
+      "file": "ai-ops-update.yml",
+      "action": "refreshed",
+      "was": "stale-ours",
+      "broken_before": [],
+      "backup": null
+    },
+    {
+      "file": "ai-ops-record.yml",
+      "action": "refreshed",
+      "was": "stale-ours",
+      "broken_before": [],
+      "backup": null
+    },
+    {
+      "file": "ai-ops-validate.yml",
+      "action": "refreshed",
+      "was": "stale-ours",
+      "broken_before": [],
+      "backup": null
+    }
+  ],
   "zone_markers": [],
   "entry_point": {
     "action": "unchanged",

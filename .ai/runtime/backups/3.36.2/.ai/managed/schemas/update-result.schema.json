@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/update-result.schema.json",
+  "title": "UpdateResult",
+  "description": "Machine-readable result of `ai-ops update` / `ai-ops diff` (Section 27). Never a silent update.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "command": { "type": "string", "enum": ["init", "status", "diff", "update", "validate", "doctor", "migrate", "verify-capabilities"] },
+    "from_version": { "type": ["string", "null"] },
+    "to_version": { "type": ["string", "null"] },
+    "status": { "type": "string", "enum": ["ok", "blocked", "conflict", "failed", "dry-run"] },
+    "compatibility": { "type": "string", "enum": ["compatible", "requires-migration", "incompatible"] },
+    "managed_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "action": { "type": "string", "enum": ["add", "replace", "skip", "remove", "regenerate"] },
+          "reason": { "type": "string" }
+        },
+        "required": ["path", "action"],
+        "additionalProperties": false
+      }
+    },
+    "direct_edits_detected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": { "path": { "type": "string" }, "checksum_expected": { "type": "string" }, "checksum_actual": { "type": "string" } },
+        "required": ["path"],
+        "additionalProperties": false
+      }
+    },
+    "migrations_applied": { "type": "array", "items": { "type": "string" } },
+    "preserved_paths": { "type": "array", "items": { "type": "string" } },
+    "smoke_tests": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+    "backup_ref": { "type": ["string", "null"] },
+    "pull_request": { "type": ["string", "null"], "description": "PR URL if rollout is PR-based" },
+    "human_approval_required": { "type": "boolean" },
+    "report": { "type": "string" }
+  },
+  "required": ["schema_version", "command", "status", "human_approval_required"],
+  "additionalProperties": false,
+  "x-invariant": "If direct_edits_detected is non-empty, status MUST be 'blocked' or 'conflict' (no silent overwrite, Section 28).",
+  "examples": [
+    {
+      "schema_version": 1,
+      "command": "update",
+      "from_version": "0.4.0",
+      "to_version": "0.5.0",
+      "status": "blocked",
+      "compatibility": "requires-migration",
+      "managed_changes": [{ "path": ".ai/managed/core/agents/task-planner.md", "action": "replace", "reason": "core update" }],
+      "direct_edits_detected": [{ "path": ".ai/managed/core/rules/ScopeControl.md", "checksum_expected": "sha256:a", "checksum_actual": "sha256:b" }],
+      "migrations_applied": [],
+      "preserved_paths": [".ai/project/**", ".ai/custom/**"],
+      "smoke_tests": [],
+      "backup_ref": ".ai/.backups/0.4.0",
+      "pull_request": null,
+      "human_approval_required": true,
+      "report": "Direct edit detected in a managed file; update halted. Migrate the edit to .ai/custom/ overlay and re-run."
+    }
+  ]
+}

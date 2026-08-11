@@ -21,6 +21,25 @@ for _p in (PKG / "tools", PKG / "validation"):
 from ai_ops_kit.gates import gate_executor  # noqa: E402
 
 
+def work_produced(rep) -> bool:
+    """Была ли РЕАЛЬНО произведена работа в этом прогоне. -> bool.
+
+    ОДИН ПРЕДИКАТ НА ВСЕХ ПОТРЕБИТЕЛЕЙ. Счётчик `loop.applied_writes` считает правки, прошедшие
+    через брокера, — и это НЕ то же самое, что «работа сделана»: writer уровня `claude -p` правит
+    файлы своими инструментами, `sed -i` правит через shell, а модель может закоммитить сама.
+    Из-за подмены одного другим ии-среда дважды за день получила «код не написан — правок 0» при
+    живом коммите, и работа помечалась blocked: по отчёту кит выглядел неработающим, хотя работал.
+
+    Ground truth — git: есть коммит и в нём есть файлы. Счётчик брокера остаётся запасным путём для
+    не-git деревьев, где сверять не с чем.
+    """
+    rep = rep or {}
+    commit = rep.get("commit") or {}
+    if commit.get("sha") and (commit.get("changed_files") or []):
+        return True
+    return ((rep.get("loop") or {}).get("applied_writes") or 0) > 0
+
+
 def _profile_summary(profile):
     stacks = profile.get("stacks") or []
     langs = ", ".join(s.get("language", "?") for s in stacks) or "не определён"

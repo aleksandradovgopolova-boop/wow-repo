@@ -20,12 +20,30 @@ permissions:
   pull-requests: write
 jobs:
   update:
-    runs-on: ubuntu-latest
+    # Раннер выбирается ПЕРЕМЕННОЙ, а не зашит. `ubuntu-latest` существует только у
+    # GitHub: в организации со своими раннерами джоба с этим ярлыком просто висит в
+    # очереди и никогда не стартует. Задайте `vars.CI_RUNNER_LINUX` (Settings ->
+    # Secrets and variables -> Actions -> Variables) — и кит поедет на вашей машине.
+    # Обкатано на живом self-hosted стенде ии-среды, а не придумано.
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
+      # Python ставим ТОЛЬКО на раннерах GitHub. На своей машине `setup-python` уходит в
+      # tool cache по пути раннеров GitHub (`/Users/runner`), которого там нет, а `pip install`
+      # в системный python Ubuntu 24.04 запрещён (PEP 668, externally-managed-environment).
       - uses: actions/setup-python@v5
+        if: ${{ !vars.CI_RUNNER_LINUX }}
         with: {python-version: "3.12"}
       - run: pip install pyyaml
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+      # На своём раннере предустановку не молчим, а ПРОВЕРЯЕМ: иначе первое падение случится
+      # глубже и невнятнее — так у ии-среды `net::ERR_CONNECTION_REFUSED` прятал отсутствие
+      # утилиты. Здесь причина названа сразу.
+      - name: Проверить python и pyyaml (свой раннер)
+        if: ${{ vars.CI_RUNNER_LINUX }}
+        run: |
+          python3 -c 'import sys, yaml; print("python", sys.version.split()[0], "· pyyaml", yaml.__version__)' \
+            || { echo "на раннере '${{ vars.CI_RUNNER_LINUX }}' нет python3 с pyyaml — поставьте их на машину раннера (кит ставить их в системный python не будет: PEP 668)"; exit 1; }
       - name: Сравнить версии parent-пакета
         id: ver
         run: |

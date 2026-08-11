@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/promotion-qualification-plan.schema.json",
+  "title": "PromotionQualificationPlan",
+  "description": "PromotionQualificationPlan (PQP) — план ЖИВОЙ квалификации и КОНТРОЛИРУЕМОГО promotion Context Engine v2 (v3.6.8). Это ДАННЫЕ, не живой прогон: чек-лист сценариев, обязательных негативов, последовательности promotion (shadow -> hybrid -> default, НЕ прямой v1->default) и exit-критериев, чтобы живая квалификация исполнялась против списка и не пропускала шаги. Честность: план объявляет external-гейты (blocked_by) и ссылается на РЕАЛЬНЫЕ инструменты движка.",
+  "type": "object",
+  "required": ["schema_version", "kind", "plan_id", "phase", "title", "runs",
+               "negative_scenarios", "promotion_sequence", "exit_criteria", "blocked_by"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "PromotionQualificationPlan" },
+    "plan_id": { "type": "string", "pattern": "^PQP-[0-9]{3,}$" },
+    "phase": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "runs": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "kind", "steps", "exact_sha_bound", "produces_pr", "uses"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^run-[a-z0-9-]+$" },
+          "title": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "enum": ["python-child", "ts-react-storybook", "parallel-2"] },
+          "steps": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "exact_sha_bound": { "type": "boolean" },
+          "produces_pr": { "type": "boolean" },
+          "uses": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "negative_scenarios": {
+      "type": "array",
+      "minItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["id", "scenario", "expected", "covers"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^neg-[a-z0-9-]+$" },
+          "scenario": { "type": "string", "minLength": 1 },
+          "expected": { "type": "string", "minLength": 1 },
+          "covers": {
+            "type": "string",
+            "enum": ["write_scope_overlap", "package_fail", "contract_not_fixed",
+                     "duplicate_package_id", "merge_conflict", "base_moved", "aggregate_wrong_sha",
+                     "reviewer_abstain_twice", "mandatory_context_missing", "child_policy_changed"]
+          }
+        }
+      }
+    },
+    "promotion_sequence": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["stage", "description", "gate"],
+        "additionalProperties": false,
+        "properties": {
+          "stage": { "type": "string", "enum": ["shadow", "hybrid", "default"] },
+          "description": { "type": "string", "minLength": 1 },
+          "gate": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "exit_criteria": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["id", "metric", "target"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^ec-[a-z0-9-]+$" },
+          "metric": {
+            "type": "string",
+            "enum": ["zero_access_leaks", "zero_stale_or_misbound_context", "zero_false_green",
+                     "zero_duplicate_pr", "mandatory_retained_or_block",
+                     "context_views_snapshot_bound", "package_evidence_sha_bound",
+                     "aggregate_evidence_integration_sha_bound"]
+          },
+          "target": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "blocked_by": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+  }
+}

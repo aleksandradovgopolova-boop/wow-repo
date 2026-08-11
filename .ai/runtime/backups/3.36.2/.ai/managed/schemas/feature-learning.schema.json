@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/feature-learning.schema.json",
+  "title": "FeatureLearning",
+  "description": "FeatureLearning — v3.3 Product Learning. Мост от исследовательского решения (research DecisionPackage) к продуктовому/архитектурному исходу: что предполагали, как проверяли, что вышло и чему научились. Замыкает петлю research -> продукт -> решение (DP -> FeatureLearning -> ADR/feature). Ссылается на DecisionPackage по id (слабая ссылка: research-контур управляется отдельно, файловой связки нет — целостность DP-ссылок проверяется отдельной fitness, не структурно, чтобы не привязываться к параллельно меняющемуся .research/).",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "feature", "hypothesis", "validation", "outcome", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "FeatureLearning" },
+    "id": { "type": "string", "pattern": "^FL-[0-9]{3,}$" },
+    "feature": { "type": "string", "minLength": 1,
+      "description": "scope: 'feature:<name>' или 'architecture:<name>'" },
+    "decision_package": { "type": ["string", "null"], "pattern": "^DP-[0-9]{3,}$",
+      "description": "research DecisionPackage-источник (слабая ссылка), либо null" },
+    "hypothesis": { "type": "string", "minLength": 1,
+      "description": "что предполагали/решили (ожидание, подлежащее проверке)" },
+    "validation": {
+      "type": "object",
+      "required": ["method", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "method": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["planned", "running", "done"] },
+        "result": { "type": ["string", "null"] }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["verdict"],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": { "type": "string", "enum": ["pending", "confirmed", "refuted", "inconclusive"] },
+        "expected": { "type": ["string", "null"] },
+        "actual": { "type": ["string", "null"] }
+      }
+    },
+    "learnings": { "type": "array", "items": { "type": "string" } },
+    "follow_up": { "type": "array", "items": { "type": "string" },
+      "description": "порождённые артефакты: ADR-NNN / RR-NNN / feature:<name>" },
+    "status": { "type": "string", "enum": ["open", "validated", "closed"] },
+    "created_at": { "type": ["string", "null"] },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "v3.3.3 completion-сигналы фазы обучения",
+      "properties": {
+        "delivery_complete": { "type": "boolean" },
+        "learning_complete": { "type": "boolean" },
+        "outcome_achieved": { "type": "boolean" }
+      }
+    },
+    "decision": { "type": ["string", "null"],
+      "enum": ["continue", "change", "stop", "investigate", "scale", null],
+      "description": "v3.3.3 явное решение по исходу обучения" },
+    "solution_options": {
+      "type": "array",
+      "description": "v3.3.3 рассмотренные варианты решения (design/decision history)",
+      "items": {
+        "type": "object",
+        "required": ["option", "chosen", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "option": { "type": "string", "minLength": 1 },
+          "chosen": { "type": "boolean" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "reused_evidence": { "type": "array", "items": { "type": "string" },
+      "description": "v3.3.3 переиспользованное evidence (EV-/DP-/FL- — слабые ссылки)" },
+    "research_gap": { "type": ["string", "null"],
+      "description": "v3.3.3 неопределённость, маршрутизируемая в research (при decision=investigate)" },
+    "supersedes": { "type": ["string", "null"], "pattern": "^FL-[0-9]{3,}$",
+      "description": "v3.3.3 предыдущий FeatureLearning, который этот заменяет (design history)" }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "FeatureLearning",
+      "id": "FL-001",
+      "feature": "architecture:control-plane",
+      "decision_package": "DP-108",
+      "hypothesis": "AI Ops = control plane + тонкие адаптеры к open-source снижает стоимость поддержки vs монолит",
+      "validation": {
+        "method": "сравнительный анализ аналогов AI Ops (research RR-008/DP-108)",
+        "status": "done",
+        "result": "стратегия подтверждена внешним анализом аналогов; риски адаптеров названы"
+      },
+      "outcome": {
+        "verdict": "confirmed",
+        "expected": "control-plane + адаптеры дешевле в поддержке",
+        "actual": "подтверждено анализом; зафиксировано как ADR-001"
+      },
+      "learnings": [
+        "control-plane + тонкие адаптеры подтверждён как стратегия",
+        "цена — дисциплина адаптеров и отслеживание версий внешних инструментов"
+      ],
+      "follow_up": ["ADR-001"],
+      "status": "validated",
+      "created_at": null
+    }
+  ]
+}

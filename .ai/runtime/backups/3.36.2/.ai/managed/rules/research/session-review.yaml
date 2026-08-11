@@ -1,0 +1,27 @@
+# rules/research/session-review.yaml — гейты доказательного разбора сессий (v2.7).
+# Машиночитаемый чек-лист к скиллу skills/product-session-review/SKILL.md.
+# Инструмент-агностично: применимо к любому session-replay стеку (Clarity, FullStory,
+# Hotjar, PostHog, LogRocket, ...). Находки ссылаются на id пунктов.
+# Opt-in: используется, только когда у продукта инструментированы поведенческие данные.
+schema_version: 1
+kind: research-checklist
+id: session-review
+used_by: [product-analyst, user-researcher]
+skill: skills/product-session-review/SKILL.md
+adapted_from: "BayramAnnakov/clarity-session-review (MIT)"
+items:
+  - {id: question-before-replay, check: "Есть дискриминирующий вопрос и временно́е окно, выбранные ДО просмотра данных (не подгонка постфактум)", severity_default: critical}
+  - {id: bots-stripped, check: "Боты и внутренний трафик отсеяны ДО расчёта любых долей/процентов", severity_default: critical}
+  - {id: identity-attributed, check: "Личность/сегмент атрибутированы до интерпретации поведения (id инструмента идентификации или URL входа)", severity_default: major}
+  - {id: triangulated, check: "Каждое существенное утверждение подтверждено >=2 слоями: реплей + база + исходный код", severity_default: critical}
+  - {id: timeline-not-replay, check: "Вывод сделан по самому реплею, а не по усечённому таймлайну событий; скрытые вкладки вычтены", severity_default: major}
+  - {id: count-people, check: "Знаменатель — число различных людей, а не сессий; фрагментация сессий учтена; во всех долях виден знаменатель", severity_default: critical}
+  - {id: proof-of-attempt, check: "Инструментирован СТАРТ шага, не только успех; 'не пытались' отделено от 'не смогли'", severity_default: major}
+  - {id: walk-the-step, check: "Целевой шаг пройден самостоятельно (или передан человеку при блокировке кредами/оплатой) до теоретизирования о причинах отвала", severity_default: major}
+  - {id: affordance-existed, check: "Проверено, что аффорданс/фича существовал на протяжении всего окна анализа", severity_default: major}
+  - {id: dead-click-analysis, check: "Проведён dead-click анализ: цели ранжированы по частоте, ложные аффордансы подтверждены исходником (нет onClick/ссылки -> file:line)", severity_default: major}
+  - {id: refute-pass, check: "Перед публикацией пройден adversarial refute-проход: искали обратные примеры к собственному выводу", severity_default: critical}
+  - {id: evidence-coordinates, check: "Каждое утверждение снабжено координатами: ссылка на сессию, тайминг, что проверить", severity_default: critical}
+  - {id: depth-labeled, check: "У каждого утверждения проставлен уровень доказательности: MEASURED / OBSERVED / INFERRED", severity_default: major}
+  - {id: blind-spots-gated, check: "Вывод, стоящий на слепой зоне (сторонние потоки, ad-block, 'нет жалоб'), помечен как INFERRED в самой фразе — или не публикуется", severity_default: critical}
+  - {id: cold-read-gate, check: "Отчёт прошёл cold-read: человек без контекста понимает, что решено, что открыто и о чём его просят", severity_default: minor}

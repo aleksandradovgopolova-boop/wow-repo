@@ -36,6 +36,7 @@ import yaml
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
 from ai_ops_kit.engine import run_plan          # noqa: E402
+from ai_ops_kit.engine.pipeline_helpers import work_produced   # noqa: E402
 from ai_ops_kit.lifecycle import workitem          # noqa: E402
 from ai_ops_kit.lifecycle import active_work       # noqa: E402
 from ai_ops_kit.lifecycle import lifecycle_store as _ls   # noqa: E402 — v3.0.12: durable запись/fail-closed чтение resume-артефактов
@@ -1365,7 +1366,12 @@ def run(task_text, signals, child_root: Path, features_dir=None,
         # `ai-ops status` показывает пустоту при незакрытых гейтах и ненаписанном коде.
         _ready = bool(rep.get("ready_for_pr"))
         _unmet = (rep.get("gates") or {}).get("unmet") or []
-        _wrote = ((rep.get("loop") or {}).get("applied_writes") or 0) > 0
+        # НАХОДКА ИИ-СРЕДЫ (ежедневная): факт работы брался из счётчика write-операций брокера, а
+        # писать могут иначе — writer уровня `claude -p` своими инструментами, `sed -i` в shell,
+        # и модель может закоммитить сама. Тогда `applied_writes == 0` при живом коммите, и статус
+        # работы становился «blocked: код не написан — правок 0». По отчёту выглядело, будто кит не
+        # работает, хотя он работал. Ground truth — git: коммит и его файлы.
+        _wrote = work_produced(rep)
         if _ready:
             _st, _why = "done", None
         elif _wrote:
@@ -1472,17 +1478,22 @@ def _print_pipeline(r):
     _changed = commit.get("changed_files")
     _files_note = f" · файлов в коммите {len(_changed)}" if _changed is not None and commit.get("sha") else ""
     print(f"  tool-loop: {loop.get('stopped')} · шагов {loop.get('steps')} · "
-          f"правок {loop.get('applied_writes')} · отклонено {loop.get('denied')}{_files_note}")
-    # F-017: правок через брокера 0, а файлы в коммите есть — значит писал не движок (writer правил
-    # файлы своими инструментами). Раньше отчёт показывал только «правок 0» и выглядел как «ничего
-    # не произошло», хотя работа была сделана. Ground truth — коммит.
+          f"правок через брокера {loop.get('applied_writes')} · "
+          f"отклонено {loop.get('denied')}{_files_note}")
+    # F-017 + находка ии-среды: правок через брокера 0, а файлы в коммите есть — работа сделана
+    # другим каналом. Прежде строка «правок 0» стояла первой и читалась как «ничего не произошло»,
+    # хотя коммит был. Теперь канал НАЗВАН, а не выведен читателем.
+    _by = {"broker": "через брокера", "shell": "напрямую в дереве (writer или shell)",
+           "model-commit": "модель закоммитила сама"}.get(commit.get("produced_by"))
     if _changed and not (loop.get("applied_writes") or 0):
-        print(f"    правки внесены writer'ом напрямую, не через брокера: {', '.join(_changed[:5])}"
+        print(f"    работа произведена {_by or 'не через брокера'}: {', '.join(_changed[:5])}"
               + (f" и ещё {len(_changed) - 5}" if len(_changed) > 5 else ""))
     # F-012: движок никого не позвал и ничего не написал — назвать режим и что делать дальше.
     # Раньше это читалось только по косвенным признакам (созданный worktree + «not_yet: живой
     # предложитель»), и исполнитель догадывался, что код должен написать он.
-    if (r.get("provider") == "mock") and not (loop.get("applied_writes") or 0):
+    # Тот же предикат, что и у статуса работы: «движок ничего не написал» нельзя объявлять по
+    # счётчику брокера, если в коммите лежат файлы.
+    if (r.get("provider") == "mock") and not work_produced(r):
         _wt = (r.get("isolation") or {}).get("worktree")
         _br = (r.get("commit") or {}).get("branch") or f"ai-ops/{r.get('workitem_id')}"
         print("  исполнитель: внешний агент — движок с провайдером mock кода НЕ пишет")

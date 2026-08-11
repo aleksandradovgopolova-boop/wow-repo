@@ -46,7 +46,12 @@ def build_handoff(report, work_root=None):
     # completed: подтверждённые шаги петли (успешные write/shell) — краткое резюме
     completed = []
     if loop.get("applied_writes"):
-        completed.append(f"применено правок: {loop['applied_writes']}")
+        completed.append(f"применено правок через брокера: {loop['applied_writes']}")
+    elif commit.get("sha") and commit.get("changed_files"):
+        # Работа произведена другим каналом (writer своими инструментами, shell, свой коммит
+        # модели). Промолчать здесь значило бы передать исполнителю «сделано ничего».
+        completed.append(f"изменено файлов: {len(commit['changed_files'])} "
+                         f"({commit.get('produced_by') or 'не через брокера'})")
     if commit.get("sha"):
         completed.append(f"коммит {sha[:12]} на {commit.get('branch')} (evidence на точном SHA: "
                          f"{commit.get('evidence_on_exact_sha')})")

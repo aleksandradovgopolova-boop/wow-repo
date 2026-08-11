@@ -3,7 +3,7 @@ schema_version: 1
 kind: ai-ops-child-config
 parent:
   source: git+https://github.com/aleksandradovgopolova-boop/ai-ops-kit.git
-  installed_version: 3.36.2
+  installed_version: 3.36.5
   allowed_version_range: ">=3.0.0 <4.0.0"
   update_channel: stable
   update_policy: pr

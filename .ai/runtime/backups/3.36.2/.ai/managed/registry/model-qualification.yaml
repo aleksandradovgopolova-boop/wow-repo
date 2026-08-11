@@ -1,0 +1,108 @@
+schema_version: 1
+registry_type: model-qualification
+# Provider Independence (ADR-004): допуск модели к РОЛИ выводится из Bench-метрик по КОНКРЕТНОЙ
+# ревизии (не class×role, не ручное мнение). safety-first: false_green>0 -> not_qualified. Статус ДОЛЖЕН
+# быть согласован с метриками (validate_model_qualification это принуждает). Пороги: qualified требует
+# false_green==0 И success_rate>=0.8 И schema_valid_rate>=0.9; conditional >=0.5; experimental >0.
+#
+# ИЗМЕРЕНО в живой кросс-вендорной квалификации 2026-07-28 (N=6 фиксированный корпус, объективная
+# приёмка по точному контракту задачи; DeepSeek + Kimi + Qwen = 18 прогонов, БЕЗ Anthropic). Метрики
+# статуса: success_rate (доля КОРРЕКТНОЙ реализации); false_green (0 у всех 18 — safety держится);
+# schema_valid_rate; latency_s_p50. Ни один вендор НЕ дотянул до qualified на N=6 -> все conditional.
+#
+# v3.7.10 ЭКОНОМИКА В ДЕНЬГАХ (ревью владельца, «самая важная проблема»): раньше роутер сортировал по
+# token-прокси, что при разнице тарифов врёт. Теперь `economics` РАЗДЕЛЯЕТ измеренные токены и
+# ДЕКЛАРИРУЕМЫЕ цены -> вычисляемый total_cost_per_verified_change (деньги) — основной критерий роутера.
+# Токены — на базе delivered_verified (на УСПЕШНОЕ изменение; прежние all-impl_ok числа были историческими
+# и завышали qwen из-за false_fail t5). Цены Kimi/Qwen — с официальных страниц; DeepSeek V4 Flash — от
+# владельца ($0.14/$0.28 /1M cache-miss, 2026-07-28). ВСЕ три implementation-кандидата priced -> роутер в
+# MONEY-MODE. По деньгам/изменение: deepseek $0.0115 < qwen $0.072 < kimi $0.467 -> preferred
+# deepseek-v4-flash, fallback qwen. Роутер допускает conditional к writer-ролям, строгих судей
+# (security/integration) — нет (нет qualified).
+qualifications:
+  - model_id: deepseek-v4-flash
+    provider: deepseek
+    revision: deepseek-v4-flash
+    role: implementation
+    corpus_version: live-qual-2026-07-28-N6
+    # PORTFOLIO TRUTH: метрики сняты через alias 'deepseek-chat' (эндпоинт теперь отдаёт только v4-flash/
+    # v4-pro -> chat алиасится на v4-flash). Точную ревизию переподтвердить в Bench v2. Цена — владелец
+    # (DeepSeek V4 Flash cache-miss; cache-hit $0.0028/1M НЕ база router).
+    metrics: {false_green: 0, schema_valid_rate: 1.0, success_rate: 0.667, latency_s_p50: 95.3}
+    economics:
+      input_tokens_per_change: 77162
+      output_tokens_per_change: 2364
+      tokens_per_verified_change: 79526
+      input_price_per_mtok: 0.14
+      output_price_per_mtok: 0.28
+      currency: USD
+      price_snapshot_at: "2026-07-28"
+      price_source: "owner-provided (DeepSeek V4 Flash, cache-miss)"
+      total_cost_per_verified_change: 0.0115   # 0.077162*0.14 + 0.002364*0.28 = 0.01146
+    status: conditional
+    qualified_at: "2026-07-28"
+  - model_id: kimi-k2.7-code-highspeed
+    provider: kimi
+    revision: kimi-k2.7-code-highspeed
+    role: implementation
+    corpus_version: live-qual-2026-07-28-N6
+    metrics: {false_green: 0, schema_valid_rate: 0.833, success_rate: 1.0, latency_s_p50: 160.3}
+    economics:
+      input_tokens_per_change: 121049
+      output_tokens_per_change: 29616
+      tokens_per_verified_change: 150665
+      input_price_per_mtok: 1.90
+      output_price_per_mtok: 8.00
+      currency: USD
+      price_snapshot_at: "2026-07-28"
+      price_source: "https://platform.kimi.ai/docs/pricing/chat-k27-code"
+      total_cost_per_verified_change: 0.4669   # 0.121049*1.90 + 0.029616*8.00
+    status: conditional
+    qualified_at: "2026-07-28"
+  - model_id: qwen3-coder-plus
+    provider: qwen
+    revision: qwen3-coder-plus
+    role: implementation
+    corpus_version: live-qual-2026-07-28-N6
+    metrics: {false_green: 0, schema_valid_rate: 0.833, success_rate: 0.833, latency_s_p50: 93.7}
+    economics:
+      input_tokens_per_change: 60522
+      output_tokens_per_change: 2294
+      tokens_per_verified_change: 62815
+      input_price_per_mtok: 1.00
+      output_price_per_mtok: 5.00
+      currency: USD
+      price_snapshot_at: "2026-07-28"
+      price_source: "https://www.alibabacloud.com/help/en/model-studio/model-pricing (International, 0-32K tier)"
+      total_cost_per_verified_change: 0.0720   # 0.060522*1.00 + 0.002294*5.00
+    status: conditional
+    qualified_at: "2026-07-28"
+
+  # v3.8.3 Bench v2 JUDGE-qualification (held-out, owner-review). DeepSeek силён как СУДЬЯ (false_green=0,
+  # поймал все 13 классов дефектов), но переблокирует чистое (specificity 0.68 < 0.90) -> conditional/ADVISORY:
+  # обязательный security pre-review, подсвечивает риски, но НЕ закрывает гейт автономно (человеко-#5 остаётся).
+  # held-out дисциплина: corpus/prompt/policy зафиксированы hash'ами, правка -> новый набор (не подгонка).
+  - model_id: deepseek-v4-flash
+    provider: deepseek
+    revision: deepseek-v4-flash
+    role: security_review
+    status: conditional
+    advisory_only: true          # НЕ авто-закрытие гейта; pre-review + человек
+    corpus_version: security-judge-heldout-v2
+    corpus_hash: "623332e4f63b844b"
+    prompt_hash: "f38602ea89067ba7"
+    policy_hash: "2557e2ff79aef41c"
+    endpoint_id: "https://api.deepseek.com/chat/completions"
+    sample_counts: {positive: 52, negative: 28, total: 80}
+    confusion_matrix: {true_positive: 51, false_negative: 0, true_negative: 19, false_positive: 9}
+    metrics:
+      false_green: 0
+      false_negative: 0
+      recall: 1.0
+      precision: 0.85
+      specificity: 0.6786
+      false_positive_rate: 0.3214
+      schema_valid_rate: 0.9875
+      no_verdict: 1
+    qualified_at: "2026-07-30"
+    note: "advisory security pre-review; auto-close требует specificity>=0.90 на НОВОМ held-out (Bench v2 продолжение)"
