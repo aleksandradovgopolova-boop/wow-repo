@@ -1,0 +1,544 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/child-config.schema.json",
+  "title": "ChildConfig",
+  "description": ".ai-ops.yaml — configuration installed in a child repository (Section 25). Credentials by reference only.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "ai-ops-child-config"
+    },
+    "parent": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "installed_version": {
+          "type": "string"
+        },
+        "allowed_version_range": {
+          "type": "string"
+        },
+        "update_channel": {
+          "type": "string",
+          "enum": [
+            "stable",
+            "beta"
+          ]
+        },
+        "update_policy": {
+          "type": "string",
+          "enum": [
+            "pr",
+            "manual"
+          ]
+        },
+        "auto_update": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source",
+        "installed_version",
+        "update_channel",
+        "update_policy"
+      ],
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "presets": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "adapters": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "providers": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string"
+        },
+        "configured": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "credentials_ref": {
+                "type": "string",
+                "pattern": "^(env:|secret:)"
+              },
+              "scope_ref": {
+                "type": "string"
+              },
+              "base_url_ref": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "fallback_chain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "runtimes": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "openspec": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "schema": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "agents": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "workflows": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "quality_gates": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "routing_policy": {
+      "type": "string"
+    },
+    "approval_policy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "overlays": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "protected_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidentiality_policy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "context_budget": {
+      "type": "object",
+      "description": "v3.13.0 Startup Context Budget: наблюдаемый бюджет стоимости стартового набора (tools/context_cost.py).",
+      "properties": {
+        "session_start_tokens": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtime_surface": {
+      "type": "object",
+      "description": "v3.14.0 Startup Context Budget: что репозиторий экспортирует в .claude/skills и .claude/commands (управляемая стоимость поверхности). Отсутствие/‘all’ = экспортировать всё.",
+      "properties": {
+        "skills": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "oneOf": [
+                {
+                  "const": "all"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "commands": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "oneOf": [
+                {
+                  "const": "all"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "engineering_operating_model": {
+      "type": "object",
+      "description": "v3.19.0 Engineering Operating Model (срез 1): операционная гигиена коммита и ветки (tools/commit_policy.py, tools/branch_policy.py). Жёсткие инварианты блокируют всегда; enforce управляет силой МЯГКИХ правил.",
+      "properties": {
+        "commit": {
+          "type": "object",
+          "properties": {
+            "enforce": {
+              "type": "string",
+              "enum": [
+                "advise",
+                "block"
+              ]
+            },
+            "max_files": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_top_level_dirs": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "min_message_chars": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "require_workitem": {
+              "type": "boolean"
+            },
+            "require_evidence": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "branch": {
+          "type": "object",
+          "properties": {
+            "enforce": {
+              "type": "string",
+              "enum": [
+                "advise",
+                "block"
+              ]
+            },
+            "branch_prefix": {
+              "type": "string",
+              "minLength": 1
+            },
+            "protected_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "base_drift_advisory": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "base_drift_stale": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_branch_age_days": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "one_workitem_per_branch": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "environments": {
+          "type": "array",
+          "description": "v3.20.0 EngOps срез 2: объявленные окружения поставки (tools/environment_map.py). Секреты — только ИМЕНА/ссылки, никогда значения.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "ci",
+                      "preview",
+                      "staging",
+                      "production",
+                      "unknown"
+                    ]
+                  },
+                  "approvers": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "deploy_ref": {
+                    "type": "string"
+                  },
+                  "secret_names": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    }
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "economics": {
+          "type": "object",
+          "description": "v3.21.0 EngOps срез 3: экономическая граница ДО tool loop (tools/economic_preflight.py). Оценка по истории usage_ledger против лимитов RunPlan.execution_budget; отсутствие истории = unavailable, не ноль.",
+          "properties": {
+            "enforce": {
+              "type": "string",
+              "enum": [
+                "advise",
+                "block"
+              ]
+            },
+            "require_estimate": {
+              "type": "boolean"
+            },
+            "confirm_over_cost_usd": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "min_history_tasks": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "deploy": {
+          "type": "object",
+          "description": "v3.20.0 EngOps срез 2: чем поставка производится и чем ОТМЕНЯЕТСЯ (tools/deploy_readiness.py). Без rollback зрелость verified недостижима.",
+          "properties": {
+            "deploy_command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rollback": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "session_economy": {
+      "type": "object",
+      "description": "v3.16.0 Development Culture Guardrails: пороги гигиены контекста сессии (tools/session_guardrails.py). Стартовая политика, калибруется на реальных данных.",
+      "properties": {
+        "target_context_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "compact_recommended_at": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "new_session_recommended_at": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "one_task_per_session": {
+          "type": "boolean"
+        },
+        "allow_cross_task_session": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "communication": {
+      "type": "object",
+      "description": "v3.35 Human Communication Layer: как кит разговаривает с человеком в ЭТОМ репозитории. Источник истины политики — registry/communication-policy.yaml; здесь только выбор аудитории и уровня подробностей.",
+      "properties": {
+        "audience": {
+          "enum": [
+            "product",
+            "technical",
+            "debug"
+          ],
+          "description": "по умолчанию product: кит говорит с владельцем продукта, а не с отладчиком"
+        },
+        "detail_level": {
+          "enum": [
+            "concise",
+            "normal",
+            "verbose"
+          ]
+        },
+        "explain_jargon": {
+          "type": "boolean"
+        },
+        "technical_details": {
+          "enum": [
+            "on_request",
+            "always"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "product_operating_model": {
+      "type": "object",
+      "description": "v3.35: доопределение модели продуктового репозитория под этот стек. Кит знает типовые пути; какие пути в ЭТОМ продукте относятся к контуру, знает владелец. Доопределение превращает `unknown` в проверяемое состояние, а не в догадку.",
+      "properties": {
+        "contours": {
+          "type": "object",
+          "description": "contour_id -> {change_signals: [glob]}",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "change_signals": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "source_of_truth": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "v3.35: где у ЭТОГО продукта лежит правда контура. Объявление владельца сильнее догадки кита: пути кита остаются в списке, но перестают быть обязательными. Найдено обкаткой: ADR в docs/architecture/decisions/ вместо decisions/registry.yaml давали находку «истина не обновлена» на каждом коммите."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "confirmed": {
+          "type": "object",
+          "description": "v3.35: факты, ПОДТВЕРЖДЁННЫЕ владельцем (ключ -> значение). Единственный производитель состояния `user_confirmed`: подтверждение человека сильнее любого вывода кита и перебивает `inferred`/`unknown`. Ключи — id вопросов модели (primary_user, main_problem, production_env, sensitive_data, …) и ключи реконструкции (architecture_style, …).",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "boolean",
+              "number",
+              "array"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "parent",
+    "presets",
+    "adapters",
+    "providers"
+  ],
+  "additionalProperties": true,
+  "x-no-secrets": "credentials_ref MUST match ^(env:|secret:); a literal key fails validation.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "ai-ops-child-config",
+      "parent": {
+        "source": "git+https://example.com/org/ai-ops-kit.git",
+        "installed_version": "0.5.0",
+        "allowed_version_range": ">=0.5.0 <1.0.0",
+        "update_channel": "stable",
+        "update_policy": "pr",
+        "auto_update": false
+      },
+      "presets": {
+        "enabled": [
+          "software-product"
+        ]
+      },
+      "adapters": {
+        "enabled": [
+          "claude-code",
+          "codex",
+          "generic"
+        ]
+      },
+      "providers": {
+        "default": "anthropic",
+        "configured": [
+          {
+            "id": "anthropic",
+            "credentials_ref": "env:ANTHROPIC_API_KEY"
+          }
+        ],
+        "fallback_chain": [
+          "anthropic"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# rules/quality/code-review-etiquette.yaml — этикет код-ревью (v2.12).
+# Дополняет гейт code_review и агента code-reviewer: как ПОДГОТОВИТЬ ревью
+# (requesting) и как ОТВЕЧАТЬ на замечания (receiving). Стек-агностично.
+# Адаптировано из obra/superpowers — requesting/receiving-code-review.
+# Находки ссылаются на id.
+schema_version: 1
+kind: quality-checklist
+id: code-review-etiquette
+used_by: [code-reviewer, implementation-integrator]
+adapted_from: "obra/superpowers — requesting/receiving-code-review"
+requesting:
+  - {id: scope-small, check: "PR сфокусирован и невелик; не мешает рефакторинг с фичей", severity_default: major}
+  - {id: self-reviewed, check: "Автор сам прошёл diff перед запросом ревью (нет отладочного мусора, TODO, закомментированного кода)", severity_default: major}
+  - {id: description-why, check: "Описание PR объясняет ЗАЧЕМ и что проверять; ссылка на задачу/blueprint/эпизод решения", severity_default: major}
+  - {id: green-ci, check: "CI зелёный до запроса ревью (сборка/линт/тесты/валидаторы кита)", severity_default: critical}
+  - {id: tests-included, check: "Изменение сопровождено тестами/evidence (для UI — e2e на viewport-матрице)", severity_default: major}
+  - {id: risky-flagged, check: "Рискованные/необратимые места помечены явно; для one-way door — бриф (decisions)", severity_default: minor}
+receiving:
+  - {id: triage-each, check: "По каждому замечанию явное решение: принять / обсудить / отклонить", severity_default: major}
+  - {id: reject-with-reason, check: "Отклонение — только с аргументом (данные/ограничение/ссылка), а не 'и так сойдёт'", severity_default: major}
+  - {id: no-defensiveness, check: "Обсуждение по существу, без защиты эго; замечание о коде — не о человеке", severity_default: minor}
+  - {id: resolve-visibly, check: "Каждая нить закрывается видимо (fix + ссылка на коммит или обоснованный отказ), ничего не теряется", severity_default: major}
+  - {id: scope-guard, check: "Замечания вне scope выносятся в отдельную задачу, а не раздувают текущий PR", severity_default: minor}

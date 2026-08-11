@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "event-catalog",
+  "description": "Единый источник имён событий. Каждое событие названо ОДИН раз. Три слоя (domain/audit/analytics) не расходятся случайно: audit- и analytics-события ссылаются на domain-событие через maps_to (или явно standalone). Ловит класс contract<->code<->analytics naming drift + подмену domain events на audit events. В child: .ai/project/contracts/events.yaml.",
+  "type": "object",
+  "required": ["schema_version", "kind", "events"],
+  "properties": {
+    "schema_version": {"type": "integer"},
+    "kind": {"const": "event-catalog"},
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind"],
+        "properties": {
+          "name": {"type": "string", "description": "каноничное имя, dot-нотация: noun.past_tense_verb (task.completed, object.version_created)"},
+          "kind": {"enum": ["domain", "audit", "analytics"], "description": "domain — событие предметной области (envelope); audit — запись действия (actor/action/result); analytics — метрическое событие"},
+          "payload": {"type": "array", "items": {"type": "string"}, "description": "поля payload для domain-события"},
+          "fields": {"type": "array", "items": {"type": "string"}, "description": "поля для audit (actor/action/objectType/result/...)"},
+          "maps_to": {"type": "string", "description": "для audit/analytics: каноничное domain-событие, которое они отражают"},
+          "standalone": {"type": "boolean", "description": "audit/analytics без domain-соответствия — только с явным reason"},
+          "reason": {"type": "string"},
+          "sources": {"type": "array", "items": {"type": "string"}, "description": "где объявлено: путь контракта, code-символ, metric id — для drift-скана"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+# rules/content/demo-video.yaml — гейты демо-видео продукта (v2.13).
+# Машиночитаемый чек-лист к скиллу skills/product-demo-video/SKILL.md.
+# Сториборд -> сценарий -> запись экрана (Playwright). Находки ссылаются на id. Opt-in.
+schema_version: 1
+kind: content-checklist
+id: demo-video
+used_by: [documentation-steward, adoption-manager]
+skill: skills/product-demo-video/SKILL.md
+adapted_from: "идея video-tour — google-labs-code/remotion; захват — skills/e2e-browser-testing"
+items:
+  - {id: storyboard-first, check: "Есть сториборд: сцены, порядок, зачем — до записи; 30–90с, ≤6 сцен", severity_default: major}
+  - {id: narration-script, check: "Закадровый сценарий на каждую сцену, язык пользователя, без жаргона", severity_default: major}
+  - {id: path-to-value, check: "Показан реальный путь к ценности, а не тур по кнопкам", severity_default: major}
+  - {id: recorded-from-real-ui, check: "Запись экрана из реального интерфейса (Playwright), не инсценировка несуществующего", severity_default: critical}
+  - {id: states-if-relevant, check: "Показаны состояния ошибки/пустоты, если они часть ценности, а не только счастливый путь", severity_default: minor}
+  - {id: captions-transcript, check: "Есть субтитры/транскрипт из закадрового текста (доступность)", severity_default: minor}
+  - {id: dated-snapshot, check: "Версия/дата указаны — видео это снимок и устаревает; пересъёмка при изменении UI", severity_default: minor}
+  - {id: render-external, check: "Тяжёлая полировка/монтаж — внешним рендером (Remotion, каталог), не ядром; сырой клип — честный screen-recording", severity_default: minor}
+  - {id: no-forbidden-data, check: "В кадре нет данных из запретных категорий (governance/information-boundaries)", severity_default: critical}

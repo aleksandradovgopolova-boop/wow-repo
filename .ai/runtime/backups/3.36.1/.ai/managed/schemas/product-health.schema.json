@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ai-ops/product-health",
+  "title": "Product Health Report",
+  "description": "Machine-readable отчёт о здоровье продукта/функции. Считается детерминированно tools/product_health.py из входных метрик (экспорт аналитики/мониторинга); интерпретация — workflow INSIGHTS.",
+  "type": "object",
+  "required": ["schema_version", "kind", "scope", "period", "metrics", "health_score"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "product-health-report"},
+    "scope": {"type": "string", "description": "product | feature:<id>"},
+    "period": {"type": "string", "description": "Например 2026-W30 или 2026-07"},
+    "metrics": {
+      "type": "object",
+      "description": "Ключи — измерения здоровья; каждое нормализуется 0..1 против target",
+      "propertyNames": {
+        "enum": ["adoption", "activation", "retention", "reliability",
+                 "errors", "performance", "support_load", "feature_usage"]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "target"],
+        "properties": {
+          "value": {"type": "number"},
+          "baseline": {"type": "number"},
+          "target": {"type": "number"},
+          "direction": {"enum": ["higher-is-better", "lower-is-better"]},
+          "source": {"type": "string", "description": "Откуда взято значение (дашборд/выгрузка)"},
+          "normalized": {"type": "number", "minimum": 0, "maximum": 1},
+          "weight": {"type": "number"}
+        }
+      }
+    },
+    "health_score": {
+      "type": "object",
+      "required": ["value", "band"],
+      "properties": {
+        "value": {"type": "number", "minimum": 0, "maximum": 100},
+        "band": {"enum": ["healthy", "warning", "critical"]},
+        "weights_used": {"type": "object"}
+      }
+    },
+    "findings": {"type": "array", "items": {"type": "string"}},
+    "generated_by": {"type": "string"}
+  }
+}

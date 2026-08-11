@@ -1,0 +1,8 @@
+version: 1
+modes:
+  read-only:
+    allowed: [filesystem_read, search, tests_read]
+    denied: [filesystem_write, production_access, external_write]
+  read-write:
+    allowed: [filesystem_read, filesystem_write, local_terminal, tests]
+    denied: [production_access, secret_export]

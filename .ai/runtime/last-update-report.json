@@ -2,21 +2,56 @@
   "schema_version": 1,
   "command": "update",
   "from_version": "3.36.1",
-  "to_version": "3.36.1",
+  "to_version": "3.36.2",
   "status": "ok",
   "compatibility": "compatible",
-  "managed_changes": [],
+  "managed_changes": [
+    {
+      "path": ".ai/managed/VERSION",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/manifest/ai-ops-manifest.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/registry/release-claims.yaml",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    }
+  ],
   "direct_edits_detected": [],
-  "migrations_applied": [],
+  "migrations_applied": [
+    "3.33-to-3.34"
+  ],
   "preserved_paths": [
     ".ai/project/**",
     ".ai/custom/**"
   ],
-  "smoke_tests": [],
-  "backup_ref": null,
+  "smoke_tests": [
+    {
+      "check": "validate_ai_ops_child.py",
+      "status": "pass"
+    },
+    {
+      "check": "validate_ai_first_registry.py",
+      "status": "pass"
+    },
+    {
+      "check": "validate_ai_first_providers.py",
+      "status": "pass"
+    },
+    {
+      "check": "validate_ai_first_workflows.py",
+      "status": "pass"
+    }
+  ],
+  "backup_ref": ".ai/runtime/backups/3.36.1",
   "pull_request": null,
   "human_approval_required": false,
-  "report": "Обновление не требуется. Политика общения подключена к runtime (блок в CLAUDE.md между маркерами; текст вне них не тронут).",
+  "report": "Обновление 3.36.1 -> 3.36.2: 3 изменений, 551 файлов под контролем. Создайте PR с этим diff — silent update запрещён.",
   "context_backfilled": [],
   "ci_workflows": [],
   "zone_markers": [],
@@ -25,7 +60,7 @@
     "path": "/Users/sasad/projects/wow-repo/ai-ops"
   },
   "communication_adapter": {
-    "action": "updated",
+    "action": "unchanged",
     "path": "/Users/sasad/projects/wow-repo/CLAUDE.md"
   },
   "planning_seeded": [
@@ -37,5 +72,22 @@
       "artifact": "planning/plan.yaml",
       "action": "exists"
     }
-  ]
+  ],
+  "skills_synced": [
+    "product-session-review",
+    "system-constraint-analysis",
+    "contradiction-resolution",
+    "decision-support",
+    "frontend-design",
+    "e2e-browser-testing",
+    "user-documentation",
+    "product-demo-video",
+    "repo-onboarding",
+    "plain-language-communication"
+  ],
+  "commands_installed": {
+    "claude_commands": 14,
+    "codex_prompts": 0,
+    "codex_generated": 14
+  }
 }
