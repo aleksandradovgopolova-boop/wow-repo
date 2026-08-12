@@ -61,7 +61,6 @@ def check(data: dict):
     if not events:
         errors.append("нет ни одного события (events пуст)")
 
-    names = [e.get("name") for e in events]
     domain_names = {e.get("name") for e in events if e.get("kind") == "domain"}
     seen = set()
     for e in events:

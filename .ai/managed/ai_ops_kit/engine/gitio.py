@@ -30,7 +30,7 @@ def git(root, *args, timeout=GIT_TIMEOUT_DEFAULT):
 def main(argv):
     ap = argparse.ArgumentParser(prog="gitio.py")
     ap.add_argument("--selftest", action="store_true")
-    a = ap.parse_args(argv)
+    ap.parse_args(argv)          # разбор ради проверки аргументов; результат не нужен
     ap.print_help()
     return 0
 

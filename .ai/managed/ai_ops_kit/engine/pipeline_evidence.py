@@ -129,7 +129,10 @@ def _run_authoring(author_proposer, work_root, gate_ids, gate_ev, wid, task, bud
             f"Артефакт должен точно отражать задачу ниже. Требования/пакеты — конкретные и "
             f"тестируемые, не общие слова.\n\n=== ЗАДАЧА ===\n{task}")
 
-        def _check(data):
+        # `mod=mod` связывает модуль ЗДЕСЬ, а не в момент вызова: сейчас `_check` зовётся
+        # синхронно в этой же итерации и потому работает, но замыкание на переменную цикла
+        # ломается молча, если вызов когда-нибудь станет отложенным (ревизия 2026-08-11).
+        def _check(data, mod=mod):
             return mod.check(data) if isinstance(data, dict) else ["author не вернул валидный YAML артефакта"]
 
         data, errs = _author_with_retry(author_proposer, prompt, _check, bud)
@@ -436,6 +439,14 @@ def _human_approval_domains_uncovered(approval_root, wid, changed_files, diff_ro
             uncovered.append(dom)
     return uncovered
 
-
+# Запуск скриптом ОБЪЯСНЯЕТ модуль, а не молчит (ревизия 2026-08-11).
+#
+# Здесь стояло `sys.exit(selftest())`, а сама функция удалена в v3.30 вместе с переносом
+# селфтестов в pytest: любой запуск падал с `NameError`. Просто убрать блок — тоже неверно:
+# `tools/pipeline_evidence.py` остаётся объявленной точкой входа, и молчаливый выход с кодом 0 — тот
+# самый дефект, который ловит `tests/unit/test_alias_entry_points.py` («ноль и есть симптом»).
+# Поэтому вход делает осмысленную работу — печатает назначение модуля, как `invariants.py`.
+# Проверки модуля — в `tests/unit/`.
 if __name__ == "__main__":
-    sys.exit(selftest())
+    print(__doc__)
+    print("Проверки этого модуля — в tests/unit/ (pytest), отдельного --selftest нет с v3.30.")

@@ -450,7 +450,11 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
                     for _gid, _ev in (_rj.get("gate_ev") or {}).items():
                         if _gid != "security":
                             gate_ev.setdefault(_gid, _ev)
-        except Exception:  # noqa: BLE001
+        # Решение о подавлении ЗАПИСАНО (ревизия 2026-08-11): это ЧТЕНИЕ кеша переоценки, чистая
+        # оптимизация. Его утрата безвредна по построению — гейты просто пересчитаются заново, и
+        # ни одно утверждение о них не станет менее доказанным. Поэтому здесь `pass` уместен, в
+        # отличие от учёта usage и lifecycle-журнала, где терялась АУДИТ-запись.
+        except Exception:  # noqa: BLE001 — потеря кеша не меняет вердикт, пересчитаем
             pass
         for _gid, _ev in _reevaluate_artifact_evidence(work_root, wid, plan["gates"]).items():
             gate_ev.setdefault(_gid, _ev)
@@ -714,7 +718,9 @@ def run_pipeline(task, signals, child_root, proposer, policy=None, budget=None,
             (Path(child_root) / ".ai").mkdir(parents=True, exist_ok=True)
             (Path(child_root) / ".ai" / f"reevaluate-evidence-{wid}.json").write_text(
                 _json.dumps({"sha": committed_sha, "gate_ev": _passed}, ensure_ascii=False), encoding="utf-8")
-        except Exception:  # noqa: BLE001
+        # ЗАПИСЬ того же кеша — симметрично чтению выше: не записали, значит следующий прогон
+        # пересчитает. Вердикт не зависит от наличия файла (ревизия 2026-08-11).
+        except Exception:  # noqa: BLE001 — потеря кеша не меняет вердикт, пересчитаем
             pass
 
     # честность evidence: ревизия сбора совпадает с зафиксированным SHA (если коммитили)

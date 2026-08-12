@@ -277,8 +277,8 @@ def check(data):
 
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        sys.exit(selftest())
+    # Ветки `--selftest` здесь нет (ревизия 2026-08-11): функция удалена в v3.30 вместе с
+    # переносом селфтестов в pytest, а вызов остался и мог только упасть с `NameError`.
     # CLI
     child_root = Path(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else Path.cwd()
     task_type = None

@@ -42,6 +42,27 @@ from ai_ops_kit.lifecycle import active_work       # noqa: E402
 from ai_ops_kit.lifecycle import lifecycle_store as _ls   # noqa: E402 — v3.0.12: durable запись/fail-closed чтение resume-артефактов
 
 
+def _note_bookkeeping_error(rep, what, exc):
+    """Записать в отчёт УТРАТУ служебной записи, не роняя прогон. -> None (правит rep на месте).
+
+    ЗАЧЕМ ОТДЕЛЬНАЯ ФУНКЦИЯ (ревизия 2026-08-11). Учёт usage и lifecycle-журнал писались под
+    `except Exception: pass`. Решение «служебная запись не роняет прогон» — правильное и
+    записанное: падать из-за журнала посреди доставки хуже, чем потерять строку журнала. Но
+    вторая половина решения отсутствовала: потеря была НЕВИДИМОЙ. Для кита, чья заявленная
+    ценность — Usage Truth и `unavailable != 0`, молча пропавшая запись стоимости означает
+    занижённый счёт, поданный как факт. Тот же класс, что «нет расписки» вместо «не смог
+    прочитать расписку».
+
+    Образец взят в этом же файле: рядом уже есть `escalation_error` с пометкой «rc3: НЕ глотаем
+    молча -> честный escalation_error». Здесь — то же для служебных записей: прогон продолжается
+    (fail-open сохранён), но в отчёте появляется `bookkeeping_errors` с тем, ЧТО потеряно и почему.
+    """
+    if not isinstance(rep, dict):
+        return
+    rep.setdefault("bookkeeping_errors", []).append(
+        {"what": what, "error": f"{type(exc).__name__}: {exc}"[:200]})
+
+
 def _outbox_dir(features_dir, fid):
     from pathlib import Path as _P
     return _P(features_dir) / fid / "delivery-outbox"
@@ -960,8 +981,10 @@ def run(task_text, signals, child_root: Path, features_dir=None,
                                        {"kind": "fix_attempt", "run_id": fid, "workitem_id": fid,
                                         "attempt_id": _attempt_id, "remaining": _fix_left,
                                         "unmet": (rep.get("gates") or {}).get("unmet")})
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as _je:  # noqa: BLE001 — журнал не роняет fix-loop...
+                    # ...но пробел в аудит-цепочке обязан быть видимым: цепочка checksum'ов
+                    # lifecycle-журнала после пропущенной записи уже не полна.
+                    _note_bookkeeping_error(rep, "lifecycle_journal.fix_attempt", _je)
                 rep = _pipe(True, _fx + (("\n\n" + resume_ctx) if resume_ctx else ""))
                 _fix_left -= 1
         except (KeyboardInterrupt, SystemExit):
@@ -1327,8 +1350,10 @@ def run(task_text, signals, child_root: Path, features_dir=None,
                     "stack": ",".join(s.get("language", "") for s in (signals.get("_stacks") or [])) or None,
                 }
                 _ul.append(child_root, fid, _stats, run_id=fid, extra_context={k: v for k, v in _extra.items() if v is not None})
-            except Exception:  # noqa: BLE001 — учёт usage не должен ронять прогон
-                pass
+            except Exception as _ue:  # noqa: BLE001 — учёт usage не должен ронять прогон...
+                # ...но и пропасть молча не должен: занижённая стоимость, поданная как факт, —
+                # это нарушение той самой Usage Truth, ради которой ledger и существует.
+                _note_bookkeeping_error(rep, "usage_ledger.append", _ue)
         try:
             orchestrator.clear_call_context()
         except Exception:  # noqa: BLE001

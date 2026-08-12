@@ -173,20 +173,34 @@ def validate_dir_full(feature_dir: Path):
             feature_dir.parent.parent / ".ai" / "runtime" / "delivery" / feature.get("id", "") / "receipt.yaml",
         ]
         receipt_found = False
+        # «НЕТ РАСПИСКИ» И «НЕ СМОГ ПРОЧИТАТЬ РАСПИСКУ» — РАЗНЫЕ ОТВЕТЫ (ревизия 2026-08-11).
+        # Прежде здесь стоял `except Exception: pass`, и битый YAML/нечитаемый файл давал ровно то
+        # же сообщение, что отсутствие файла: «нет SHA-verified DeliveryReceipt». Блокировка при
+        # этом срабатывала (fail-closed сохранялся), но владельцу называли НЕВЕРНУЮ причину — он шёл
+        # создавать расписку, которая уже лежит рядом сломанной. Это тот же класс, что инвариант
+        # `unknown` != `not_changed`: недоказанное обязано называться недоказанным, а не отсутствующим.
+        unreadable = []
         for rp in receipt_paths:
             if rp.exists():
                 try:
                     receipt = yaml.safe_load(rp.read_text(encoding="utf-8"))
-                    if receipt and receipt.get("kind") == "DeliveryReceipt" and receipt.get("sha_verified") is True:
-                        receipt_found = True
-                        break
-                except Exception:
-                    pass
+                except (OSError, yaml.YAMLError) as exc:
+                    # Узкие типы намеренно: ожидаемый отказ — это ввод-вывод или разбор. Любое
+                    # другое исключение здесь — дефект валидатора, и он обязан всплыть, а не
+                    # маскироваться под «расписки нет».
+                    unreadable.append(f"{rp.name}: {type(exc).__name__}")
+                    continue
+                if receipt and receipt.get("kind") == "DeliveryReceipt" and receipt.get("sha_verified") is True:
+                    receipt_found = True
+                    break
         if not receipt_found:
+            _why = (f" Найден файл расписки, но прочитать его не удалось ({'; '.join(unreadable)}) — "
+                    f"это НЕ то же, что отсутствие расписки: почините файл, а не создавайте новый."
+                    if unreadable else "")
             _msg = ("feature.status=released, но нет SHA-verified DeliveryReceipt — "
                     "done-артефакт недостаточно для доказательства поставки. "
                     "Требуется DeliveryReceipt с sha_verified=true (PR смержён, SHA совпадает с "
-                    "remote).")
+                    "remote)." + _why)
             if str(feature.get("id")) in _debt_ids(feature_dir):
                 # Историческая поставка: доказательства нет и восстановить его нечем. Долг признан
                 # явно (см. DEBT_REL) — находка остаётся видимой, но прогон не валит.

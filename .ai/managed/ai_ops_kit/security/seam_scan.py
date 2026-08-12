@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from pathlib import Path
 
 GATEABLE = {"catch_without_happy_path", "optional_field_in_shared_contract", "external_stub_without_real_run"}
 
@@ -144,7 +145,8 @@ def main(argv):
     if not args:
         print(__doc__)
         return 1
-    diff_text = sys.stdin.read() if args[0] == "-" else open(args[0], encoding="utf-8").read()
+    # Ревизия 2026-08-11: было `open(...).read()` — дескриптор не закрывался.
+    diff_text = sys.stdin.read() if args[0] == "-" else Path(args[0]).read_text(encoding="utf-8")
     scan = scan_diff(diff_text)
     dec = gate_decision(scan)
     if "--json" in argv:

@@ -727,7 +727,6 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
         if signals_for:
             sig_pkg.update(signals_for(pkg) or {})
 
-        is_last = (i == len(ordered) - 1)
         # v3.0-rc19 (finding живого sequential): каждый пакет получал ПОЛНУЮ многочастную задачу с
         # общим ярлыком -> writer лез в чужие подсистемы (напр. в pkg-1 писал pricing/*) -> брокер
         # отклонял, но _hard_stop справедливо стопал цепочку на попытке эскейпа. Явно ограничиваем
@@ -796,7 +795,8 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
                        and not _appr.covers_paths({"scope": " ".join(pkg_scope)}, [f])]
             if outside:
                 stop_reason = f"scope-violation: пакет изменил пути вне write_scope: {', '.join(outside[:5])}"
-        hard_blocked = rep.get("status") == "blocked"
+        # `hard_blocked` снят ревизией 2026-08-11: это дубль. Тот же признак уже проверяет
+        # `_hard_stop(rep)` выше (строка ~782) и ставит `stop_reason` — блокировка НЕ терялась.
         executed = bool(sha) and stop_reason is None
         ready = bool(rep.get("ready_for_pr"))
         blocked = stop_reason is not None

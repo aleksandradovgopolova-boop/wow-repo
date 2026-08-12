@@ -88,14 +88,14 @@ def run_pack(child_root=None, base=None, signals=None, files_content=None):
                         f"security-скана ({(r.stderr or '').strip()[:160]}) — fail-closed")
                 changed = [ln for ln in r.stdout.splitlines() if ln.strip()]
             files_content = security_scan._read_files(child_root, changed)
-    changed_files = sorted(files_content)
 
     # детерминированные находки (один раз)
     secrets = security_scan.scan_secrets(files_content)
     injections = security_scan.scan_injection(files_content)
     mani = {p: c for p, c in files_content.items() if Path(p).name in security_scan.DEP_MANIFESTS}
     before = {p: (security_scan._git_show(child_root, base, p) if (child_root and base) else "") for p in mani}
-    new_deps = security_scan.new_dependencies(before, mani)
+    # `new_deps` (недетальный вариант) снят ревизией 2026-08-11: результат не использовался с
+    # перехода на `new_deps_detailed` в v3.0-rc5 — считался лишний проход по манифестам.
     new_deps_detailed = security_scan.new_dependencies_detailed(before, mani)   # v3.0-rc5 (P1.2): fingerprint
 
     results, blocking, needs_review = [], [], []

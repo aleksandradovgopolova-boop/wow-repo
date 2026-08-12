@@ -129,8 +129,8 @@ def find_cycle(active, entry):
     graph = {w.get("id"): list(w.get("depends_on") or []) for w in active}
     graph[entry.get("id")] = list(entry.get("depends_on") or [])
     start = entry.get("id")
-    stack = [(start, [start])]
-    seen_paths = []
+    # `stack`/`seen_paths` убраны ревизией 2026-08-11: остались от итеративной версии обхода,
+    # текущий DFS ниже рекурсивный и ими не пользуется.
     # DFS с поиском возврата к уже посещённому в текущем пути
     def dfs(node, path):
         for nxt in graph.get(node, []):

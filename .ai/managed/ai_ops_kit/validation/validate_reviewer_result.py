@@ -32,10 +32,21 @@ ST = {"pass", "warn", "fail"}
 
 
 def _gate_ids():
+    """Множество id гейтов из реестра, либо None — «реестр не прочитан». (2026-08-12)
+
+    Прежде на любом отказе возвращалось ПУСТОЕ множество, и это давало верный вердикт с НЕВЕРНОЙ
+    причиной: `gid not in set()` истинно для любого гейта, поэтому нечитаемый `quality/gates.yaml`
+    печатал «gate 'code_review' отсутствует в quality/gates.yaml» — про каждый гейт по очереди.
+    Читающий шёл искать гейт в реестре, где тот на месте, а сломан был сам реестр.
+
+    `None` отличает «неизвестно» от «пусто». Fail-closed при этом СОХРАНЁН и не ослаблен: main
+    добавляет отдельную ошибку о непрочитанном реестре, поэтому валидатор по-прежнему возвращает
+    ненулевой код — меняется только то, что он о себе сообщает.
+    """
     try:
         return set(yaml.safe_load((PKG / "quality" / "gates.yaml").read_text(encoding="utf-8"))["gates"])
-    except Exception:
-        return set()
+    except (OSError, yaml.YAMLError, KeyError, TypeError):
+        return None
 
 
 def check(data: dict, gate_ids=None):
@@ -79,7 +90,13 @@ def main(argv):
     if not args:
         print(__doc__); return 1
     data = json.loads(Path(args[0]).read_text(encoding="utf-8"))
-    errors = check(data, _gate_ids())
+    gate_ids = _gate_ids()
+    errors = []
+    if gate_ids is None:
+        # Fail-closed сохранён: ошибка есть, но называет ПРИЧИНУ — сломан реестр, а не гейт.
+        errors.append("quality/gates.yaml не прочитан — принадлежность гейта реестру НЕ проверена; "
+                      "это не «гейт отсутствует»")
+    errors += check(data, gate_ids)
     if "--json" in argv:
         print(json.dumps({"errors": errors}, ensure_ascii=False, indent=2))
     elif errors:

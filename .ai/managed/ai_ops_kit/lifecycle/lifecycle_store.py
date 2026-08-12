@@ -301,7 +301,7 @@ def load_guarded(path, required_keys=(), kind=None):
 def main(argv):
     ap = argparse.ArgumentParser(prog="lifecycle_store.py")
     ap.add_argument("--selftest", action="store_true")
-    a = ap.parse_args(argv)
+    ap.parse_args(argv)          # разбор ради проверки аргументов; результат не нужен
     ap.print_help()
     return 0
 

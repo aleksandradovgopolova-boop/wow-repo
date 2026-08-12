@@ -158,8 +158,8 @@ def intent_to_lifecycle(cli_intent: str) -> str | None:
 
 
 if __name__ == "__main__":
-    if "--selftest" in sys.argv:
-        sys.exit(selftest())
+    # Ветки `--selftest` здесь нет (ревизия 2026-08-11): функция удалена в v3.30 вместе с
+    # переносом селфтестов в pytest, а вызов остался и мог только упасть с `NameError`.
 
     # CLI
     status = None

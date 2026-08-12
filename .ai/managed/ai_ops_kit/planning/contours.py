@@ -551,7 +551,6 @@ def derive_affects(child_root: Path, changed_files: list, model: dict | None = N
 
 def _sot_touched(child_root: Path, cid: str, changed_files: list, model: dict) -> list:
     """Какие источники истины контура попали в изменение (с учётом оверлея пути)."""
-    c = contour(model, cid) or {}
     files = [unquote_git_path(f).replace("\\", "/") for f in (changed_files or [])]
     hit = []
     for s in sot_for(model, cid, child_root):

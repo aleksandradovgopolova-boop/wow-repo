@@ -102,7 +102,10 @@ def _dep_names(path, text):
         for ln in text.splitlines():
             ln = ln.strip()
             if ln and not ln.startswith("#"):
-                deps.add(re.split(r"[<>=!~\[ ]", ln, 1)[0].strip().lower())
+                # maxsplit=1 по имени: позиционная передача объявлена устаревшей в Python 3.13
+                # и подлежит удалению. Пол объявлен (3.9), потолка у requires-python нет —
+                # значит кит однажды поедет на интерпретаторе, где это TypeError.
+                deps.add(re.split(r"[<>=!~\[ ]", ln, maxsplit=1)[0].strip().lower())
     elif name == "go.mod":
         # обе формы: однострочная `require github.com/x/y v1.2.3` и блок `require ( ... )`
         for m in re.finditer(r"^\s*(?:require\s+)?([\w][\w./\-]+)\s+v\d", text, re.M):
@@ -142,7 +145,7 @@ def _dep_specs(path, text):
         for ln in text.splitlines():
             ln = ln.strip()
             if ln and not ln.startswith("#"):
-                nm = re.split(r"[<>=!~\[ ]", ln, 1)[0].strip().lower()
+                nm = re.split(r"[<>=!~\[ ]", ln, maxsplit=1)[0].strip().lower()  # см. выше про 3.13
                 mv = re.search(r"==\s*([0-9][\w.\-]*)", ln)
                 specs[nm] = mv.group(1) if mv else None
     else:

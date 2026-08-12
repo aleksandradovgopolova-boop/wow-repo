@@ -29,13 +29,20 @@ from ai_ops_kit.shared import _bootstrap  # noqa: E402
 from ai_ops_kit.providers import usage_ledger  # noqa: E402
 
 
-def _load_workitems(child_root: Path) -> list[dict]:
-    """Загрузить все WorkItem'ы из features/*/workitem.yaml."""
+def _load_workitems(child_root: Path) -> tuple[list[dict], list[dict]]:
+    """Загрузить все WorkItem'ы из features/*/workitem.yaml. -> (items, unreadable).
+
+    НЕПРОЧИТАННОЕ НАЗЫВАЕТСЯ, А НЕ ПРОПУСКАЕТСЯ МОЛЧА (ревизия 2026-08-11). Прежде стояло
+    `except Exception: continue`: нечитаемый workitem просто не попадал в счёт, и отчёт
+    наблюдаемости печатал заниженное число как факт. Для инструмента, чья работа — говорить
+    правду о состоянии, это худший вид ошибки: он не падает, он врёт тихо. Тот же принцип, что
+    `unavailable != 0` в учёте стоимости.
+    """
     import yaml
-    items = []
+    items, unreadable = [], []
     features_dir = child_root / "features"
     if not features_dir.is_dir():
-        return items
+        return items, unreadable
     for wid_dir in sorted(features_dir.iterdir()):
         if not wid_dir.is_dir():
             continue
@@ -44,21 +51,30 @@ def _load_workitems(child_root: Path) -> list[dict]:
             continue
         try:
             data = yaml.safe_load(wi_path.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                data["id"] = data.get("id", wid_dir.name)
-                items.append(data)
-        except Exception:
+        except (OSError, yaml.YAMLError) as exc:
+            unreadable.append({"path": wi_path.relative_to(child_root).as_posix(),
+                               "reason": type(exc).__name__})
             continue
-    return items
+        if isinstance(data, dict):
+            data["id"] = data.get("id", wid_dir.name)
+            items.append(data)
+        else:
+            unreadable.append({"path": wi_path.relative_to(child_root).as_posix(),
+                               "reason": "не mapping"})
+    return items, unreadable
 
 
-def _load_delivery_receipts(child_root: Path) -> list[dict]:
-    """Загрузить все DeliveryReceipt'ы из features/*/delivery-outbox/*.receipt.yaml."""
+def _load_delivery_receipts(child_root: Path) -> tuple[list[dict], list[dict]]:
+    """Загрузить все DeliveryReceipt'ы из features/*/delivery-outbox/*.receipt.yaml.
+
+    -> (receipts, unreadable). См. пояснение в `_load_workitems`: пропущенная расписка
+    занижала бы число доставок, и отчёт печатал бы это как факт.
+    """
     import yaml
-    receipts = []
+    receipts, unreadable = [], []
     features_dir = child_root / "features"
     if not features_dir.is_dir():
-        return receipts
+        return receipts, unreadable
     for wid_dir in sorted(features_dir.iterdir()):
         if not wid_dir.is_dir():
             continue
@@ -68,11 +84,16 @@ def _load_delivery_receipts(child_root: Path) -> list[dict]:
         for rp in sorted(outbox.glob("*.receipt.yaml")):
             try:
                 data = yaml.safe_load(rp.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    receipts.append(data)
-            except Exception:
+            except (OSError, yaml.YAMLError) as exc:
+                unreadable.append({"path": rp.relative_to(child_root).as_posix(),
+                                   "reason": type(exc).__name__})
                 continue
-    return receipts
+            if isinstance(data, dict):
+                receipts.append(data)
+            else:
+                unreadable.append({"path": rp.relative_to(child_root).as_posix(),
+                                   "reason": "не mapping"})
+    return receipts, unreadable
 
 
 def compute(child_root: str) -> dict:
@@ -154,7 +175,10 @@ def compute(child_root: str) -> dict:
                 report["models"]["unavailable_calls"] += 1
 
     # --- Workitems ---
-    workitems = _load_workitems(root)
+    # `unreadable` попадает В ОТЧЁТ, а не в тишину: число задач без него — утверждение, которое
+    # нельзя проверить (ревизия 2026-08-11).
+    workitems, wi_unreadable = _load_workitems(root)
+    report["workitems"]["unreadable"] = wi_unreadable
     if workitems:
         report["kit"]["has_data"] = True
         report["workitems"]["total"] = len(workitems)
@@ -167,7 +191,8 @@ def compute(child_root: str) -> dict:
             report["workitems"]["by_workflow"][wf] = report["workitems"]["by_workflow"].get(wf, 0) + 1
 
     # --- Delivery ---
-    receipts = _load_delivery_receipts(root)
+    receipts, rc_unreadable = _load_delivery_receipts(root)
+    report["delivery"]["unreadable"] = rc_unreadable
     if receipts:
         report["kit"]["has_data"] = True
         report["delivery"]["total"] = len(receipts)

@@ -115,6 +115,16 @@ def run(claims_file: Path, as_json=False):
 def main(argv):
     args = [a for a in argv if not a.startswith("--")]
     claims_file = Path(args[0]).resolve() if args else (PKG / "knowledge" / "claims.yaml")
+    # Аргумент — путь к ФАЙЛУ заявлений, а не к корню репозитория (ревизия 2026-08-11). Соседний
+    # `validate_product_model .` принимает именно корень, поэтому `validate_claims .` — вызов
+    # правдоподобный, и прежде он падал сырым `IsADirectoryError`. Валидатор, объясняющий свои
+    # правила остальным, обязан объяснять и собственный отказ.
+    if not claims_file.is_file():
+        what = "это каталог" if claims_file.is_dir() else "файла нет"
+        print(f"ОШИБКА: ожидался путь к файлу заявлений, получено '{claims_file}' — {what}.")
+        print("Использование: validate_claims.py [путь/к/claims.yaml] [--json]")
+        print("Без аргумента берётся knowledge/claims.yaml пакета.")
+        return 2
     return run(claims_file, as_json="--json" in argv)
 
 
