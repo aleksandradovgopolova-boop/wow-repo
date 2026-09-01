@@ -13,16 +13,39 @@ import sys
 import tempfile
 from pathlib import Path
 
+import yaml
+
 PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is_file()),
             Path(__file__).resolve().parents[1])
 # v3.1 (trace v0.2): аккумулятор статистики вызовов модели — tokens/latency/cost для трейсе. Вызывающий
 # (ai_ops_run) дренирует после прогона и эмитит в journal + отчёт. Наблюдаемость, не источник истины.
 _CALL_STATS = []
-# Приблизительные цены $/1M токенов (только ОЦЕНКА cost; при отсутствии модели cost_usd_est=None).
-_PRICE_PER_MTOK = {
-    "claude-sonnet-5": {"in": 3.0, "out": 15.0},
-    "deepseek-chat": {"in": 0.27, "out": 1.10},
-}
+
+
+def _load_pricing_from_registry() -> dict:
+    """Загрузить цены per-token из registry/models.yaml (SoT). Только модели с pricing.per_mtok.
+
+    -> {model_id: {"in": float, "out": float}} для совместимости с _record_call.
+    """
+    models_path = PKG / "registry" / "models.yaml"
+    if not models_path.is_file():
+        return {}
+    data = yaml.safe_load(models_path.read_text(encoding="utf-8"))
+    result = {}
+    for m in (data.get("models") or []):
+        mid = m.get("id")
+        pricing = m.get("pricing") or {}
+        per_mtok = pricing.get("per_mtok") or {}
+        p_in = per_mtok.get("input")
+        p_out = per_mtok.get("output")
+        if mid and isinstance(p_in, (int, float)) and isinstance(p_out, (int, float)):
+            result[mid] = {"in": float(p_in), "out": float(p_out)}
+    return result
+
+
+# Цены $/1M токенов читаются из registry/models.yaml (SoT), не хардкод.
+# При отсутствии модели в реестре cost_usd_est=None (честно: неизвестно).
+_PRICE_PER_MTOK = _load_pricing_from_registry()
 
 
 def drain_call_stats():

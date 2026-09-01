@@ -36,10 +36,10 @@ from pathlib import Path
 import yaml
 
 try:
-    from ai_ops_kit.providers import usage_ledger
+    from ai_ops_kit.shared import usage_ledger
 except ImportError:  # pragma: no cover — путь подмешивает вызывающий
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from ai_ops_kit.providers import usage_ledger
+    from ai_ops_kit.shared import usage_ledger
 
 ESTIMATE_STATUS = ("measured_history", "estimated_lower_bound", "unavailable")
 VERDICTS = ("proceed", "proceed_unknown", "confirm_required", "block")

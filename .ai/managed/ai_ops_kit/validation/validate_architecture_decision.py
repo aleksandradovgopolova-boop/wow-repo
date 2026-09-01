@@ -23,70 +23,19 @@ from pathlib import Path
 
 import yaml
 
+try:                                          # v3.38 (лента №5): валидатор двурежимен
+    from ai_ops_kit.validation import _bootstrap   # noqa: F401 — импорт пакетом (после pip install)
+except ImportError:                                # запуск скриптом: корня на пути ещё нет,
+    import _bootstrap                              # noqa: F401 — и положить его может только он сам
+# Структурная проверка одного ADR вынесена ВНИЗ (пакет `checks`, слой primitives): её зовёт
+# `checks.adr_registry` в своём слое, и через реестр — рантайм, без ребра intelligence -> validation.
+# check и вокабуляры ре-экспортируются для обратной совместимости.
+from ai_ops_kit.checks.architecture_decision import (   # noqa: E402,F401
+    QA_ATTR, QA_EFFECT, STATUS, UI_IMPACT, check)
+
 PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is_file()),
             Path(__file__).resolve().parents[1])
 SCHEMA = PKG / "schemas" / "architecture-decision.schema.json"
-
-STATUS = {"proposed", "accepted", "superseded", "deprecated"}
-QA_ATTR = {"performance", "security", "reliability", "maintainability", "usability",
-           "accessibility", "portability", "compatibility", "scalability", "observability",
-           "cost", "testability"}
-QA_EFFECT = {"improves", "degrades", "tradeoff", "neutral"}
-UI_IMPACT = {"none", "internal", "user_facing", "critical"}
-
-import re
-_ID = re.compile(r"^ADR-[0-9]{3,}$")
-
-
-def check(data: dict):
-    e = []
-    if not isinstance(data, dict):
-        return ["ADR не объект"]
-    if data.get("schema_version") != 1:
-        e.append("schema_version должен быть 1")
-    if data.get("kind") != "ArchitectureDecision":
-        e.append("kind должен быть 'ArchitectureDecision'")
-    if not (isinstance(data.get("id"), str) and _ID.match(data["id"])):
-        e.append("id должен быть формата ADR-NNN")
-    for f in ("title", "context", "decision"):
-        if not (isinstance(data.get(f), str) and data[f].strip()):
-            e.append(f"{f} обязателен и непуст")
-    if data.get("status") not in STATUS:
-        e.append(f"status ∉ {sorted(STATUS)}")
-
-    cons = data.get("consequences")
-    if not isinstance(cons, dict):
-        e.append("consequences обязателен (объект positive+negative)")
-    else:
-        for poln in ("positive", "negative"):
-            v = cons.get(poln)
-            if not (isinstance(v, list) and v and all(isinstance(x, str) for x in v)):
-                e.append(f"consequences.{poln} — непустой список строк (издержки скрывать нельзя)")
-
-    for i, alt in enumerate(data.get("alternatives", []) or []):
-        if not isinstance(alt, dict) or not alt.get("option") or not alt.get("rejected_because"):
-            e.append(f"alternatives[{i}]: нужны option + rejected_because")
-
-    for i, qa in enumerate(data.get("quality_attributes", []) or []):
-        if not isinstance(qa, dict):
-            e.append(f"quality_attributes[{i}] не объект")
-            continue
-        if qa.get("attribute") not in QA_ATTR:
-            e.append(f"quality_attributes[{i}].attribute ∉ допустимых")
-        if qa.get("effect") not in QA_EFFECT:
-            e.append(f"quality_attributes[{i}].effect ∉ {sorted(QA_EFFECT)}")
-
-    ui = data.get("ui_impact")
-    if ui is not None and ui not in UI_IMPACT:
-        e.append(f"ui_impact ∉ {sorted(UI_IMPACT)} (или null)")
-
-    for f in ("supersedes", "superseded_by"):
-        v = data.get(f)
-        if v is not None and not (isinstance(v, str) and _ID.match(v)):
-            e.append(f"{f} должен быть ADR-NNN или null")
-    if data.get("status") == "superseded" and not data.get("superseded_by"):
-        e.append("status=superseded требует superseded_by (ADR-преемник)")
-    return e
 
 
 def _load(path: Path):

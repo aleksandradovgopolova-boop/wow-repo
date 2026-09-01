@@ -152,7 +152,11 @@ def _env_site_dirs():
     if getter is not None:
         try:
             found.extend(str(x) for x in getter())
-        except Exception:  # noqa: BLE001
+        # Причина подавления (срез ратчета, 2026-08-12): `getsitepackages()` отсутствует или
+        # падает в нестандартных venv — ровно для этого ниже стоит добор из `sys.path`, который
+        # покрывает тот же материал другим путём. Пропуск здесь не теряет данных: он их не
+        # получает раньше срока.
+        except Exception:  # noqa: BLE001,S110 — есть равноценный путь ниже (добор из sys.path)
             pass
     # Добор из sys.path: покрывает нестандартные схемы раскладки, где getsitepackages() молчит.
     for entry in sys.path:

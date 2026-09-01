@@ -26,7 +26,7 @@ from pathlib import Path
 
 
 def _git(root, *args):
-    from ai_ops_kit.engine import gitio
+    from ai_ops_kit.shared import gitio
     return gitio.git(root, *args)   # v3.0.13 (блок C): единый git-хелпер с таймаутом
 
 
@@ -140,6 +140,87 @@ def remove(root, wid, wt_dir=".ai/worktrees", force=False):
         return 1
     print(f"WORKTREE: '{wid}' удалён ({target.relative_to(root)}). Ветка сохранена.", file=sys.stderr)
     return 0
+
+
+def resolve_worktree_path(root, wid, wt_dir=".ai/worktrees"):
+    """Путь worktree для wid внутри root. -> (Path, None) | (None, ошибка). Тонкая обёртка _safe_target,
+    чтобы оркестратору не парсить stdout `add`."""
+    return _safe_target(root, wt_dir, wid)
+
+
+def apply_fixes_in_worktree(root, branch, fixers, *, base="HEAD", verify=None,
+                            wt_dir=".ai/worktrees", max_files=50,
+                            commit_message="chore: nightly autofix (class A)", cleanup=True):
+    """Применить ДЕТЕРМИНИРОВАННЫЕ фиксеры в ИЗОЛИРОВАННОМ worktree на не-main ветке -> один коммит.
+
+    Чистый git-примитив: не импортирует intelligence, ничего не знает о ночном ревью. Фиксеры
+    ПЕРЕДАЮТСЯ (не импортируются) — список dict `{"key": str, "apply": callable(Path)->list[str]}`,
+    где apply правит файлы в worktree и возвращает изменённые относительные пути. Каждый фиксер
+    ОБЯЗАН быть класса A (детерминированный, обратимый, не меняющий поведение).
+
+    После каждого фиксера, если задан `verify(worktree_path)->bool`, он ДОЛЖЕН вернуть True — иначе
+    изменения этого фиксера ОТКАТЫВАЮТСЯ (git checkout -- <пути>), фиксер помечается skipped. Так
+    «не прошло проверку» не доезжает до PR. Ничего не удаляет; никогда не пишет в main (add это
+    запрещает). Пустой результат -> worktree снят, {status:"no_changes"}. Жёсткий сбой -> worktree
+    снят force, {status:"rolled_back"}. Иначе -> коммит + точные base/head SHA.
+
+    Возврат: {status, branch, base_sha?, head_sha?, applied, skipped, changed_files, reason?}."""
+    root = Path(root).resolve()
+    wid = str(branch).replace("/", "-")
+    wt_path, err = _safe_target(root, wt_dir, wid)
+    if err:
+        return {"status": "error", "branch": branch, "reason": err,
+                "applied": [], "skipped": [], "changed_files": []}
+    rc = add(root, wid, branch, base=base, wt_dir=wt_dir)
+    if rc != 0:
+        return {"status": "error", "branch": branch, "reason": "git worktree add не удался",
+                "applied": [], "skipped": [], "changed_files": []}
+    applied, skipped, changed_all = [], [], []
+    try:
+        base_rc, base_out, _ = _git(wt_path, "rev-parse", base)
+        base_sha = base_out.strip() if base_rc == 0 else None
+        for f in fixers:
+            key = f.get("key", "fixer")
+            try:
+                touched = list(f["apply"](wt_path) or [])
+            except Exception as e:  # noqa: BLE001 — фиксер = произвольный код; сбой любого рода откатываем, не роняя прогон
+                _git(wt_path, "checkout", "--", ".")
+                skipped.append({"key": key, "reason": f"фиксер упал ({type(e).__name__}: {e})"})
+                continue
+            if not touched:
+                continue
+            if len(changed_all) + len(touched) > max_files:
+                _git(wt_path, "checkout", "--", *touched)
+                skipped.append({"key": key, "reason": f"потолок файлов ({max_files}) — фиксер пропущен"})
+                continue
+            if verify is not None and not verify(wt_path):
+                # проверка не прошла -> откат ИМЕННО его изменений, фиксер skipped (не в PR)
+                _git(wt_path, "checkout", "--", *touched)
+                skipped.append({"key": key, "reason": "проверка после фиксера не прошла — откат"})
+                continue
+            _git(wt_path, "add", *touched)
+            applied.append({"key": key, "files": sorted(touched)})
+            changed_all.extend(touched)
+        if not changed_all:
+            if cleanup:
+                remove(root, wid, wt_dir=wt_dir, force=True)
+            return {"status": "no_changes", "branch": branch, "base_sha": base_sha,
+                    "applied": applied, "skipped": skipped, "changed_files": []}
+        crc, cout, cerr = _git(wt_path, "commit", "-m", commit_message)
+        if crc != 0:
+            remove(root, wid, wt_dir=wt_dir, force=True)
+            return {"status": "rolled_back", "branch": branch, "reason": f"commit не удался: {cerr or cout}",
+                    "applied": applied, "skipped": skipped, "changed_files": sorted(set(changed_all))}
+        hrc, hout, _ = _git(wt_path, "rev-parse", "HEAD")
+        head_sha = hout.strip() if hrc == 0 else None
+    except Exception as e:  # noqa: BLE001 — safety net: любой жёсткий сбой -> полный откат worktree, не осиротить
+        remove(root, wid, wt_dir=wt_dir, force=True)
+        return {"status": "rolled_back", "branch": branch, "reason": f"{type(e).__name__}: {e}",
+                "applied": applied, "skipped": skipped, "changed_files": sorted(set(changed_all))}
+    if cleanup:
+        remove(root, wid, wt_dir=wt_dir, force=True)     # ветка с коммитом остаётся, каталог убран
+    return {"status": "committed", "branch": branch, "base_sha": base_sha, "head_sha": head_sha,
+            "applied": applied, "skipped": skipped, "changed_files": sorted(set(changed_all))}
 
 
 def main(argv):

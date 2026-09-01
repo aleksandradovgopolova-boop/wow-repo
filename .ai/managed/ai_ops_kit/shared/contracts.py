@@ -150,6 +150,9 @@ class RunReportGates(TypedDict, total=False):
     met: list[str]
     unmet: list[str]
     not_applicable: list[str]
+    # Кто закрыл каждый гейт: validator | judge | writer | human. «Зелёное» от машины и «зелёное»
+    # по мнению судьи — разные утверждения, и отчёт обязан их различать.
+    closure: dict[str, Any]
 
 
 class RunReport(TypedDict, total=False):
@@ -225,6 +228,12 @@ class DeliveryReceipt(TypedDict, total=False):
     pr_state: Optional[str]
     merged: Optional[bool]
     reconciled: bool
+    # R-41: проверки на том же SHA. `sha_verified` отвечает «это наш коммит», эти поля — «его кто-то
+    # проверял». Раньше второго вопроса не существовало, и «прогонов не было» читалось как «зелено».
+    checks_status: Optional[str]         # found|absent|unavailable — «нет» и «не знаю» РАЗНЫЕ
+    checks_total: Optional[int]
+    checks_failed: Optional[int]
+    checks_verified: Optional[bool]      # True только при found + 0 упавших + 0 незавершённых
 
 
 # ============================================================================
@@ -266,6 +275,41 @@ class WorkItemState(TypedDict, total=False):
     run_id: Optional[str]
     branch: Optional[str]
     pr_url: Optional[str]
+
+
+# ============================================================================
+# Kernel Events (v3.38, trustworthy-core Wave 3)
+# ============================================================================
+
+class KernelEvent(TypedDict, total=False):
+    """Событие ядра — контракт между ядром и спутниками.
+
+    Ядро испускает события через shared.events.emit(); спутники подписываются через
+    shared.events.subscribe(). Спутник не импортируется ядром напрямую.
+
+    Типы событий:
+      run_completed      — ИСПУСКАЕТСЯ (ai_ops_run) и подписан (engops/session_events).
+                           Несёт весь report — из него доступны и гейты, и итог доставки.
+      gate_evaluated     — ОБЪЯВЛЕН, НО НЕ ИСПУСКАЕТСЯ: отдельного потребителя, которому нужен
+                           момент «сразу после гейтов» без полного report, пока нет. Не эмитим
+                           событие без потребителя — это была бы декоративная поверхность
+                           (тот же класс, что мёртвый каталог инвариантов до K7). Появится ПО
+                           ДАННЫМ реального спроса, аддитивно, вместе со своим подписчиком.
+      delivery_completed — ОБЪЯВЛЕН, НО НЕ ИСПУСКАЕТСЯ (та же причина; итог доставки уже в report
+                           события run_completed). Поля ниже — заготовка контракта, не активный шов.
+    """
+    event_type: str
+    workitem_id: str
+    timestamp: str
+    # run_completed
+    status: str
+    report: dict[str, Any]
+    child_root: str
+    # gate_evaluated
+    gate_results: list[dict[str, Any]]
+    tested_revision: str
+    # delivery_completed
+    receipt: dict[str, Any]
 
 
 # Запуск скриптом ОБЪЯСНЯЕТ модуль, а не молчит (ревизия 2026-08-11).

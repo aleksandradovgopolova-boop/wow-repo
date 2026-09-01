@@ -43,7 +43,7 @@ from pathlib import Path
 
 
 def _git(repo, *args):
-    from ai_ops_kit.engine import gitio
+    from ai_ops_kit.shared import gitio
     return gitio.git(repo, *args)   # v3.0.13 (блок C): единый git-хелпер с таймаутом
 
 

@@ -25,7 +25,9 @@ PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is
 from ai_ops_kit.shared import _bootstrap  # noqa: E402,F401 — кладёт validation/ в sys.path
                                          # ДО плоских импортов ниже; повторный импорт того же
                                          # модуля ниже удалён ревизией 2026-08-11 как дубль
-from ai_ops_kit.validation import validate_memory_governance as _mgp   # noqa: E402
+# v3.38 (лента №4): чистая проверка вынесена вниз в `checks` (слой primitives). Импорт отсюда —
+# в СВОЙ слой, а не вверх в `validation` (entrypoints): восходящее ребро security -> validation снято.
+from ai_ops_kit.checks import memory_governance as _mgp   # noqa: E402
 
 
 def verify_artifact(data: bytes, entry: dict):

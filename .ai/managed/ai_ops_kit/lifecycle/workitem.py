@@ -38,7 +38,7 @@ from ai_ops_kit.shared import _bootstrap  # noqa: E402,F401 — кладёт val
                                          # модуля ниже удалён ревизией 2026-08-11 как дубль
 from ai_ops_kit.gates import gate_executor          # noqa: E402
 from ai_ops_kit.lifecycle import run_report             # noqa: E402
-from ai_ops_kit.engine import ai_route   # noqa: E402
+# v3.38 (K5): ai_route загружается лениво — lifecycle не импортирует engine.
 from ai_ops_kit.lifecycle import lifecycle_intent       # noqa: E402  v3.27.0 WP1
 
 STATUS_ACTION = {
@@ -60,7 +60,8 @@ def start(features_dir, fid, task, task_type=None, risk=None):
         inp["task_type"] = task_type
     if risk:
         inp["risk"] = risk
-    r = ai_route.route(inp)
+    _ar = __import__("ai_ops_kit.engine.ai_route", fromlist=["route"])
+    r = _ar.route(inp)
     wf = r["workflow"]
     fdir = Path(features_dir) / fid
     fdir.mkdir(parents=True, exist_ok=True)
@@ -100,15 +101,21 @@ def derive_status(workflow, feature_dir, evidence):
     real_fail = [g for g in unmet if g in (evidence or {})]           # evidence подан, но fail
     evidence_missing = [g for g in unmet if g not in (evidence or {})]  # доказательств не подано
 
-    verdict = None
+    verdict, verdict_error = None, None
     bp = Path(feature_dir) / "blueprint.yaml"
     if bp.exists():
         try:
             verdict = run_report.build_report(Path(feature_dir), None)["verdict"]
-        except Exception:
-            verdict = None
+        # СРЕЗ lifecycle РАТЧЕТА 2026-08-12: здесь стояло `verdict = None` без записанной причины, и
+        # это ИСКАЖАЛО ВЕРДИКТ. `None` уходил в ветку `else: status = "done"` ниже — то есть
+        # blueprint, здоровье которого оценить НЕ УДАЛОСЬ, был неотличим от blueprint'а, оценённого
+        # как здоровый. Тот же класс, что «битая DeliveryReceipt не равна отсутствующей»
+        # (validate_feature_blueprint, ревизия 2026-08-11): нечитаемая расписка — не отсутствие
+        # проблемы. Теперь неоценённое здоровье БЛОКИРУЕТ и называет причину в отчёте.
+        except Exception as _be:  # noqa: BLE001 — любой сбой оценки здоровья -> fail-closed, а не «done»
+            verdict, verdict_error = None, f"{type(_be).__name__}: {_be}"[:200]
 
-    if real_fail or verdict == "PROBLEM":
+    if real_fail or verdict == "PROBLEM" or verdict_error:
         status = "blocked"
     elif human_unmet:
         status = "needs_human_decision"
@@ -128,6 +135,9 @@ def derive_status(workflow, feature_dir, evidence):
         "blocked": gates["blocked"], "unmet_gates": unmet,
         "real_fail": real_fail, "human_unmet": human_unmet,
         "evidence_missing": evidence_missing, "blueprint_verdict": verdict,
+        # Пусто, когда оценка прошла. Непусто — значит `blueprint_verdict: None` означает «не смогли
+        # оценить», а не «проблем нет»: эти два состояния обязаны быть различимы наружу.
+        **({"blueprint_verdict_error": verdict_error} if verdict_error else {}),
     }
 
 

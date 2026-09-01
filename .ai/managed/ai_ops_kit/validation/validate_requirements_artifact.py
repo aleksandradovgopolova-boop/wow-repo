@@ -34,44 +34,15 @@ from pathlib import Path
 
 import yaml
 
-# required_evidence гейта requirements (quality/gates.yaml) — что артефакт обязан подкрепить.
-REQUIRED_EVIDENCE = ["testable_requirements", "acceptance_scenarios"]
-
-
-def check(data):
-    errors = []
-    if not isinstance(data, dict) or data.get("kind") != "requirements-artifact":
-        errors.append("kind должен быть 'requirements-artifact'")
-        data = data if isinstance(data, dict) else {}
-    if data.get("schema_version") is None:
-        errors.append("нет schema_version")
-    reqs = data.get("requirements")
-    if not isinstance(reqs, list) or not reqs:
-        errors.append("requirements должен быть непустым списком")
-        reqs = []
-    seen = set()
-    for i, r in enumerate(reqs):
-        if not isinstance(r, dict):
-            errors.append(f"requirement[{i}] должен быть объектом"); continue
-        rid = r.get("id", f"#{i}")
-        if not r.get("id"):
-            errors.append(f"requirement[{i}]: нет id")
-        elif r["id"] in seen:
-            errors.append(f"дублирующийся id требования: {r['id']}")
-        seen.add(r.get("id"))
-        st = r.get("statement")
-        if not (isinstance(st, str) and st.strip()):
-            errors.append(f"{rid}: пустой/отсутствующий statement (требование должно быть сформулировано)")
-        acc = r.get("acceptance")
-        if not (isinstance(acc, list) and acc and all(isinstance(a, str) and a.strip() for a in acc)):
-            errors.append(f"{rid}: acceptance должен быть непустым списком непустых сценариев приёмки")
-    return errors
-
-
-def provided_evidence(data):
-    """Ключи required_evidence гейта requirements, подтверждённые валидным артефактом.
-    Пусто, если артефакт невалиден (нельзя подтверждать по битой форме)."""
-    return list(REQUIRED_EVIDENCE) if not check(data) else []
+try:                                          # v3.38 (лента №5): валидатор двурежимен
+    from ai_ops_kit.validation import _bootstrap   # noqa: F401 — импорт пакетом (после pip install)
+except ImportError:                                # запуск скриптом: корня на пути ещё нет,
+    import _bootstrap                              # noqa: F401 — и положить его может только он сам
+# Проверяющая логика вынесена ВНИЗ (пакет `checks`, слой primitives): и рантайм (engine.pipeline_helpers),
+# и эта CLI-обёртка импортируют её вниз — без восходящего ребра engine -> validation. check,
+# provided_evidence и REQUIRED_EVIDENCE ре-экспортируются для обратной совместимости.
+from ai_ops_kit.checks.requirements_artifact import (   # noqa: E402,F401
+    REQUIRED_EVIDENCE, check, provided_evidence)
 
 
 def load(path):

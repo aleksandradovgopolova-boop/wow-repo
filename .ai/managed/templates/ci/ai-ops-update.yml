@@ -15,6 +15,9 @@ on:
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch: {}
+# Lane A3: минимальные привилегии для автообновления.
+# contents: write — нужен для git push ветки обновления.
+# pull-requests: write — нужен для gh pr create.
 permissions:
   contents: write
   pull-requests: write
@@ -50,7 +53,27 @@ jobs:
           PARENT=$(python3 -c "import yaml; s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source']; print(s[4:] if s.startswith('git+') else s)")
           INSTALLED=$(python3 -c "import yaml; print(yaml.safe_load(open('.ai-ops.yaml'))['parent']['installed_version'])")
           AUTO=$(python3 -c "import yaml; print(str(yaml.safe_load(open('.ai-ops.yaml'))['parent'].get('auto_update', True)).lower())")
-          git clone --depth 1 "$PARENT" "$RUNNER_TEMP/ai-ops-kit"
+          CHANNEL=$(python3 -c "import yaml; print(yaml.safe_load(open('.ai-ops.yaml'))['parent'].get('update_channel','stable'))")
+          # КЛОН С ТЕГАМИ, А НЕ HEAD ВЕТКИ (аудит 19.08.2026). Здесь стояло `git clone --depth 1`,
+          # то есть бралась ветка по умолчанию — канал `edge`, — тогда как дочка объявляет свой
+          # канал в `.ai-ops.yaml` и до этой правки это объявление не читала НИ ОДНА строка кода.
+          # `--filter=blob:none` держит клон лёгким и при этом даёт теги: выбирать выпуск, не видя
+          # выпусков, нельзя.
+          git clone --filter=blob:none "$PARENT" "$RUNNER_TEMP/ai-ops-kit"
+          # Какую ревизию брать под объявленный канал — решает кит, а не эта строка bash.
+          # Код 2 = «под этот канал брать нечего»; тогда обновление НЕ выполняется, и причина
+          # печатается. Тихо взять ветку значило бы вернуть исходный дефект: просят `stable`,
+          # получают `edge`.
+          if REF=$(python3 "$RUNNER_TEMP/ai-ops-kit/installer/ai_ops.py" resolve-ref \
+                     --channel "$CHANNEL" --repo "$RUNNER_TEMP/ai-ops-kit"); then
+            [ -n "$REF" ] && git -C "$RUNNER_TEMP/ai-ops-kit" checkout -q "$REF"
+            echo "канал '$CHANNEL' -> ${REF:-ветка по умолчанию}"
+          else
+            echo "::notice::обновление пропущено: под канал '$CHANNEL' брать нечего (см. причину выше)"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           AVAILABLE=$(tr -d '[:space:]' < "$RUNNER_TEMP/ai-ops-kit/VERSION")
           echo "installed=$INSTALLED available=$AVAILABLE auto_update=$AUTO event=${{ github.event_name }}"
           echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
@@ -62,9 +85,14 @@ jobs:
       - name: Пропуск (auto_update:false, запуск по расписанию)
         if: steps.ver.outputs.needs_update == 'true' && steps.ver.outputs.proceed != 'true'
         run: echo "Доступно обновление $INSTALLED -> $AVAILABLE, но parent.auto_update=false (опт-аут) и запуск по расписанию — PR не открывается. Запустите workflow вручную (Run workflow) или включите auto_update."
+      # `--in-place` ОБЯЗАТЕЛЕН здесь и появился вместе с F-022. Без него `update` при
+      # `parent.update_policy: pr` уходит в отдельную ветку сам — и этот workflow, который делает
+      # ветку и PR СЛЕДУЮЩИМ шагом, получил бы ветку в ветке и пустой diff. Флаг говорит: применяй
+      # на месте, PR открою я. Политика при этом соблюдена — просто другим механизмом, и здесь это
+      # видно, а не подразумевается.
       - name: Запустить ai-ops update
         if: steps.ver.outputs.proceed == 'true'
-        run: python3 "$RUNNER_TEMP"/ai-ops-kit/installer/ai_ops.py update
+        run: python3 "$RUNNER_TEMP"/ai-ops-kit/installer/ai_ops.py update --in-place
       - name: Открыть PR с обновлением
         if: steps.ver.outputs.proceed == 'true'
         env:
@@ -81,7 +109,9 @@ jobs:
           git checkout -B "$BRANCH"
           git add -A
           git commit -m "chore: ai-ops update $FROM -> $TO"
-          git push -f -u origin "$BRANCH"
+          # Lane A3: --force-with-lease безопаснее -f — не перетирает чужие коммиты на ветке,
+          # если кто-то успел запушить туда свою работу между нашим fetch и push.
+          git push --force-with-lease -u origin "$BRANCH"
           gh pr list --head "$BRANCH" --json number --jq length | grep -q '^0$' || exit 0
           REPORT=".ai/runtime/last-update-report.json"
           [ -f "$REPORT" ] || REPORT=""

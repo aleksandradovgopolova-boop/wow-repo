@@ -1,4 +1,4 @@
-"""Совместимость: плоское имя gitio -> ai_ops_kit.engine.gitio.
+"""Совместимость: плоское имя gitio -> ai_ops_kit.shared.gitio.
 
 Код переехал в пакет. Здесь алиас через sys.modules — ОДИН объект модуля, не копия:
 иначе состояние разъедется между двумя путями импорта.
@@ -21,8 +21,8 @@ if __name__ == "__main__":
     # ничего и вернёт 0. Исполняем цель как __main__ — ровно то, чем был плоский файл до переезда.
     import runpy
 
-    runpy.run_module("ai_ops_kit.engine.gitio", run_name="__main__", alter_sys=True)
+    runpy.run_module("ai_ops_kit.shared.gitio", run_name="__main__", alter_sys=True)
 else:
-    import ai_ops_kit.engine.gitio as _target
+    import ai_ops_kit.shared.gitio as _target
 
     sys.modules[__name__] = _target

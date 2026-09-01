@@ -9,6 +9,9 @@
 # gates — id из quality/gates.yaml (проверяется validate_workflow_gates.py; он же
 # требует непустой реестр и обязательные поля — пустой tracks молча отключал треки).
 # skip_reason — что пишется в RunPlan.skipped_tracks, когда signal=false (explainable skip).
+# ФОРМУЛИРОВКА — О СИГНАЛЕ/ЗАЯВКЕ, НЕ ПРОШЕДШИМ ВРЕМЕНЕМ О КОДЕ (obs 64a4840a, поле 20.08.2026):
+# план строится ДО первой правки, поэтому «UI не менялся» — ложь о ненаписанном коде. Честно —
+# «UI-изменения не заявлены в сигналах задачи»: это факт, который мы действительно знаем.
 schema_version: 1
 registry_type: tracks
 
@@ -18,46 +21,46 @@ tracks:
     kind: required            # by default, если тронут UI
     gates: [ux_review, design_system_usage, accessibility_review, visual_regression]
     reason: "user-facing UI изменён — нужны состояния экранов, дизайн-система, доступность"
-    skip_reason: "UI не менялся — визуальный трек не нужен"
+    skip_reason: "UI-изменения не заявлены в сигналах задачи — визуальный трек не активирован (не факт о коде: план строится до правок)"
 
   ANALYTICS:
     signal: measurable_behavior
     kind: required
     gates: [analytics_design_readiness]  # v3.27.2 WP3: design до merge; runtime verification — после deploy
     reason: "появилось измеримое поведение — нужны события и метрики"
-    skip_reason: "нет нового измеримого поведения — аналитика не нужна"
+    skip_reason: "измеримое поведение не заявлено в сигналах задачи — трек аналитики не активирован"
 
   SECURITY:
     signal: security_surface_changed    # внешняя интеграция / граница аутентификации / внешний ввод
     kind: required
     gates: [security]
     reason: "изменена граница безопасности (интеграция/аутентификация/внешний ввод)"
-    skip_reason: "граница безопасности не менялась — security-трек не обязателен"
+    skip_reason: "изменение границы безопасности не заявлено в сигналах задачи — security-трек не активирован"
 
   DOCUMENTATION:
     signal: user_facing_change
     kind: required
     gates: [documentation_updated]
     reason: "изменение видно пользователю — нужна пользовательская документация"
-    skip_reason: "нет пользовательски-заметных изменений — доки не требуются"
+    skip_reason: "пользовательски-заметные изменения не заявлены в сигналах задачи — трек документации не активирован"
 
   EVENTS:
     signal: events_changed
     kind: required
     gates: [event_contract_consistency]
     reason: "изменены события — имена согласовать в едином каталоге"
-    skip_reason: "события не менялись"
+    skip_reason: "изменение событий не заявлено в сигналах задачи — трек событий не активирован"
 
   AI:
     signal: ai_component
     kind: conditional
     gates: [ai_eval, ai_red_team]
     reason: "LLM/агентный компонент — нужны eval и adversarial red team"
-    skip_reason: "AI-компонента нет"
+    skip_reason: "AI-компонент не заявлен в сигналах задачи — трек AI-оценки не активирован"
 
   RELEASE:
     signal: deploy_touched
     kind: conditional
     gates: [release_safety, observability_readiness]
     reason: "затронут релиз/деплой — нужны feature flag, rollback и observability"
-    skip_reason: "релизный контур не затронут"
+    skip_reason: "изменение релизного контура не заявлено в сигналах задачи — трек релиза не активирован"

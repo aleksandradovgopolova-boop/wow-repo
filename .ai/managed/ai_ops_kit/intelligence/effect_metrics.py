@@ -33,15 +33,40 @@ MIN_FEATURES = 3
 
 
 def load_history(hist_dir: Path):
+    """Журналы срезов -> {фича: [срез, ...]} по возрастанию `ts`. Дубли строк снимаются.
+
+    ПОЧЕМУ СНИМАЮТСЯ ДУБЛИ (18.08.2026, вместе с `.gitattributes merge=union`). Журналы объявлены
+    append-only, и слияние им теперь сводит git сам — склейкой СТРОК. У склейки есть цена: одна и та
+    же строка может прийти с двух сторон и остаться в файле дважды. Ниже `runs = len(entries)`, и
+    `problem_rate` делит на это число — то есть дубль не «лишняя строка в журнале», а ИСКАЖЁННАЯ
+    МЕТРИКА: повтор поднимает `runs`, может сам по себе перевести `sufficient` в true и сдвинуть
+    долю проблем. Убрать ручной конфликт и молча испортить измерение было бы обменом одного дефекта
+    на другой, который не видно.
+    ДУБЛЬ — ЭТО ПОЛНОСТЬЮ СОВПАВШИЙ СРЕЗ: одна фича, одна секунда, тот же вердикт, стадия и
+    покрытие. Два РАЗНЫХ прогона так совпасть не могут — у них отличается хотя бы одно поле.
+    СНЯТОЕ НЕ ПРЯЧЕТСЯ: число снятых дублей возвращается в `load_history.dropped_duplicates` и
+    попадает в отчёт `build`. Молчаливая чистка данных — тот же ложный green, только в измерении.
+    """
     features = {}
+    dropped = {}
     for f in sorted(hist_dir.glob("*.jsonl")):
-        entries = []
+        entries, seen, dup = [], set(), 0
         for line in f.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line:
-                entries.append(json.loads(line))
+            if not line:
+                continue
+            entry = json.loads(line)
+            key = json.dumps(entry, sort_keys=True, ensure_ascii=False)
+            if key in seen:
+                dup += 1
+                continue
+            seen.add(key)
+            entries.append(entry)
+        if dup:
+            dropped[f.stem] = dup
         if entries:
             features[f.stem] = sorted(entries, key=lambda e: e.get("ts", ""))
+    load_history.dropped_duplicates = dropped
     return features
 
 
@@ -76,6 +101,7 @@ def feature_metrics(entries):
 
 def build(hist_dir: Path):
     features = load_history(hist_dir)
+    dropped = getattr(load_history, "dropped_duplicates", {}) or {}
     per_feature = {fid: feature_metrics(es) for fid, es in features.items()}
     sufficient = {f: m for f, m in per_feature.items() if m["sufficient"]}
     total_runs = sum(m["runs"] for m in per_feature.values())
@@ -90,9 +116,13 @@ def build(hist_dir: Path):
                          if total_runs else None),
         "median_days_to_retrospective": (round(median(flights), 1) if flights else None),
         "baseline_ready": len(sufficient) >= MIN_FEATURES,
+        # Снятые дубли НАЗВАНЫ, а не проглочены: 0 — это «дублей не было», а не «мы не смотрели».
+        # Непустое значение читается как след слияния журналов (`merge=union`), а не как ошибка.
+        "duplicate_slices_dropped": sum(dropped.values()),
     }
     return {"schema_version": 1, "kind": "effect-metrics-report",
-            "history_dir": str(hist_dir), "per_feature": per_feature, "aggregate": agg}
+            "history_dir": str(hist_dir), "per_feature": per_feature, "aggregate": agg,
+            "duplicate_slices_dropped_per_feature": dropped}
 
 
 def print_human(r):

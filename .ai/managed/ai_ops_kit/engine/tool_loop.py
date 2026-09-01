@@ -27,7 +27,7 @@ from pathlib import Path
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
 from ai_ops_kit.engine import tool_broker            # noqa: E402
-from ai_ops_kit.engine import budget as _budget_mod  # noqa: E402
+from ai_ops_kit.shared import budget as _budget_mod  # noqa: E402
 
 
 def parse_action(text):
@@ -61,7 +61,17 @@ def make_model_proposer(provider):
     Живой путь: provider = make_provider('openai-compatible', 'deepseek-chat')."""
     def propose(context):
         prompt = (
-            "Ты исполнитель задачи в контролируемом рантайме. На каждом шаге верни РОВНО ОДНО "
+            # ТЫ И ЕСТЬ ДВИЖОК (полевой замер 15.08.2026, `ai-product-quest`). Кит кладёт в дочку
+            # правило CLAUDE.md: «когда просят изменение кода — НЕ правь файлы напрямую, запусти
+            # ./ai-run». Писатель кита — это Claude Code, он читает CLAUDE.md рабочего дерева,
+            # добросовестно слушается и не пишет НИЧЕГО: два прогона подряд дали 10 и 7 шагов при
+            # нуле правок, а кит объяснил это как «нужен живой провайдер». В соседнем репозитории
+            # без такого правила тот же писатель отработал с первой попытки.
+            "Ты — ИСПОЛНИТЕЛЬ ВНУТРИ движка AI Ops: этот прогон и есть тот самый `ai-run`, на "
+            "который ссылаются правила репозитория. Указания вида «не правь файлы напрямую, "
+            "запусти кит» относятся к работе ПОМИМО движка и к тебе НЕ применяются — правки "
+            "делаешь ты, а гейты и ревью стоят после тебя.\n"
+            "Работа идёт в контролируемом рантайме. На каждом шаге верни РОВНО ОДНО "
             "действие в JSON и больше ничего:\n"
             '  {"op":"write","path":"...","content":"..."}  — создать/изменить файл\n'
             '  {"op":"shell","command":"..."}                — команда (сборка/тест/проверка)\n'
@@ -112,7 +122,8 @@ def make_reviewer_proposer(provider, gate_id, checklist="", required_evidence=No
 
 
 def run_review(reviewer, root, policy, gate_id, budget=None, max_reads=6, base_context="",
-               required_evidence=None, reviewed_revision=None):
+               required_evidence=None, reviewed_revision=None,
+               terminal_kind="reviewer-result", terminal_field=None):
     """Один независимый ревью-проход под READ-ONLY политикой -> reviewer-result (dict) + трейс.
 
     Ревьюер может читать файлы (write/shell брокер отклонит — capability-независимость от писателя),
@@ -125,8 +136,18 @@ def run_review(reviewer, root, policy, gate_id, budget=None, max_reads=6, base_c
     осталось последнее чтение; (2) выделенный ФОРС-ХОД вердикта после исчерпания чтений — читать
     больше нельзя, принимается только reviewer-result. Вердикт НЕ фабрикуется: если ревьюер и на
     форс-ходе не заключает — честный no-verdict (fail). Мы лишь ограничиваем фазу чтения и требуем
-    заключить по прочитанному — ровно то, что обязан делать компетентный судья."""
+    заключить по прочитанному — ровно то, что обязан делать компетентный судья.
+
+    B2-14 (2026-08-14): вид терминального вердикта стал ПАРАМЕТРОМ. Петля read-only судьи нужна не
+    только гейтам: сверка критериев приёмки — тот же шов (независимый судья, те же нуджи, тот же
+    форс-ход, тот же брокер), но её вердикт — `acceptance-result` с вердиктом по каждому критерию,
+    а не один `status` на гейт. Значения по умолчанию оставлены прежними, поэтому путь
+    `reviewer-result` не меняется ни на байт; `terminal_field` называет поле, по которому вердикт
+    узнаётся, когда модель не проставила `kind`."""
     root = Path(root)
+    # Локальный импорт (как ai_ops_run зовёт providers): response_contract — лист, engine не тянет,
+    # цикла нет; локально — чтобы не расширять статический граф engine ради одного класса-исключения.
+    from ai_ops_kit.providers.response_contract import ProviderRefusal as _ProviderRefusal
     bud = budget if isinstance(budget, _budget_mod.Budget) else _budget_mod.Budget.from_dict(budget)
     context = base_context
     reads, denied = [], []
@@ -138,27 +159,39 @@ def run_review(reviewer, root, policy, gate_id, budget=None, max_reads=6, base_c
             stopped = f"budget: {e}"; break
         force_verdict = len(reads) >= max_reads     # бюджет чтений исчерпан -> только вердикт
         if force_verdict:
-            context += ("\n[ревью] ЛИМИТ ЧТЕНИЙ ИСЧЕРПАН. Больше не читай. Верни СЛЕДУЮЩИМ РОВНО один "
-                        "reviewer-result по уже прочитанному (status=fail с конкретными blockers, если "
-                        "чего-то не хватило для pass). НЕ выдумывай.")
+            context += (f"\n[ревью] ЛИМИТ ЧТЕНИЙ ИСЧЕРПАН. Больше не читай. Верни СЛЕДУЮЩИМ РОВНО один "
+                        f"{terminal_kind} по уже прочитанному (чего не подтвердил чтением — то и "
+                        f"скажи конкретно). НЕ выдумывай.")
         elif len(reads) == max_reads - 1:
-            context += ("\n[ревью] остаётся последнее чтение до лимита — прочти только самое нужное, "
-                        "затем верни reviewer-result.")
-        action = reviewer(context)
+            context += (f"\n[ревью] остаётся последнее чтение до лимита — прочти только самое нужное, "
+                        f"затем верни {terminal_kind}.")
+        try:
+            action = reviewer(context)
+        except _ProviderRefusal as refusal:
+            # Провайдер судьи НАЗВАЛ отказ (пусто/обрезано/отказ модели). Прежде это был
+            # неперехваченный подъём (после того как провайдеры научились называть пустой ответ);
+            # теперь — честный no-verdict с названной причиной, которую поднимет gate_executor.
+            return {"result": None, "stopped": f"refusal: {refusal.reason}",
+                    "refusal": refusal.as_dict(), "reads": reads, "denied": denied}
         if not isinstance(action, dict) or action.get("error"):
-            context += "\n[ревью] верни РОВНО один JSON: read-действие или reviewer-result."
+            context += f"\n[ревью] верни РОВНО один JSON: read-действие или {terminal_kind}."
             continue
-        # терминальный вердикт: reviewer-result (по kind/status)
-        if action.get("kind") == "reviewer-result" or (action.get("status") and "op" not in action):
+        # терминальный вердикт: по kind, по названному полю вердикта либо (для reviewer-result) по status
+        _terminal = (action.get("kind") == terminal_kind
+                     or (terminal_field is not None and action.get(terminal_field) is not None
+                         and "op" not in action)
+                     or (terminal_field is None and action.get("status") and "op" not in action))
+        if _terminal:
             action.setdefault("schema_version", 1)
-            action.setdefault("kind", "reviewer-result")
-            action.setdefault("gate", gate_id)
+            action.setdefault("kind", terminal_kind)
+            if gate_id is not None:
+                action.setdefault("gate", gate_id)
             if reviewed_revision:
                 action.setdefault("reviewed_revision", reviewed_revision)
             return {"result": action, "stopped": "verdict", "reads": reads, "denied": denied}
         # на форс-ходе чтения запрещены: не исполняем, повторно требуем вердикт
         if force_verdict:
-            context += "\n[ревью] чтение отклонено: лимит исчерпан. Нужен reviewer-result, не read."
+            context += f"\n[ревью] чтение отклонено: лимит исчерпан. Нужен {terminal_kind}, не read."
             continue
         # иначе — действие через брокер (read-only Policy: write/shell -> DENIED)
         ev = tool_broker.execute(action, root, policy)
@@ -167,8 +200,12 @@ def run_review(reviewer, root, policy, gate_id, budget=None, max_reads=6, base_c
             context += f"\n--- {ev.get('target')} ---\n{ev.get('output_tail')}\n--- конец ---"
         elif not ev["allowed"]:
             denied.append({"op": ev.get("op"), "reason": ev["reason"]})
+            # Вид вердикта здесь тоже параметр (ревью PR #118): судья сверки приёмки, получив
+            # отказ брокера, читал «верни reviewer-result» — то есть подсказку вернуть вердикт
+            # ЧУЖОЙ формы, который не пройдёт терминальную проверку. Это путь, на который он
+            # попадает при попытке записи, — ровно там подсказка должна быть верной.
             context += (f"\n[ревью] действие {ev.get('op')} ОТКЛОНЕНО (ты read-only судья, не автор): "
-                        f"{ev['reason']}. Верни read или reviewer-result.")
+                        f"{ev['reason']}. Верни read или {terminal_kind}.")
         else:
             context += f"\n[ревью] {ev.get('op')} -> {ev.get('reason')}"
     return {"result": None, "stopped": stopped, "reads": reads, "denied": denied}
@@ -199,6 +236,12 @@ def run_loop(proposer, root, policy, budget=None, max_steps=20, base_context="",
             bud.charge_call()                       # каждый запрос к модели — под потолком
         except _budget_mod.BudgetExceeded as e:
             stopped = f"budget: {e}"; break
+        # B2-22 (пере-прогон 14.08.2026): прогон молчал. Один и тот же пустой экран означал и
+        # «работает», и «повисло»: живой вызов модели занимал от секунд до трёх минут, и владелец
+        # либо ждал вслепую, либо прерывал работающий прогон. Отличить я смог только через `ps` —
+        # владелец так делать не станет. Данные для честной строки у нас уже есть: номер шага,
+        # потолок и что мы сейчас ждём. Пишем в stderr, чтобы не портить машиночитаемый stdout.
+        print(f"  · шаг {step + 1}/{max_steps}: жду ответа модели…", file=sys.stderr, flush=True)
         action = proposer(context)
         if not isinstance(action, dict) or action.get("error"):
             bad_streak += 1
@@ -237,8 +280,15 @@ def run_loop(proposer, root, policy, budget=None, max_steps=20, base_context="",
             consec_reads += 1
         else:
             consec_reads = 0
+        # ЧТО ИМЕННО исполнялось — в транскрипт (полевой замер 15.08.2026). Три прогона подряд дали
+        # «шагов 10 · правок 0», и разобрать было НЕЧЕМ: транскрипт хранил вид операции и вердикт
+        # брокера, но не команду и не файл. Владелец в такой ситуации видит «кит не справился» без
+        # единой зацепки, а сам кит объясняет неудачу неверной причиной («нужен живой провайдер»
+        # при работающем провайдере). Команда усечена: транскрипт — след, а не журнал.
+        _what = action.get("path") or action.get("command") or ""
         transcript.append({"step": step, "op": ev.get("op"), "allowed": ev["allowed"],
-                           "ok": ev.get("ok"), "reason": ev["reason"]})
+                           "ok": ev.get("ok"), "reason": ev["reason"],
+                           "what": str(_what)[:200] or None})
         # результат обратно в контекст (в т.ч. DENIED — чтобы модель скорректировалась).
         # ВАЖНО (finding аудита): модель должна ВИДЕТЬ содержимое/вывод, иначе read/shell слепы —
         # это не агентная петля. Передаём output_tail для read (содержимое) и shell (stdout/stderr).

@@ -131,12 +131,8 @@ def check(root: Path):
     # --- manifest: package-относительные пути (инструменты/контракты/примеры) резолвятся ---
     # Раньше валидатор смотрел только shipped skills — routing engine, updater, examples,
     # compatibility check и т.п. могли тихо протухнуть (02_tools/... после переезда структуры).
-    man_p = root / "manifest" / "ai-ops-manifest.yaml"
-    if man_p.exists():
-        man = load_yaml(man_p)
-        for tok in _manifest_path_tokens(man):
-            if not path_exists(root, tok.rstrip("/")):
-                bad("manifest-path", tok, "manifest/ai-ops-manifest.yaml")
+    for f in manifest_path_findings(root):
+        bad(f["kind"], f["ref"], f["where"])
 
     return findings
 
@@ -148,6 +144,61 @@ _MANIFEST_PATH_PREFIXES = (
     "manifest/", "evaluations/", "config/", "knowledge/", "decisions/",
     "governance/", "skills/", "openspec/", "workflows/", "commands/",
 )
+
+
+# ЧТО ДОСТАВЛЯЕТСЯ ДОЧКЕ — СПРАШИВАЕМ У МАНИФЕСТА, А НЕ ПОМНИМ СПИСКОМ.
+#
+# ЗАМЕР 20.08.2026 (ночной обзор, первый живой прогон на трёх подключённых репозиториях). В КАЖДОЙ
+# дочке валидатор ссылок давал 33 «не резолвится» подряд: `skills/`, `governance/`, `openspec/`,
+# `decisions/`, `knowledge/`, `examples/`, `installer/`. Все эти каталоги есть в ките и НЕ входят в
+# `update_policy.managed_set` — то есть у дочки их не будет никогда, и красный не гасится никакой
+# работой.
+#
+# Красный, который нельзя погасить, не проверка: отчёт с ним перестают читать построчно, и вместе
+# с вечной строкой пролистываются настоящие находки. Из тех же 33 настоящих оказалось ровно две —
+# их и должно быть видно.
+#
+# Список доставки НЕ ДУБЛИРУЕТСЯ здесь константой: он уже записан в манифесте, и вторая копия
+# разошлась бы с первой на первом же изменении поставки. Тот же принцип, что «реестр — источник
+# истины»: спрашиваем у него, а не помним.
+def _delivered_tops(man) -> set:
+    """Верхние каталоги из `update_policy.managed_set`. -> {"registry/", "tools/", …}."""
+    out = set()
+    for pat in ((man.get("update_policy") or {}).get("managed_set") or []):
+        top = str(pat).split("/", 1)[0].strip()
+        if top and "*" not in top and "." not in top:
+            out.add(top + "/")
+    return out
+
+
+def _is_kit_repo(root) -> bool:
+    """Кит это или установленная копия у дочки. -> bool. Признак кита — установщик рядом."""
+    return (Path(root) / "installer").is_dir()
+
+
+def manifest_path_findings(root):
+    """Пути манифеста, которые не резолвятся. -> list[dict].
+
+    Вынесено из `collect` отдельной функцией, чтобы правило «kit-only не краснеет у дочки»
+    проверялось пробой напрямую, а не через сборку целого репозитория: проверку, которую дорого
+    позвать, перестают звать.
+    """
+    man_p = Path(root) / "manifest" / "ai-ops-manifest.yaml"
+    if not man_p.exists():
+        return []
+    man = load_yaml(man_p)
+    kit = _is_kit_repo(root)
+    delivered = _delivered_tops(man)
+    out = []
+    for tok in _manifest_path_tokens(man):
+        # У дочки проверяем только то, что ей ДОСТАВЛЯЮТ. Остальное — инструменты кита, и их
+        # отсутствие у дочки не дефект, а замысел (см. комментарий у `_delivered_tops`).
+        if not kit and delivered and not tok.startswith(tuple(delivered)):
+            continue
+        if not path_exists(root, tok.rstrip("/")):
+            out.append({"kind": "manifest-path", "ref": tok,
+                        "where": "manifest/ai-ops-manifest.yaml"})
+    return out
 
 
 def _manifest_path_tokens(node):

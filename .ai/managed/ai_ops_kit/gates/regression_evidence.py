@@ -229,9 +229,9 @@ def main(argv):
         ap.print_help()
         return 1
     from ai_ops_kit.shared import project_detector
-    from ai_ops_kit.engine.pipeline_git import _committed_changed_files
+    from ai_ops_kit.shared.gitio import committed_changed_files
     prof = project_detector.load_or_detect(a.root, write=False)
-    res = prove(a.root, a.base_sha, a.head_sha, prof, _committed_changed_files(a.root, a.head_sha))
+    res = prove(a.root, a.base_sha, a.head_sha, prof, committed_changed_files(a.root, a.head_sha))
     print(json.dumps(res, ensure_ascii=False, indent=2) if a.json
           else f"{res['status']}: {res.get('reason', '')}")
     return 0 if res["status"] in ("proven", "not_applicable") else 1

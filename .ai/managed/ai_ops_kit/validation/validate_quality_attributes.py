@@ -27,38 +27,10 @@ try:                                          # v3.34: валидатор дву
 except ImportError:                                # запуск скриптом: корня на пути ещё нет,
     import _bootstrap                              # noqa: F401 — и положить его может только он сам
 from ai_ops_kit.validation import validate_adr_registry as reg  # noqa: E402
-
-ACTIVE = {"accepted"}
-
-
-def profile(adrs: dict) -> dict:
-    """Профиль: attribute -> {effect -> [adr_id...]} по всем ADR."""
-    prof = {}
-    for aid, d in adrs.items():
-        for qa in d.get("quality_attributes", []) or []:
-            attr, eff = qa.get("attribute"), qa.get("effect")
-            if not attr or not eff:
-                continue
-            prof.setdefault(attr, {}).setdefault(eff, []).append(aid)
-    return prof
-
-
-def fitness(adrs: dict):
-    errors = []
-    # (1) degrades без обоснования
-    for aid, d in adrs.items():
-        for qa in d.get("quality_attributes", []) or []:
-            if qa.get("effect") == "degrades" and not (qa.get("note") or "").strip():
-                errors.append(f"{aid}: degrades '{qa.get('attribute')}' без note (скрытая деградация)")
-    # (2) неуправляемое противоречие среди активных ADR
-    active = {aid: d for aid, d in adrs.items() if d.get("status") in ACTIVE}
-    prof = profile(active)
-    for attr, effs in prof.items():
-        if effs.get("improves") and effs.get("degrades") and not effs.get("tradeoff"):
-            errors.append(
-                f"неуправляемое противоречие по '{attr}': improves {effs['improves']} vs "
-                f"degrades {effs['degrades']} без tradeoff-обоснования (осознайте цену или разрешите)")
-    return errors
+# Чистая логика fitness вынесена ВНИЗ (пакет `checks`, слой primitives): рантайм
+# (intelligence.evolution_triggers) зовёт profile() отсюда вниз, без ребра intelligence -> validation.
+# profile/fitness/ACTIVE ре-экспортируются для обратной совместимости (лента №5).
+from ai_ops_kit.checks.quality_attributes import ACTIVE, fitness, profile  # noqa: E402,F401
 
 
 def main(argv):

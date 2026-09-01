@@ -30,6 +30,24 @@ PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is
 DEFAULT_SUBDIRS = ("ai_ops_kit", "tools", "validation")
 JS_TS_EXTENSIONS = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
 
+# `.ai/` — ОБЛАСТЬ КИТА В ДОЧКЕ, А НЕ КОД ПРОДУКТА (F-022, корень).
+#
+# Прежде каталога здесь не было, и в дочке граф разбирал доставленную копию кита, ЕЁ БЭКАПЫ
+# (`.ai/runtime/backups/<версия>/`) и копии дерева в `.ai/worktrees/<работа>/` наравне с продуктом.
+# ЗАМЕР на niti (Next.js/Turborepo, собственного Python нет вовсе):
+#   Python  4094 файла в графе, из них 4094 внутри `.ai/` — 100%: 1891 бэкапы, 1650 один worktree,
+#           241 managed. То есть весь «граф кода продукта» состоял из кита, отражённого в себя;
+#   JS/TS   2507 в графе, 1625 (64%) — копии в `.ai/worktrees`, то есть каждый реальный файл
+#           продукта считался примерно трижды.
+# Цена не косметическая: по этому графу считаются `impact()` и `affected_tests()` — «какие тесты
+# задеты правкой». На таком входе ответ либо про чужие файлы, либо пустой.
+# Видимым это стало через предупреждение из СТАРОЙ копии кита (`.ai/managed/tools/context_hybrid.py`
+# версии 3.27.7, где докстринг ещё не был raw-строкой): `<unknown>:11: invalid escape sequence`.
+# Свой докстринг кит починил 08.08 (8f6aac4), но у дочки лежала копия ДО этой правки — и он
+# исправно разбирал её как код продукта.
+PY_SKIP_DIRS = (".git", "node_modules", "venv", ".venv", "__pycache__", ".ai")
+JS_SKIP_DIRS = ("node_modules", "dist", "build", ".next", "coverage", ".ai")
+
 
 def _py_files(root: Path, subdirs=None, path_filter=None):
     """Найти Python файлы. Если subdirs=None — искать во всём репо."""
@@ -42,9 +60,8 @@ def _py_files(root: Path, subdirs=None, path_filter=None):
             # v3.7.0: access pre-filter — denied-путь НЕ читается для графа
             if path_filter is not None and not path_filter(str(p.relative_to(root))):
                 continue
-            # Пропускаем venv, .git, node_modules
             parts = p.relative_to(root).parts
-            if any(skip in parts for skip in (".git", "node_modules", "venv", ".venv", "__pycache__")):
+            if any(skip in parts for skip in PY_SKIP_DIRS):
                 continue
             out.append(p)
     return out
@@ -59,9 +76,8 @@ def _js_ts_files(root: Path, subdirs=None, path_filter=None):
             continue
         for ext in JS_TS_EXTENSIONS:
             for p in sorted(d.rglob(f"*{ext}")):
-                # Пропускаем node_modules, dist, build
                 parts = p.relative_to(root).parts
-                if any(skip in parts for skip in ("node_modules", "dist", "build", ".next", "coverage")):
+                if any(skip in parts for skip in JS_SKIP_DIRS):
                     continue
                 if path_filter is not None and not path_filter(str(p.relative_to(root))):
                     continue
@@ -72,7 +88,11 @@ def _js_ts_files(root: Path, subdirs=None, path_filter=None):
 def _analyze(path: Path):
     """(symbols, imported_module_stems) Python-файла через ast; все Import/ImportFrom (вкл. в функциях)."""
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        # ИМЯ ФАЙЛА ОБЯЗАТЕЛЬНО (F-022). `ast.parse` без него подписывает предупреждения
+        # интерпретатора как `<unknown>`, и владелец получал в вывод прогона строку
+        # `<unknown>:11: invalid escape sequence`, по которой нельзя ни починить, ни осознанно
+        # пропустить: непонятно даже, чей это файл — его продукта или кита.
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except (SyntaxError, OSError):
         return [], set()
     symbols = [n.name for n in tree.body

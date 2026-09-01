@@ -14,56 +14,20 @@ from pathlib import Path
 
 import yaml
 
+try:                                          # v3.38: валидатор двурежимен (лента №4)
+    from ai_ops_kit.validation import _bootstrap   # noqa: F401 — импорт пакетом (после pip install)
+except ImportError:                                # запуск скриптом: корня на пути ещё нет,
+    import _bootstrap                              # noqa: F401 — и положить его может только он сам
+# Проверяющая логика вынесена ВНИЗ (пакет `checks`, слой primitives): и рантайм (security_enforcement),
+# и эта CLI-обёртка импортируют её вниз — без восходящего ребра security -> validation. check и
+# константы ре-экспортируются для обратной совместимости (тесты и старые вызовы
+# `validate_memory_governance.check`).
+from ai_ops_kit.checks.memory_governance import (   # noqa: E402
+    EXPIRY_MODES, SOURCE_TYPES, check)              # noqa: F401
+
 PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is_file()),
             Path(__file__).resolve().parents[1])
 DEFAULT = PKG / "examples" / "memory-governance-demo" / "MGP-001.yaml"
-SOURCE_TYPES = {"human", "external", "derived", "system"}
-EXPIRY_MODES = {"ttl_days", "review_date", "permanent"}
-
-
-def check(data):
-    e = []
-    if not isinstance(data, dict):
-        return ["MemoryGovernancePolicy не объект"]
-    if data.get("schema_version") != 1:
-        e.append("schema_version должен быть 1")
-    if data.get("kind") != "MemoryGovernancePolicy":
-        e.append("kind должен быть MemoryGovernancePolicy")
-    if not str(data.get("policy_id", "")).startswith("MGP-"):
-        e.append("policy_id должен быть MGP-NNN")
-    entries = data.get("entries")
-    if not isinstance(entries, list) or not entries:
-        return e + ["entries непустой список обязателен"]
-    seen = set()
-    for en in entries:
-        if not isinstance(en, dict):
-            e.append("entry не объект"); continue
-        eid = en.get("id") or "?"
-        if eid in seen:
-            e.append(f"дубликат id записи: {eid}")
-        seen.add(eid)
-        prov = en.get("provenance")
-        if not isinstance(prov, dict) or not prov.get("origin"):
-            e.append(f"{eid}: нет provenance.origin")
-        elif prov.get("source_type") not in SOURCE_TYPES:
-            e.append(f"{eid}: provenance.source_type ∉ {sorted(SOURCE_TYPES)}")
-        elif prov.get("source_type") == "derived" and not (prov.get("upstream")):
-            e.append(f"{eid}: derived-память без upstream-ссылок")
-        exp = en.get("expiry")
-        if not isinstance(exp, dict) or exp.get("mode") not in EXPIRY_MODES:
-            e.append(f"{eid}: expiry.mode ∉ {sorted(EXPIRY_MODES)}")
-        else:
-            m, v = exp.get("mode"), exp.get("value")
-            if m == "ttl_days" and not (isinstance(v, int) and v > 0):
-                e.append(f"{eid}: expiry ttl_days требует value>0")
-            if m == "review_date" and not v:
-                e.append(f"{eid}: expiry review_date требует value")
-            if m == "permanent" and not exp.get("justification"):
-                e.append(f"{eid}: permanent-память требует justification (иначе бессрочная память без причины)")
-        # no-self-ingestion: собственный вывод агента не авторитетен без подтверждения человека
-        if en.get("self_ingested") is True and en.get("human_confirmed") is not True:
-            e.append(f"{eid}: self_ingested=true без human_confirmed — запрет self-ingestion")
-    return e
 
 
 def main(argv):

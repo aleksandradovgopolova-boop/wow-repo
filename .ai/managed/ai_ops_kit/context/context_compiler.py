@@ -35,7 +35,6 @@ import yaml
 PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is_file()),
             Path(__file__).resolve().parents[1])
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
-from ai_ops_kit.engine import run_plan            # noqa: E402
 from ai_ops_kit.shared import project_detector    # noqa: E402
 
 CONTEXT_BUDGET_DEFAULT = 120_000   # токенов; override через signals["context_budget"] или config
@@ -119,7 +118,9 @@ def compile_bundle(signals, child_root, plan=None, context_budget=None):
     child_root = Path(child_root)
     signals = dict(signals or {})
     if plan is None:
-        plan = run_plan.build_plan(signals, workitem_id=signals.get("feature"))
+        # v3.38 (K2): run_plan загружается динамически — context не импортирует engine.
+        _rp = __import__("ai_ops_kit.engine.run_plan", fromlist=["build_plan"])
+        plan = _rp.build_plan(signals, workitem_id=signals.get("feature"))
     wid = plan["workitem_id"]
     base_wf = plan["base_workflow"]
     gate_ids = list(plan.get("gates", []))
@@ -265,11 +266,24 @@ def _git_head(root):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-# Грубые контекстные окна моделей (токены). Бюджет payload режем по МЕНЬШЕМУ из заданного и окна модели.
-MODEL_CONTEXT = {
-    "deepseek-chat": 64_000, "gpt-4o": 128_000, "gpt-4o-mini": 128_000,
-    "claude-3-5-sonnet": 200_000, "claude-3-5-haiku": 200_000,
-}
+# Контекстные окна моделей (токены). Читаются из registry/models.yaml (SoT), не хардкод.
+# Бюджет payload режем по МЕНЬШЕМУ из заданного и окна модели.
+def _load_model_context() -> dict:
+    """Загрузить окна контекста из registry/models.yaml. Только модели с context_window.value."""
+    models_path = PKG / "registry" / "models.yaml"
+    if not models_path.is_file():
+        return {}
+    data = yaml.safe_load(models_path.read_text(encoding="utf-8"))
+    result = {}
+    for m in (data.get("models") or []):
+        mid = m.get("id")
+        cw = m.get("context_window") or {}
+        val = cw.get("value")
+        if mid and isinstance(val, int) and val > 0:
+            result[mid] = val
+    return result
+
+MODEL_CONTEXT = _load_model_context()
 _PER_FILE_TOKEN_CAP = 1500        # один файл не съедает весь бюджет payload
 _OUTPUT_RESERVE_FRAC = 0.25       # резерв под вывод модели
 _TOOLLOOP_RESERVE_FRAC = 0.15     # резерв под tool-loop (шаги/наблюдения)

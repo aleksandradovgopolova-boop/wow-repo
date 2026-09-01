@@ -39,6 +39,35 @@ REQUIRED_STATES = ("default", "loading", "empty", "error")
 EXTRA_STATES = ("restricted",)
 ALL_STATES = REQUIRED_STATES + EXTRA_STATES
 
+# Experience Contract подключённого репозитория: сторона СОЗДАНИЯ опыта. Первый существующий
+# побеждает — те же конвенции, что у остальных артефактов.
+_EXPERIENCE_CONTRACT = (".ai/project/experience-contract.yaml",
+                        "docs/experience-contract.yaml",
+                        ".ai/ui-evidence/experience-contract.yaml")
+
+
+def _load_experience_contract(root):
+    """Контракт опыта дочки, если он есть. -> dict | None.
+
+    Отсутствие контракта — ЗАКОННОЕ состояние (не каждый продукт его завёл), поэтому None, а не
+    ошибка. Нечитаемый контракт — тоже None, но об этом узнает валидатор контракта: угадывать
+    состав опыта по битому файлу здесь нельзя.
+    """
+    for rel in _EXPERIENCE_CONTRACT:
+        p = Path(root) / rel
+        if not p.is_file():
+            continue
+        import yaml as _y
+        try:
+            doc = _y.safe_load(p.read_text(encoding="utf-8"))
+        # Узкий тип: файл может не читаться или не разбираться. Любое ДРУГОЕ исключение здесь —
+        # дефект, и он обязан всплыть, а не превратиться в «контракта нет».
+        except (OSError, _y.YAMLError):
+            return None
+        return doc if isinstance(doc, dict) else None
+    return None
+
+
 # Конвенциональные места артефактов в child-репо (первый существующий побеждает).
 _STORY_INDEX = ("storybook-static/index.json", "storybook-static/stories.json",
                 ".storybook-out/index.json")
@@ -261,7 +290,23 @@ def build_bundle(child_root, commit_sha=None, changed_files=None) -> dict:
     hay = " ".join((s.get("name", "") + " " + s.get("id", "")).lower() for s in aff)
     for st in ALL_STATES:
         covered[st] = st in hay
+    # ТРЕБОВАНИЕ БЕРЁТСЯ ИЗ КОНТРАКТА, ЕСЛИ ОН ЕСТЬ (20.08.2026, `experience-contract-drives-stories`).
+    #
+    # ЗАМЕР. Здесь стоял только общий список `REQUIRED_STATES`, а сторона СОЗДАНИЯ выводила
+    # состояния из Experience Contract. Половины механизма не встречались: состояние, которое
+    # владелец описал сверх обязательных (скажем, `restricted` со своим condition), в требование
+    # не попадало — то есть контракт объявлял опыт, а гейт его не спрашивал.
+    #
+    # Теперь требование — ОБЪЕДИНЕНИЕ: обязательные (их гарантирует генератор stories) плюс то,
+    # что владелец описал сам. Контракта нет — работает прежнее поведение, ничего не ужесточая:
+    # требовать по контракту, которого не существует, значило бы придумать требование.
     required = list(REQUIRED_STATES) if affected_stories else []
+    if affected_stories:
+        _contract = _load_experience_contract(root)
+        if _contract:
+            from ai_ops_kit.ui.experience_contract import generate_stories as _gen
+            _from_contract = {str(st.get("state")) for st in _gen(_contract) if st.get("state")}
+            required = sorted(set(required) | {s for s in _from_contract if s in ALL_STATES})
     missing = [st for st in required if not covered.get(st)]
     state_coverage = {"required": required, "states": covered, "missing": missing,
                       "complete": not missing}

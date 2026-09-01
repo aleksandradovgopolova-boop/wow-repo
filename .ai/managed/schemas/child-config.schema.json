@@ -25,9 +25,11 @@
         },
         "update_channel": {
           "type": "string",
+          "description": "Канал обновлений. Словарь тот же, что у пакета (registry/release-claims.yaml -> channels): edge — то, что влито в main, без гарантий; qualification — выпущен тег и свой контур зелёный; stable — обкатан в поле на двух живых дочках. Прежде здесь стояло [stable, beta]: 'beta' не существовало нигде, кроме этого перечисления, а 'stable' дочка объявляла в каждой установке — и не читала ни одна строка кода.",
           "enum": [
-            "stable",
-            "beta"
+            "edge",
+            "qualification",
+            "stable"
           ]
         },
         "update_policy": {

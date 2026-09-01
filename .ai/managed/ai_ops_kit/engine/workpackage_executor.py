@@ -28,7 +28,7 @@ from pathlib import Path
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
 def _git(root, *a):
-    from ai_ops_kit.engine import gitio
+    from ai_ops_kit.shared import gitio
     return gitio.git(root, *a)   # v3.0.13 (блок C): единый git-хелпер с таймаутом
 
 
@@ -76,7 +76,7 @@ def _durable_write_yaml(path, data, require_keys=()):
     lifecycle-артефакта. Делегирует ЕДИНОМУ durable-контракту lifecycle_store.durable_write (tmp ->
     flush+fsync(файл) -> atomic rename -> fsync(КАТАЛОГ) -> перечитать+провалидировать). Прежде здесь была
     отдельная копия БЕЗ fsync каталога — теперь один источник истины для всех durable-записей."""
-    from ai_ops_kit.lifecycle import lifecycle_store
+    from ai_ops_kit.shared import lifecycle_store
     return lifecycle_store.durable_write(path, data, require_keys=require_keys)
 
 
@@ -449,14 +449,19 @@ def _collect_base_checks_at(child_root, base_sha, sandbox):
             return None
         pol = (_tb.sandbox_policy(child_root=str(tmp)) if sandbox
                else _tb.Policy(level="execution", child_root=str(tmp), block_push=True))
-        checks = _ec.collect(_pd.detect(tmp), tmp, pol)["checks"]
+        checks = _ec.collect(_pd.detect(tmp), tmp, pol, broker=_tb)["checks"]
         return {"checks": checks, "sha": base_sha, "proven": True}
     except Exception:  # noqa: BLE001
         return None
     finally:
+        # Причина подавления ЗАПИСАНА (срез engine ратчета 2026-08-12): это УБОРКА в `finally`, и её
+        # отказ не участвует ни в одном утверждении — baseline уже либо доказан, либо нет (`return`
+        # выше). Ронять здесь означало бы подменить результат baseline ошибкой удаления временного
+        # worktree. Цена отказа — оставленный каталог в `.ai/worktrees/`, видимый и в `git worktree
+        # list`, и в дереве; это мусор, а не ложный green.
         try:
             _git(child_root, "worktree", "remove", "--force", str(tmp))
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001,S110 — уборка после уже вынесенного вердикта: отказ не меняет baseline
             pass
 
 
@@ -480,7 +485,7 @@ def _aggregate_verify(child_root, wid, sandbox, final_sha, base_checks, sequence
         revision_ok = (head_sha == final_sha)
         _vpol = (_tb2.sandbox_policy(child_root=str(vroot)) if sandbox
                  else _tb2.Policy(level="execution", child_root=str(vroot), block_push=True))
-        coll = _ec2.collect(_pd2.detect(vroot), vroot, _vpol)
+        coll = _ec2.collect(_pd2.detect(vroot), vroot, _vpol, broker=_tb2)
         final_checks = coll["checks"]
         _is_git = _git(vroot, "rev-parse", "--is-inside-work-tree")[0] == 0
         tree_clean = _ep._tree_clean_after_checks(vroot) if _is_git else True
@@ -500,7 +505,9 @@ def _aggregate_verify(child_root, wid, sandbox, final_sha, base_checks, sequence
             agg_sec, vroot, _base_sha, final_sha, signals, reviewer_proposer, review,
             security_reviewer_proposer=security_reviewer_proposer,
             strict_judge_qualified=strict_judge_qualified, wid=wid, child_root=child_root)
-        agg_sec_ok = (agg_sec or {}).get("overall") == "clear"
+        # `advisory` наравне с `clear`: домены, поднятые только совпадением по содержимому и без
+        # находок, не держат агрегат — тот же выбор, что и на гейте (`security_pack._content_only`).
+        agg_sec_ok = (agg_sec or {}).get("overall") in ("clear", "advisory")
         agg_code_ok, agg_code_reviews = _aggregate_code_review(
             vroot, _base_sha, final_sha, signals, reviewer_proposer, review)
         return {"verified": True, "regressions": agg_reg, "no_regressions": not agg_reg,
@@ -511,32 +518,148 @@ def _aggregate_verify(child_root, wid, sandbox, final_sha, base_checks, sequence
                 "evidence_revision_ok": (coll.get("revision") == final_sha),
                 "security_overall": (agg_sec or {}).get("overall"), "security_ok": agg_sec_ok,
                 "security_reviewer_status": (agg_sec or {}).get("reviewer_status"),
+                # ТА ЖЕ БОЛЕЗНЬ НА ПОСЛЕДОВАТЕЛЬНОМ ПУТИ (заявка #139): наружу уходил только
+                # `overall`, и человек, которому гейт назвал блокирующие домены, не мог увидеть ни
+                # одной находки. Проекция та же, что у одиночного прогона — одна правда об охвате и
+                # находках, а не два разных ответа на один вопрос.
+                "security_scan": _sp2.for_report(agg_sec),
                 "code_review_ok": agg_code_ok, "code_reviews": agg_code_reviews,
                 "checks": {k: (v or {}).get("status") for k, v in (final_checks or {}).items()}}
     except Exception as e:  # noqa: BLE001
         return {"verified": False, "error": str(e)}
 
 
-def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
-                     features_dir=None, base=None, provider_name="mock", model=None,
-                     author=False, author_proposer=None, review=False, reviewer_proposer=None,
-                     baseline_diff=True, install_deps=False, signals_for=None,
-                     sandbox=False, open_pr=False, max_steps=40, write_scope_for=None, resume_from=None,
-                     security_reviewer_proposer=None, strict_judge_qualified=True):
-    """Исполнить список WorkPackages последовательно. proposer_for(pkg)->proposer; signals_for(pkg)->
-    доп. сигналы пакета (опц.); write_scope_for(pkg)->список путей write-scope пакета (опц.).
-    v2.120: НАСЛЕДУЕТ sandbox/install_deps/max_steps/провайдера обычного пути (containment не теряется);
-    open_pr применяется к финальному пакету (интегрированная ветка). -> {kind, workitem_id, packages,
-    completed, stopped_at, executed_all, ready_all, final_sha, sequential_chain}."""
-    from ai_ops_kit.engine import ai_ops_run
-    child_root = Path(child_root)
-    features_dir = Path(features_dir) if features_dir else child_root / "features"
-    wid = feature
-    ordered = _ordered(packages)
-    results, completed, stopped_at, final_sha = [], set(), None, None
-    prev_sha = None
-    chain_ok = True
+def _resolve_start_index(ordered, resume_from, wid):
+    # v2.124: resume с КОНКРЕТНОГО пакета — пакеты до него считаются исполненными в прошлом прогоне
+    # (их SHA/готовность восстанавливаются из снимков work-packages/<pid>/report.json).
+    start_index = 0
+    if resume_from:
+        _ids = [p.get("id") for p in ordered]
+        # v3.0-rc2 (P0.3): неизвестный resume_from -> ОШИБКА, а не тихий старт с нуля.
+        if resume_from not in _ids:
+            return None, _seq_err(wid, ordered,
+                    f"resume_from='{resume_from}' нет в SequencePlan (пакеты: {_ids})")
+        start_index = _ids.index(resume_from)
+    return start_index, None
 
+
+def _collect_baseline(child_root, sequence_base_sha, sandbox):
+    # v3.0-rc16/rc20 (finding аудита P0): baseline СТРОГО на sequence_base_sha (detached worktree с
+    # проверкой HEAD). rc20: БЕЗ fallback на child_root — если baseline не доказан на точной базе,
+    # aggregate НЕДОСТУПЕН (baseline_proven=False) -> PR не открывается. Иначе sequence от develop мог
+    # сравниться с baseline от main -> false green.
+    _base_res = _collect_base_checks_at(child_root, sequence_base_sha, sandbox)
+    base_checks = (_base_res or {}).get("checks") if _base_res else None
+    baseline_proven = bool(_base_res and _base_res.get("proven"))
+    return base_checks, baseline_proven
+
+
+def _compute_aggregate_verdict(completed, ordered, stopped_at, results, final_sha, chain_ok,
+                               base_drift, child_root, wid, sandbox, base_checks, sequence_base_sha,
+                               signals, reviewer_proposer, review, baseline_proven,
+                               security_reviewer_proposer, strict_judge_qualified):
+    executed_all = len(completed) == len(ordered) and stopped_at is None
+    ready_all = executed_all and all(r.get("ready") for r in results)
+
+    # v2.124: AGGREGATE verification на ФИНАЛЬНОМ интегрированном SHA — перепроверяем результат ЦЕЛИКОМ
+    # (не только конъюнкцию per-package вердиктов), чтобы поймать межпакетные взаимодействия (каждый
+    # пакет зелен по отдельности, но интеграция сломана). Сравниваем финальные проверки с БАЗОЙ (до п.1).
+    # v3.0.13 (блок C): тело aggregate-верификации вынесено в _aggregate_verify (чистый вход->dict) —
+    # execute_sequence перестал быть god-функцией на этом участке, поведение идентично.
+    aggregate = {"verified": False}
+    if executed_all and final_sha:
+        aggregate = _aggregate_verify(child_root, wid, sandbox, final_sha, base_checks,
+                                      sequence_base_sha, signals, reviewer_proposer, review, baseline_proven,
+                                      security_reviewer_proposer=security_reviewer_proposer,
+                                      strict_judge_qualified=strict_judge_qualified)
+    # v3.0-rc2/rc4 (P0.4/P1.1): FAIL-CLOSED. aggregate_ready ТОЛЬКО если верификация РЕАЛЬНО выполнена
+    # И чиста: verified, нет регрессий, HEAD==final_sha, evidence на final_sha, дерево чистое, агрегатный
+    # security clear на полном диффе. Сбой/недоступность -> НЕ ready.
+    # v3.0-rc20 (finding аудита P0): + baseline ДОКАЗАН на точной sequence_base_sha (нет fallback-базы),
+    # + НЕТ base_drift (base-ветка не сдвинулась с начала цепочки) — иначе evidence против не той базы.
+    agg_ok = bool(aggregate.get("verified") and aggregate.get("no_regressions")
+                  and aggregate.get("baseline_proven")
+                  and aggregate.get("revision_ok") and aggregate.get("tree_clean")
+                  and aggregate.get("evidence_revision_ok") and aggregate.get("security_ok")
+                  and aggregate.get("code_review_ok", True))
+    aggregate_ready = ready_all and chain_ok and agg_ok and (base_drift is None)
+    return executed_all, ready_all, aggregate, aggregate_ready
+
+
+def _deliver_pr(open_pr, aggregate_ready, final_sha, child_root, wid, base, sequence_base_sha,
+                task, ordered):
+    from ai_ops_kit.engine import execution_pipeline as _ep
+    # v2.124 (P0.4): доставка draft PR — ОТДЕЛЬНЫЙ шаг ПОСЛЕ агрегатного вердикта, на финальном
+    # интегрированном SHA. PR открывается ТОЛЬКО при aggregate_ready — не по готовности отдельного пакета.
+    pr, delivery = None, {"requested": bool(open_pr), "status": "not-requested" if not open_pr else None}
+    if open_pr:
+        if aggregate_ready and final_sha:
+            wt = child_root / ".ai" / "worktrees" / wid
+            _drt = wt if wt.is_dir() else child_root
+            # v3.0-rc20 (finding аудита P0): DELIVERY BASE BINDING — evidence собрано против
+            # sequence_base_sha; перед PR сверяем АКТУАЛЬНУЮ remote base с этой базой. Разошлась
+            # (remote main сдвинулся после старта цепочки) -> НЕ открываем PR (проверенное состояние
+            # != потенциальному merge-состоянию); нужна ревалидация. Иначе — «verified» PR был бы ложью.
+            # v3.0.9 (finding аудита P0): ЕДИНЫЙ fail-closed RemoteBaseVerifier (как single-run). Раньше
+            # sequential был fail-OPEN: remote_base=None (нет origin/сети/ветки) -> else -> открывал PR.
+            # Теперь: verified-equal -> PR; verified-moved -> revalidation; unverifiable -> unavailable.
+            _rv = _ep._verify_remote_base(_drt, base, sequence_base_sha)
+            _vd = _rv.get("verdict")
+            if _vd == "verified-equal":
+                try:
+                    from ai_ops_kit.delivery import pr_open
+                    pr = pr_open.open_draft_pr(_drt, f"ai-ops/{wid}", base=base,
+                                               title=f"ai-ops: {task[:60]}",
+                                               body=(f"Sequential WorkPackages: {len(ordered)} пакет(ов). "
+                                                     f"База {base} ({(sequence_base_sha or '?')[:12]}) → финал {final_sha}. "
+                                                     f"Агрегатный вердикт: aggregate_ready."))
+                    delivery["status"] = (pr or {}).get("status") or "failed"
+                    delivery["validated_base"] = sequence_base_sha
+                    delivery["base_ref"] = base
+                except Exception as e:  # noqa: BLE001
+                    delivery["status"] = "failed"
+                    delivery["error"] = str(e)
+            elif _vd == "verified-moved":
+                delivery["status"] = "not-attempted"
+                delivery["base_moved"] = {"base_ref": base, "validated_base": sequence_base_sha,
+                                          "remote_base": _rv.get("remote_sha")}
+                delivery["reason"] = ("remote base сдвинулась с момента сбора evidence — нужна ревалидация; "
+                                      "PR не открыт (иначе непроверенное merge-состояние)")
+            else:   # unverifiable -> доставка НЕДОСТУПНА (fail-closed), НЕ открываем PR
+                delivery["status"] = "unavailable"
+                delivery["reason"] = f"remote-base-unverified: {_rv.get('reason')} — доставка невозможна fail-closed"
+        else:
+            delivery["status"] = "not-attempted"   # последовательность не готова -> PR НЕ открываем
+    return pr, delivery
+
+
+def _finalize_sequence_report(wid, results, completed, stopped_at, executed_all, ready_all,
+                              aggregate_ready, final_sha, chain_ok, ordered, sequence_base_sha,
+                              base_drift, aggregate, delivery, pr, resume_from, features_dir):
+    seq = {"schema_version": 1, "kind": "WorkPackageSequence", "workitem_id": wid,
+           "packages": results, "completed": sorted(completed), "stopped_at": stopped_at,
+           "executed_all": executed_all, "ready_all": ready_all, "aggregate_ready": aggregate_ready,
+           "final_sha": final_sha, "sequential_chain": chain_ok, "total": len(ordered),
+           "sequence_base_sha": sequence_base_sha, "base_drift": base_drift,   # rc16 (P0/P1)
+           "aggregate": aggregate, "delivery": delivery, "draft_pr": pr,
+           "resumed_from": resume_from}
+    # v3.0.14 (finding аудита #2): sequence-report — durable (атомарно); сбой фиксируем в отчёте, не молчим
+    from ai_ops_kit.shared import lifecycle_store as _ls2
+    # Срез engine ратчета 2026-08-12: пропущенные записи журнала называются в ОТЧЁТЕ, а не только в
+    # возврате, который никто не читал. Слив ДО durable_write — иначе на диске лёг бы отчёт, из
+    # которого утрата исчезла. Слив обнуляет накопитель: та же утрата не приедет во второй отчёт.
+    _ls2.merge_bookkeeping_losses(seq)
+    _sr = _ls2.durable_write(features_dir / wid / "sequence-report.yaml", seq)
+    if not _sr.get("ok"):
+        seq["report_persist_error"] = _sr.get("error")
+    return seq
+
+
+def _resolve_sequence_plan(ordered, features_dir, wid, base, resume_from, child_root):
+    """Разрешить/зафиксировать IMMUTABLE SequencePlan и base-контракт последовательности.
+    Возвращает (base, sequence_base_sha, base_drift, err): err != None -> последовательность не
+    запускается (lifecycle-corrupted / plan-drift / base-contract-drift / base-preflight / fail-closed
+    записи плана). Поведение идентично прежнему инлайну execute_sequence."""
     # v2.124/v3.0-rc4 (P0.3): IMMUTABLE parent SequencePlan С ХЭШАМИ. Фиксируем порядок/зависимости
     # ОДИН раз; при повторном вызове план мог быть перестроен planner'ом (тот же id — другой scope).
     # Если сохранённый план существует и его hash РАСХОДИТСЯ с текущим -> дрейф: resume запрещён
@@ -548,9 +671,14 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
     # v3.0.8 (finding аудита P0.3): ФАЙЛ ОТСУТСТВУЕТ -> fresh; ЕСТЬ и валиден -> resume/existing; ЕСТЬ, но
     # НЕЧИТАЕМ/невалиден -> lifecycle-corrupted, ОСТАНОВКА (не молчаливая перезапись повреждённого источника).
     import yaml as _y
+    # Причина подавления ЗАПИСАНА (срез engine ратчета 2026-08-12): отказ создания каталога НЕ
+    # теряется — он проявляется ниже, на записи SequencePlan через `_durable_write_yaml`, и там путь
+    # fail-closed: `_wr.ok == False` -> `_seq_err(... lifecycle fail-closed ...)`, последовательность
+    # не запускается. Проверено по коду, а не предположено. Падать здесь значило бы сообщить об
+    # `mkdir` вместо того сообщения, которое человек может использовать.
     try:
         pdir.mkdir(parents=True, exist_ok=True)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001,S110 — отказ проявится fail-closed на записи SequencePlan ниже
         pass
     if _sp.exists():
         try:
@@ -565,11 +693,15 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
         if _corrupt_reason is not None or _schema_err is not None:
             import hashlib as _h
             _raw = b""
+            # Причина подавления ЗАПИСАНА (срез engine ратчета 2026-08-12): байты читаются ТОЛЬКО
+            # чтобы приложить sha256 повреждённого файла к сообщению. Сам вердикт уже вынесен —
+            # ниже безусловный `return _seq_err(... lifecycle-corrupted ...)`. Не прочитали ->
+            # `corrupt_sha256=None`, то есть отчёт теряет подробность, но не меняет решение.
             try:
                 _raw = _sp.read_bytes()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001,S110 — только для sha256 в сообщении; вердикт уже fail-closed
                 pass
-            return _seq_err(wid, ordered,
+            return None, None, None, _seq_err(wid, ordered,
                     (f"lifecycle-corrupted: {_sp} существует, но невалиден "
                      f"({_corrupt_reason or _schema_err}) — выполнение запрещено "
                      f"(повреждён источник истины). Нужна явная recovery, не автоперезапись."),
@@ -583,7 +715,7 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
     # ЛЮБОМ существующем плане (не только resume_from): другой plan_hash от текущих пакетов = planner
     # перестроил план, исполнять по нему поверх старых отчётов небезопасно. Нужен явный replan.
     if saved_plan and saved_plan.get("plan_hash") and saved_plan["plan_hash"] != cur_plan_hash:
-        return _seq_err(wid, ordered,
+        return None, None, None, _seq_err(wid, ordered,
                 ("SequencePlan дрейфнул с прошлого прогона (planner перестроил пакеты) — "
                  "resume по старым отчётам небезопасен. Нужен явный replan (пересобрать план "
                  "и переисполнить с нуля), а не resume_from."),
@@ -593,7 +725,7 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
     from ai_ops_kit.engine import execution_pipeline as _ep
     if saved_plan and saved_plan.get("base_ref"):
         if resume_from and base and base != saved_plan["base_ref"]:
-            return _seq_err(wid, ordered,
+            return None, None, None, _seq_err(wid, ordered,
                     (f"base-contract-drift: последовательность зафиксирована на base_ref="
                      f"'{saved_plan['base_ref']}', а передан --base '{base}'. Смена базы = другой "
                      f"контракт доставки — нужен явный replan, не resume с новой базой."))
@@ -601,7 +733,7 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
     else:
         _br = _ep._resolve_base(child_root, base)   # base=None -> auto; явная -> строго
         if _br.get("mode") == "explicit" and not _br.get("resolved"):
-            return _seq_err(wid, ordered,
+            return None, None, None, _seq_err(wid, ordered,
                     (f"base-preflight: явная база '{base}' не разрешается в ветку "
                      f"({_br.get('reason')}) — последовательность не запущена (ноль пакетов)"))
         base = _br.get("base_ref") or base
@@ -633,60 +765,155 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
         _wr = _durable_write_yaml(_sp, _plan_doc,
                                   require_keys=("plan_hash", "base_ref", "sequence_base_sha", "packages"))
         if not _wr.get("ok"):
-            return _seq_err(wid, ordered,
+            return None, None, None, _seq_err(wid, ordered,
                     (f"lifecycle fail-closed: не удалось надёжно сохранить SequencePlan "
                      f"({_wr.get('error')}) — без immutable-плана нельзя доказать base/порядок/"
                      f"hashes/checkpoint/sequence_base_sha; последовательность не запущена"))
         saved_plan = _plan_doc
 
-    # v3.0-rc16/rc20 (finding аудита P0): baseline СТРОГО на sequence_base_sha (detached worktree с
-    # проверкой HEAD). rc20: БЕЗ fallback на child_root — если baseline не доказан на точной базе,
-    # aggregate НЕДОСТУПЕН (baseline_proven=False) -> PR не открывается. Иначе sequence от develop мог
-    # сравниться с baseline от main -> false green.
-    _base_res = _collect_base_checks_at(child_root, sequence_base_sha, sandbox)
-    base_checks = (_base_res or {}).get("checks") if _base_res else None
-    baseline_proven = bool(_base_res and _base_res.get("proven"))
+    return base, sequence_base_sha, base_drift, None
 
-    # v2.124: resume с КОНКРЕТНОГО пакета — пакеты до него считаются исполненными в прошлом прогоне
-    # (их SHA/готовность восстанавливаются из снимков work-packages/<pid>/report.json).
-    start_index = 0
-    if resume_from:
-        _ids = [p.get("id") for p in ordered]
-        # v3.0-rc2 (P0.3): неизвестный resume_from -> ОШИБКА, а не тихий старт с нуля.
-        if resume_from not in _ids:
-            return _seq_err(wid, ordered,
-                    f"resume_from='{resume_from}' нет в SequencePlan (пакеты: {_ids})")
-        start_index = _ids.index(resume_from)
+
+def _verify_resumed_package(pid, features_dir, wid, rev_root, branch):
+    """K6: вынесено из execute_sequence без изменения поведения (был вложенный `_verify_skipped`).
+    v3.0-rc2 (P0.3): пакет ДО resume_from подтверждён ТОЛЬКО если отчёт есть, SHA есть, SHA — коммит
+    в sequence-ветке и предок её HEAD, пакет executed и без hard-блокера. Возвращает (rep, why):
+    rep=None + причина, если пропуск НЕ подтверждён."""
+    prior = features_dir / wid / "work-packages" / pid / "report.json"
+    if not prior.is_file():
+        return None, "нет отчёта прошлого прогона"
+    try:
+        rep = json.loads(prior.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return None, f"битый отчёт: {e}"
+    sha = (rep.get("commit") or {}).get("sha")
+    if not sha:
+        return None, "в отчёте нет commit SHA"
+    if _git(rev_root, "cat-file", "-e", sha + "^{commit}")[0] != 0:
+        return None, f"SHA {sha[:8]} не существует в репозитории"
+    if _git(rev_root, "merge-base", "--is-ancestor", sha, branch)[0] != 0:
+        return None, f"SHA {sha[:8]} не в sequence-ветке {branch} (не предок HEAD)"
+    if not rep.get("ready_for_pr") and _hard_stop(rep) is not None:
+        return None, f"пакет имел hard-блокер: {_hard_stop(rep)}"
+    return rep, None
+
+
+def _build_package_signals_and_task(pkg, pid, task, signals, signals_for, ordered):
+    """K6: вынесено из execute_sequence без изменения поведения. Готовит per-package сигналы и текст
+    задачи. Сигналы: affected_areas/size/work_package_id + АВТОРИТЕТНЫЙ список id плана
+    (_sequence_plan_ids), против которого preflight валидирует work_package_id (P0.4/P0.5), и метка
+    _sequence_internal (v3.0-rc4 P0.1: внутренний per-package resume ≠ replan). Текст: явные границы
+    пакета (v3.0-rc19, finding живого sequential) — writer пишет ТОЛЬКО в свою подсистему/write_scope,
+    что убирает первопричину out-of-scope записей, НЕ ослабляя containment (брокер/post-diff в силе;
+    ревьюер судит независимо). Возвращает (sig_pkg, pkg_task)."""
+    sig_pkg = dict(signals or {})
+    sig_pkg["affected_areas"] = pkg.get("scope") or sig_pkg.get("affected_areas") or ["core"]
+    sig_pkg["size"] = "small"
+    sig_pkg["work_package_id"] = pid
+    sig_pkg["_sequence_plan_ids"] = [p.get("id") for p in ordered]
+    sig_pkg["_sequence_internal"] = True
+    if signals_for:
+        sig_pkg.update(signals_for(pkg) or {})
+
+    _pkg_scope = pkg.get("scope") or []
+    _pkg_ws = pkg.get("write_scope") or []
+    _scope_note = ""
+    if _pkg_scope:
+        _scope_note = (
+            f"\n\n=== ГРАНИЦЫ ЭТОГО ПАКЕТА ({pid}) ===\n"
+            f"Реализуй ТОЛЬКО часть, относящуюся к подсистеме: {', '.join(_pkg_scope)}. "
+            f"Пиши ИСКЛЮЧИТЕЛЬНО в пути: {', '.join(_pkg_ws) or _pkg_scope}. "
+            f"НЕ трогай файлы других подсистем — их реализуют отдельные пакеты последовательности. "
+            f"Если задача упоминает другие подсистемы — это контекст, не работа этого пакета.")
+    pkg_task = f"{task} — пакет {pid}: {pkg.get('title', '')}{_scope_note}".strip()
+    return sig_pkg, pkg_task
+
+
+def _persist_package_report(pkg_dir, features_dir, wid, rep):
+    """K6: вынесено из execute_sequence без изменения поведения. v3.0.12 (finding аудита блок B):
+    report.json — ЧЕКПОИНТ resume/retry, пишем АТОМАРНО (tmp+fsync+replace); сбой не гаснет молча, а
+    возвращается вызывающему (решение о HARD-STOP — за ним). Снимки lifecycle (v2.124) — best-effort
+    аудит-копии. Возвращает _persist_err (str) или None."""
+    _persist_err = None
+    try:
+        import os as _os
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+        _tmp = pkg_dir / "report.json.tmp"
+        with open(_tmp, "w", encoding="utf-8") as _f:
+            _f.write(json.dumps(rep, ensure_ascii=False, indent=2, default=str))
+            _f.flush()
+            _os.fsync(_f.fileno())
+        _os.replace(_tmp, pkg_dir / "report.json")
+    except OSError as _e:
+        _persist_err = f"{type(_e).__name__}: {_e}"
+    if _persist_err is None:
+        try:
+            for _art in ("run-plan.yaml", "run-handoff.yaml", "context-bundle.yaml", "spec-coverage.yaml"):
+                _src = features_dir / wid / _art
+                if _src.is_file():
+                    (pkg_dir / _art).write_text(_src.read_text(encoding="utf-8"), encoding="utf-8")
+        except OSError:
+            pass
+    return _persist_err
+
+
+def _journal_package_end(features_dir, wid, pid, pkg, sha, ready, status, gates_unmet):
+    """K6: вынесено из execute_sequence без изменения поведения. v3.0.14 (#3): event journal
+    package_end (Run->Package->Gate: gates_unmet + статус пакета). Журнал не роняет исполнение (срез
+    engine ратчета 2026-08-12): пропуск регистрирует сам `journal_append` у источника (его основной
+    отказ — возврат `{"ok": False}`, не исключение); этот `except` — только для сбоя импорта журнала."""
+    try:
+        from ai_ops_kit.shared import lifecycle_store as _lsj
+        _lsj.journal_append(features_dir / wid / "lifecycle-journal.jsonl",
+                            {"kind": "package_end", "run_id": wid, "workitem_id": wid,
+                             "package_id": pid, "pkg_hash": _pkg_hash(pkg), "sha": sha,
+                             "ready": bool(ready), "status": status,
+                             "gates_unmet": gates_unmet})
+    except Exception:  # noqa: BLE001,S110 — пропуск регистрирует journal_append; здесь только сбой импорта
+        pass
+
+
+def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
+                     features_dir=None, base=None, provider_name="mock", model=None,
+                     author=False, author_proposer=None, review=False, reviewer_proposer=None,
+                     baseline_diff=True, install_deps=False, signals_for=None,
+                     sandbox=False, open_pr=False, max_steps=40, write_scope_for=None, resume_from=None,
+                     security_reviewer_proposer=None, strict_judge_qualified=True):
+    """Исполнить список WorkPackages последовательно. proposer_for(pkg)->proposer; signals_for(pkg)->
+    доп. сигналы пакета (опц.); write_scope_for(pkg)->список путей write-scope пакета (опц.).
+    v2.120: НАСЛЕДУЕТ sandbox/install_deps/max_steps/провайдера обычного пути — containment не
+    теряется. Containment здесь означает политику брокера (allowlist, write_scope, запрет push),
+    а не изоляцию исполнения: сеть и ресурсы им не ограничены;
+    open_pr применяется к финальному пакету (интегрированная ветка). -> {kind, workitem_id, packages,
+    completed, stopped_at, executed_all, ready_all, final_sha, sequential_chain}."""
+    from ai_ops_kit.engine import ai_ops_run
+    child_root = Path(child_root)
+    features_dir = Path(features_dir) if features_dir else child_root / "features"
+    wid = feature
+    ordered = _ordered(packages)
+    results, completed, stopped_at, final_sha = [], set(), None, None
+    prev_sha = None
+    chain_ok = True
+
+    base, sequence_base_sha, base_drift, _plan_err = _resolve_sequence_plan(
+        ordered, features_dir, wid, base, resume_from, child_root)
+    if _plan_err:
+        return _plan_err
+
+    base_checks, baseline_proven = _collect_baseline(child_root, sequence_base_sha, sandbox)
+
+    start_index, _si_err = _resolve_start_index(ordered, resume_from, wid)
+    if _si_err:
+        return _si_err
 
     _branch = f"ai-ops/{wid}"
     _wt = child_root / ".ai" / "worktrees" / wid
     _rev_root = _wt if _wt.is_dir() else child_root
 
-    def _verify_skipped(pid):
-        # v3.0-rc2 (P0.3): пакет можно считать выполненным ТОЛЬКО при подтверждении: отчёт есть, SHA есть,
-        # SHA реально коммит в sequence-ветке и предок её HEAD, пакет executed и без hard-блокера.
-        prior = features_dir / wid / "work-packages" / pid / "report.json"
-        if not prior.is_file():
-            return None, "нет отчёта прошлого прогона"
-        try:
-            rep = json.loads(prior.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            return None, f"битый отчёт: {e}"
-        sha = (rep.get("commit") or {}).get("sha")
-        if not sha:
-            return None, "в отчёте нет commit SHA"
-        if _git(_rev_root, "cat-file", "-e", sha + "^{commit}")[0] != 0:
-            return None, f"SHA {sha[:8]} не существует в репозитории"
-        if _git(_rev_root, "merge-base", "--is-ancestor", sha, _branch)[0] != 0:
-            return None, f"SHA {sha[:8]} не в sequence-ветке {_branch} (не предок HEAD)"
-        if not rep.get("ready_for_pr") and _hard_stop(rep) is not None:
-            return None, f"пакет имел hard-блокер: {_hard_stop(rep)}"
-        return rep, None
-
     for i, pkg in enumerate(ordered):
         pid = pkg.get("id", f"pkg-{i+1}")
         if i < start_index:
-            rep_ok, why = _verify_skipped(pid)
+            rep_ok, why = _verify_resumed_package(pid, features_dir, wid, _rev_root, _branch)
             if rep_ok is None:
                 # неподтверждённый пропуск -> НЕ добавляем в completed, останавливаем resume честной ошибкой
                 return _seq_err(wid, ordered,
@@ -716,34 +943,8 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
             stopped_at = pid
             break
 
-        sig_pkg = dict(signals or {})
-        sig_pkg["affected_areas"] = pkg.get("scope") or sig_pkg.get("affected_areas") or ["core"]
-        sig_pkg["size"] = "small"
-        # исполнитель = подтверждение декомпозиции: пакет атомарен, его id выбран, и передан
-        # АВТОРИТЕТНЫЙ список id плана (preflight валидирует work_package_id против него — P0.4/P0.5).
-        sig_pkg["work_package_id"] = pid
-        sig_pkg["_sequence_plan_ids"] = [p.get("id") for p in ordered]
-        sig_pkg["_sequence_internal"] = True   # v3.0-rc4 (P0.1): внутренний per-package resume ≠ replan
-        if signals_for:
-            sig_pkg.update(signals_for(pkg) or {})
-
-        # v3.0-rc19 (finding живого sequential): каждый пакет получал ПОЛНУЮ многочастную задачу с
-        # общим ярлыком -> writer лез в чужие подсистемы (напр. в pkg-1 писал pricing/*) -> брокер
-        # отклонял, но _hard_stop справедливо стопал цепочку на попытке эскейпа. Явно ограничиваем
-        # writer'а рамками ЕГО подсистемы (остальные части делают отдельные пакеты) — это НЕ ослабляет
-        # containment (брокер/post-diff по-прежнему в силе), а убирает первопричину: writer не выходит
-        # за scope. Ревьюер по-прежнему судит независимо.
-        _pkg_scope = pkg.get("scope") or []
-        _pkg_ws = pkg.get("write_scope") or []
-        _scope_note = ""
-        if _pkg_scope:
-            _scope_note = (
-                f"\n\n=== ГРАНИЦЫ ЭТОГО ПАКЕТА ({pid}) ===\n"
-                f"Реализуй ТОЛЬКО часть, относящуюся к подсистеме: {', '.join(_pkg_scope)}. "
-                f"Пиши ИСКЛЮЧИТЕЛЬНО в пути: {', '.join(_pkg_ws) or _pkg_scope}. "
-                f"НЕ трогай файлы других подсистем — их реализуют отдельные пакеты последовательности. "
-                f"Если задача упоминает другие подсистемы — это контекст, не работа этого пакета.")
-        pkg_task = f"{task} — пакет {pid}: {pkg.get('title', '')}{_scope_note}".strip()
+        sig_pkg, pkg_task = _build_package_signals_and_task(
+            pkg, pid, task, signals, signals_for, ordered)
         # v3.0-rc12 (finding живого sequential): исключение провайдера/инфры (напр. ConnectionReset
         # от kimi ПОСЛЕ исчерпания ретраев _http_post_json) НЕ должно ронять всю транзакцию traceback'ом
         # и терять per-package lifecycle. Ловим -> пакет честно фейлится (infra-error) -> цепочка
@@ -805,31 +1006,11 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
         # features/<wid>/{run-plan,run-handoff,...} перетираются следующим пакетом -> у каждого пакета
         # свой неизменный lifecycle-каталог work-packages/<pid>/ (P1 аудита).
         pkg_dir = features_dir / wid / "work-packages" / pid
-        # v3.0.12 (finding аудита блок B): report.json — ЧЕКПОИНТ resume/retry. Пишем АТОМАРНО (tmp+fsync+
-        # replace); сбой БОЛЬШЕ НЕ гаснет молча (иначе пакет помечен completed, следующий строится поверх
-        # коммита, но durable-чекпоинта нет) -> HARD-STOP цепочки. Снимки lifecycle — best-effort аудит-копии.
-        _persist_err = None
-        try:
-            import os as _os
-            pkg_dir.mkdir(parents=True, exist_ok=True)
-            _tmp = pkg_dir / "report.json.tmp"
-            with open(_tmp, "w", encoding="utf-8") as _f:
-                _f.write(json.dumps(rep, ensure_ascii=False, indent=2, default=str))
-                _f.flush()
-                _os.fsync(_f.fileno())
-            _os.replace(_tmp, pkg_dir / "report.json")
-        except OSError as _e:
-            _persist_err = f"{type(_e).__name__}: {_e}"
-        if _persist_err is None:
-            try:
-                for _art in ("run-plan.yaml", "run-handoff.yaml", "context-bundle.yaml", "spec-coverage.yaml"):
-                    _src = features_dir / wid / _art
-                    if _src.is_file():
-                        (pkg_dir / _art).write_text(_src.read_text(encoding="utf-8"), encoding="utf-8")
-            except OSError:
-                pass
-        else:
-            blocked = True   # чекпоинт не сохранён durable -> нельзя строить следующий пакет поверх
+        _persist_err = _persist_package_report(pkg_dir, features_dir, wid, rep)
+        if _persist_err is not None:
+            # v3.0.12 (finding аудита блок B): чекпоинт resume/retry не сохранён durable -> нельзя
+            # строить следующий пакет поверх коммита без durable-чекпоинта -> HARD-STOP цепочки.
+            blocked = True
             if not stop_reason:
                 stop_reason = f"checkpoint-persist-failed: {_persist_err}"
 
@@ -849,16 +1030,10 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
                         "handoff": (rep.get("handoff") or {}).get("next_action"),
                         "failure": infra_error,   # v3.0-rc13 (P1): типизированный envelope (None если не исключение)
                         "status": status})
-        # v3.0.14 (#3): event journal — package_end (Run->Package->Gate: gates_unmet + статус пакета)
-        try:
-            from ai_ops_kit.lifecycle import lifecycle_store as _lsj
-            _lsj.journal_append(features_dir / wid / "lifecycle-journal.jsonl",
-                                {"kind": "package_end", "run_id": wid, "workitem_id": wid,
-                                 "package_id": pid, "pkg_hash": _pkg_hash(pkg), "sha": sha,
-                                 "ready": bool(ready), "status": status,
-                                 "gates_unmet": (rep.get("gates") or {}).get("unmet")})
-        except Exception:  # noqa: BLE001 — журнал не роняет исполнение
-            pass
+        # v3.0.14 (#3): event journal — package_end (Run->Package->Gate). Накопленное сливается в
+        # отчёт последовательности ниже.
+        _journal_package_end(features_dir, wid, pid, pkg, sha, ready, status,
+                             (rep.get("gates") or {}).get("unmet"))
 
         if executed:
             completed.add(pid)
@@ -868,87 +1043,18 @@ def execute_sequence(task, signals, child_root, packages, proposer_for, feature,
             stopped_at = pid
             break
 
-    executed_all = len(completed) == len(ordered) and stopped_at is None
-    ready_all = executed_all and all(r.get("ready") for r in results)
+    executed_all, ready_all, aggregate, aggregate_ready = _compute_aggregate_verdict(
+        completed, ordered, stopped_at, results, final_sha, chain_ok, base_drift,
+        child_root, wid, sandbox, base_checks, sequence_base_sha, signals,
+        reviewer_proposer, review, baseline_proven, security_reviewer_proposer,
+        strict_judge_qualified)
 
-    # v2.124: AGGREGATE verification на ФИНАЛЬНОМ интегрированном SHA — перепроверяем результат ЦЕЛИКОМ
-    # (не только конъюнкцию per-package вердиктов), чтобы поймать межпакетные взаимодействия (каждый
-    # пакет зелен по отдельности, но интеграция сломана). Сравниваем финальные проверки с БАЗОЙ (до п.1).
-    # v3.0.13 (блок C): тело aggregate-верификации вынесено в _aggregate_verify (чистый вход->dict) —
-    # execute_sequence перестал быть god-функцией на этом участке, поведение идентично.
-    aggregate = {"verified": False}
-    if executed_all and final_sha:
-        aggregate = _aggregate_verify(child_root, wid, sandbox, final_sha, base_checks,
-                                      sequence_base_sha, signals, reviewer_proposer, review, baseline_proven,
-                                      security_reviewer_proposer=security_reviewer_proposer,
-                                      strict_judge_qualified=strict_judge_qualified)
-    # v3.0-rc2/rc4 (P0.4/P1.1): FAIL-CLOSED. aggregate_ready ТОЛЬКО если верификация РЕАЛЬНО выполнена
-    # И чиста: verified, нет регрессий, HEAD==final_sha, evidence на final_sha, дерево чистое, агрегатный
-    # security clear на полном диффе. Сбой/недоступность -> НЕ ready.
-    # v3.0-rc20 (finding аудита P0): + baseline ДОКАЗАН на точной sequence_base_sha (нет fallback-базы),
-    # + НЕТ base_drift (base-ветка не сдвинулась с начала цепочки) — иначе evidence против не той базы.
-    agg_ok = bool(aggregate.get("verified") and aggregate.get("no_regressions")
-                  and aggregate.get("baseline_proven")
-                  and aggregate.get("revision_ok") and aggregate.get("tree_clean")
-                  and aggregate.get("evidence_revision_ok") and aggregate.get("security_ok")
-                  and aggregate.get("code_review_ok", True))
-    aggregate_ready = ready_all and chain_ok and agg_ok and (base_drift is None)
+    pr, delivery = _deliver_pr(open_pr, aggregate_ready, final_sha, child_root, wid, base,
+                               sequence_base_sha, task, ordered)
 
-    # v2.124 (P0.4): доставка draft PR — ОТДЕЛЬНЫЙ шаг ПОСЛЕ агрегатного вердикта, на финальном
-    # интегрированном SHA. PR открывается ТОЛЬКО при aggregate_ready — не по готовности отдельного пакета.
-    pr, delivery = None, {"requested": bool(open_pr), "status": "not-requested" if not open_pr else None}
-    if open_pr:
-        if aggregate_ready and final_sha:
-            wt = child_root / ".ai" / "worktrees" / wid
-            _drt = wt if wt.is_dir() else child_root
-            # v3.0-rc20 (finding аудита P0): DELIVERY BASE BINDING — evidence собрано против
-            # sequence_base_sha; перед PR сверяем АКТУАЛЬНУЮ remote base с этой базой. Разошлась
-            # (remote main сдвинулся после старта цепочки) -> НЕ открываем PR (проверенное состояние
-            # != потенциальному merge-состоянию); нужна ревалидация. Иначе — «verified» PR был бы ложью.
-            # v3.0.9 (finding аудита P0): ЕДИНЫЙ fail-closed RemoteBaseVerifier (как single-run). Раньше
-            # sequential был fail-OPEN: remote_base=None (нет origin/сети/ветки) -> else -> открывал PR.
-            # Теперь: verified-equal -> PR; verified-moved -> revalidation; unverifiable -> unavailable.
-            _rv = _ep._verify_remote_base(_drt, base, sequence_base_sha)
-            _vd = _rv.get("verdict")
-            if _vd == "verified-equal":
-                try:
-                    from ai_ops_kit.delivery import pr_open
-                    pr = pr_open.open_draft_pr(_drt, f"ai-ops/{wid}", base=base,
-                                               title=f"ai-ops: {task[:60]}",
-                                               body=(f"Sequential WorkPackages: {len(ordered)} пакет(ов). "
-                                                     f"База {base} ({(sequence_base_sha or '?')[:12]}) → финал {final_sha}. "
-                                                     f"Агрегатный вердикт: aggregate_ready."))
-                    delivery["status"] = (pr or {}).get("status") or "failed"
-                    delivery["validated_base"] = sequence_base_sha
-                    delivery["base_ref"] = base
-                except Exception as e:  # noqa: BLE001
-                    delivery["status"] = "failed"
-                    delivery["error"] = str(e)
-            elif _vd == "verified-moved":
-                delivery["status"] = "not-attempted"
-                delivery["base_moved"] = {"base_ref": base, "validated_base": sequence_base_sha,
-                                          "remote_base": _rv.get("remote_sha")}
-                delivery["reason"] = ("remote base сдвинулась с момента сбора evidence — нужна ревалидация; "
-                                      "PR не открыт (иначе непроверенное merge-состояние)")
-            else:   # unverifiable -> доставка НЕДОСТУПНА (fail-closed), НЕ открываем PR
-                delivery["status"] = "unavailable"
-                delivery["reason"] = f"remote-base-unverified: {_rv.get('reason')} — доставка невозможна fail-closed"
-        else:
-            delivery["status"] = "not-attempted"   # последовательность не готова -> PR НЕ открываем
-
-    seq = {"schema_version": 1, "kind": "WorkPackageSequence", "workitem_id": wid,
-           "packages": results, "completed": sorted(completed), "stopped_at": stopped_at,
-           "executed_all": executed_all, "ready_all": ready_all, "aggregate_ready": aggregate_ready,
-           "final_sha": final_sha, "sequential_chain": chain_ok, "total": len(ordered),
-           "sequence_base_sha": sequence_base_sha, "base_drift": base_drift,   # rc16 (P0/P1)
-           "aggregate": aggregate, "delivery": delivery, "draft_pr": pr,
-           "resumed_from": resume_from}
-    # v3.0.14 (finding аудита #2): sequence-report — durable (атомарно); сбой фиксируем в отчёте, не молчим
-    from ai_ops_kit.lifecycle import lifecycle_store as _ls2
-    _sr = _ls2.durable_write(features_dir / wid / "sequence-report.yaml", seq)
-    if not _sr.get("ok"):
-        seq["report_persist_error"] = _sr.get("error")
-    return seq
+    return _finalize_sequence_report(wid, results, completed, stopped_at, executed_all, ready_all,
+                                     aggregate_ready, final_sha, chain_ok, ordered, sequence_base_sha,
+                                     base_drift, aggregate, delivery, pr, resume_from, features_dir)
 
 
 def main(argv):

@@ -101,7 +101,11 @@ def assess(child_root):
             "visual": (bundle.get("visual") or {}).get("status", "not_run"),
         }
         evidence_present = any(per_status[k] in ("pass", "fail") for k in ("interaction", "a11y", "visual"))
-    except Exception:   # noqa: BLE001 — адаптер недоступен/нет артефактов -> честно absent/not_run
+    # Причина подавления (срез ратчета, 2026-08-12): это ПРАВИЛЬНЫЙ образец. Отказ не прячется —
+    # он превращается в объявленное состояние `absent`/`not_run`, которое doctor печатает словами
+    # «не UI-продукт? тогда норма (не маскируем)». Тип широк намеренно: сюда попадает всё, чем
+    # может ответить чужой адаптер, и любой такой отказ обязан дать честное «не проверено».
+    except Exception:   # noqa: BLE001,S110 — адаптер недоступен -> объявленное absent/not_run, не тишина
         pass
 
     if not config_dir and not dep:

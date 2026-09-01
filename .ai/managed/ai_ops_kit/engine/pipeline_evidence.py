@@ -49,7 +49,7 @@ def _install_dependencies(profile, root, policy):
 def _author_with_retry(author_proposer, base_prompt, check_fn, bud, attempts=3):
     """v3.0-rc14 (finding живой квалификации kimi): author-вызов ретраится при невалидном/пустом
     артефакте."""
-    from ai_ops_kit.engine import budget as _budget_mod
+    from ai_ops_kit.shared import budget as _budget_mod
     prompt = base_prompt
     data, errs = None, ["author не вызван"]
     for attempt in range(attempts):
@@ -70,8 +70,9 @@ def _author_with_retry(author_proposer, base_prompt, check_fn, bud, attempts=3):
 
 def _run_spec_authoring(author_proposer, work_root, gate_ev, wid, task, bud, openspec_validate):
     """v2.89: произвести OpenSpec change для гейта specification."""
-    from ai_ops_kit.shared import _bootstrap  # noqa: F401 — кладёт validation/ в sys.path ДО плоских импортов ниже
-    from ai_ops_kit.validation import validate_spec_artifact as vsa
+    # Проверка формы и рендер СОДЕРЖИМОГО живут ВНИЗ, в пакете `checks` (слой primitives): движок
+    # зовёт их вниз, без восходящего ребра engine -> validation (лента №5). Запись файлов — ниже.
+    from ai_ops_kit.checks import spec_artifact as vsa
     prompt = (
         "Ты автор OpenSpec-изменения (spec-change) для задачи. Верни ТОЛЬКО YAML со схемой:\n"
         "  schema_version: 1\n  kind: spec-change\n  capability: <slug>\n  why: <зачем>\n"
@@ -96,7 +97,13 @@ def _run_spec_authoring(author_proposer, work_root, gate_ev, wid, task, bud, ope
              "errors": errs or None}
     if errs:
         return gate_ev, entry
-    vsa.render(data, Path(work_root) / "openspec", wid)
+    # Запись (I/O) — забота движка: чистая render_content строит содержимое, движок пишет файлы под
+    # openspec-корень. Так рендер живёт вниз (в `checks`), а запись остаётся в слое ядра.
+    _openspec_root = Path(work_root) / "openspec"
+    for _rel, _content in vsa.render_content(data, wid):
+        _target = _openspec_root / _rel
+        _target.parent.mkdir(parents=True, exist_ok=True)
+        _target.write_text(_content, encoding="utf-8")
     available, ok, out = openspec_validate(work_root, wid)
     entry["openspec_cli"] = "available" if available else "absent"
     entry["openspec_valid"] = ok if available else None
@@ -115,7 +122,7 @@ def _run_spec_authoring(author_proposer, work_root, gate_ev, wid, task, bud, ope
 def _run_authoring(author_proposer, work_root, gate_ids, gate_ev, wid, task, budget,
                    openspec_validate=None):
     """v2.86 Product Authoring: движок производит артефакты requirements/plan."""
-    from ai_ops_kit.engine import budget as _budget_mod
+    from ai_ops_kit.shared import budget as _budget_mod
     bud = budget if isinstance(budget, _budget_mod.Budget) else _budget_mod.Budget.from_dict(budget)
     out_dir = Path(work_root) / ".ai" / "runplan" / wid
     gate_ev = dict(gate_ev)
@@ -262,7 +269,12 @@ def _reevaluate_artifact_evidence(work_root, wid, gate_ids):
             if isinstance(data, dict) and not mod.check(data):
                 ev[gid] = {"status": "pass", "provided": mod.provided_evidence(data),
                            "evidence": [f".ai/runplan/{wid}/{fname} — форма подтверждена (reevaluate, SHA стабилен)"]}
-        except Exception:  # noqa: BLE001
+        # Причина подавления ЗАПИСАНА (срез engine ратчета 2026-08-12): направление отказа
+        # fail-closed. Нечитаемый или невалидный артефакт НЕ попадает в `ev`, а `ev` — единственный
+        # способ этой функции сказать «гейт закрыт». Значит сбой разбора даёт НЕЗАКРЫТЫЙ гейт, а не
+        # закрытый по ошибке: гейт пересчитается обычным путём. Обратное направление здесь
+        # невозможно по построению — `pass` не умеет добавить `status: pass`.
+        except Exception:  # noqa: BLE001,S110 — сбой разбора артефакта не закрывает гейт (fail-closed)
             pass
     if "specification" in gate_ids:
         try:
@@ -270,7 +282,7 @@ def _reevaluate_artifact_evidence(work_root, wid, gate_ids):
             if _avail and _ok:
                 ev["specification"] = {"status": "pass", "provided": ["openspec_valid"],
                                        "evidence": ["openspec validate --strict (reevaluate, SHA стабилен)"]}
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001,S110 — то же: не подтвердили спеку -> гейт остаётся незакрытым
             pass
     return ev
 
@@ -279,16 +291,18 @@ def _run_reviews(reviewer_proposer, work_root, gate_ids, gate_ev, signals, revis
                  max_reads=10, change_context=None,
                  calibrated_enforcement=False, ui_evidence=None):
     """Прогнать независимые ревью для ai-review гейтов плана, у которых ещё нет evidence."""
-    from ai_ops_kit.validation import validate_reviewer_result as vrr
+    from ai_ops_kit.checks import reviewer_result as vrr  # чистая проверка вниз (лента №5)
     gates = gate_executor.load_gates()
     ro_policy = tool_broker.Policy(level="read-only", child_root=str(work_root))
     reviews = []
     gate_ev = dict(gate_ev)
-    valid_ids = None
-    try:
-        valid_ids = set(gates)
-    except Exception:
-        valid_ids = None
+    # СРЕЗ engine РАТЧЕТА 2026-08-12: здесь стоял `try: valid_ids = set(gates) except: valid_ids = None`.
+    # Это была ФИКТИВНАЯ защита того же класса, что R-31/R-32: `set()` по словарю бросить не может,
+    # а единственный путь к исключению (`gates: null` в реестре) молча превращал `valid_ids` в None —
+    # и `vrr.check(gate_ids=None)` ПЕРЕСТАВАЛ проверять, существует ли гейт в quality/gates.yaml
+    # (validate_reviewer_result.py:63 — проверка под `gate_ids is not None`). То есть подавление не
+    # спасало от сбоя, а выключало проверку. Сам `load_gates()` выше не обёрнут и падает честно.
+    valid_ids = set(gates)
     change_ctx = change_context if change_context is not None else _change_context(work_root, revision)
     for gid in _reviewable_gates(gate_ids, signals):
         if gid in gate_ev:
@@ -310,6 +324,18 @@ def _run_reviews(reviewer_proposer, work_root, gate_ids, gate_ev, signals, revis
                  "errors": errs or None}
         reviews.append(entry)
         if errs:
+            # НЕ тихий пропуск. Прежде здесь стоял голый `continue`: gate_ev не получал ключа гейта,
+            # тот падал на общий _unmet_reason «нет заключения reviewer» (не называя ПОЧЕМУ вердикта
+            # нет), а _hard_stop не распознавал reviewer-blocked — работа МОЛЧА вставала (находка
+            # поля P0, obs-2026-08-20). Теперь no-verdict -> НАЗВАННЫЙ отказ в gate_ev, с
+            # `"reviewer verdict"` в evidence (взводит reviewer-blocked).
+            ref = gate_executor.evidence_from_no_verdict(
+                g, gate_id=gid, stopped=rv.get("stopped"), reads=rv.get("reads"),
+                errors=errs, refusal=rv.get("refusal"))
+            gate_ev[gid] = ref
+            entry["closed_as"] = "refused"
+            entry["status"] = ref["status"]                       # fail/warn, не None
+            entry["reason"] = (ref.get("blockers") or ref.get("warnings") or [None])[0]
             continue
         status = res.get("status")
         blocking = bool(g.get("blocking"))
@@ -362,7 +388,7 @@ def _run_reviews(reviewer_proposer, work_root, gate_ids, gate_ev, signals, revis
 def _review_security(reviewer_proposer, work_root, pack_result, revision, budget, change_context=None):
     """v2.106: независимый security-reviewer выносит вердикт по needs_review доменам."""
     from ai_ops_kit.security import security_pack
-    from ai_ops_kit.validation import validate_reviewer_result as vrr
+    from ai_ops_kit.checks import reviewer_result as vrr  # чистая проверка вниз (лента №5)
     ro_policy = tool_broker.Policy(level="read-only", child_root=str(work_root))
     domains = {d["id"]: d for d in security_pack.load_domains()[0]}
     applicable = list(pack_result.get("needs_review", []) or [])

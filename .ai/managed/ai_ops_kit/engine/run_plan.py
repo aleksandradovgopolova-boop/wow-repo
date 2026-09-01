@@ -59,7 +59,12 @@ def _base_workflow(signals):
         from ai_ops_kit.engine import ai_route
         d = ai_route.route(signals)
         return d.get("workflow"), d.get("reasons", []), d.get("classification_confidence", "normal")
-    except Exception as e:  # маршрутизатор не должен ронять планирование
+    # Причина подавления ЗАПИСАНА (срез engine ратчета 2026-08-12): это ПРАВИЛЬНЫЙ образец —
+    # отказ не гасится, а становится видимой строкой в `reasons`, которая уезжает в план и в отчёт
+    # («fallback base_workflow=... (ai_route недоступен: ...)»). Тип не сужен намеренно: сюда
+    # приходит любой сбой импорта/классификации, и любой из них обязан дать честный fallback, а не
+    # уронить планирование. Тихого пути здесь нет.
+    except Exception as e:  # noqa: BLE001 — отказ роутера становится ВИДИМОЙ причиной fallback, не тишиной
         tt = signals.get("task_type")
         wfs = load("registry/workflows.yaml")["workflows"]
         wf = tt if tt in wfs else "ENGINEERING"

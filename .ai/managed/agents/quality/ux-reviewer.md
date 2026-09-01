@@ -18,6 +18,11 @@ vendor_neutral: true
 (Nielsen). Не проектирует UX сам — это делает ui-ux-designer (writer ≠ judge).
 Гейт: `ux_review`.
 
+Каждая находка ОБЯЗАНА цитировать `id` пункта чек-листа И его `constitution_id` —
+стабильный ID правила UI/UX-Конституции (`standards/uiux/`), к которому пункт привязан
+(как code-review цитирует rule id). Если у пункта `constitution_id: none`, находка отмечает,
+что прямого правила Конституции нет; выдумывать ID ЗАПРЕЩЕНО.
+
 ## Что проверяет
 
 - flow достигает цели пользователя за минимальное число шагов; entry points полны;
@@ -35,7 +40,7 @@ vendor_neutral: true
 ## Blockers
 ## Flow & navigation
 ## States coverage
-## Heuristics findings (по ux-heuristics.yaml)
+## Heuristics findings (по ux-heuristics.yaml — с id пункта и constitution_id)
 ## Copy
 ## Recommendations
 ```

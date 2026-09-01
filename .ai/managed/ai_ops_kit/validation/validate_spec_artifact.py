@@ -32,94 +32,36 @@ requirements_covered — структурно (есть требования).
 """
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
 import yaml
 
-REQUIRED_EVIDENCE = ["openspec_valid", "requirements_covered"]
-_CAP_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-
-
-def check(data):
-    errors = []
-    if not isinstance(data, dict) or data.get("kind") != "spec-change":
-        errors.append("kind должен быть 'spec-change'")
-        data = data if isinstance(data, dict) else {}
-    if data.get("schema_version") is None:
-        errors.append("нет schema_version")
-    cap = data.get("capability")
-    if not (isinstance(cap, str) and _CAP_RE.match(cap or "")):
-        errors.append(f"capability должен быть slug [a-z0-9-]: {cap!r}")
-    if not (isinstance(data.get("why"), str) and data["why"].strip()):
-        errors.append("why: непустая строка обязательна")
-    wc = data.get("what_changes")
-    if not (isinstance(wc, list) and wc and all(isinstance(x, str) and x.strip() for x in wc)):
-        errors.append("what_changes: непустой список непустых строк")
-    tasks = data.get("tasks")
-    if not (isinstance(tasks, list) and tasks and all(isinstance(x, str) and x.strip() for x in tasks)):
-        errors.append("tasks: непустой список непустых строк")
-    reqs = data.get("requirements")
-    if not (isinstance(reqs, list) and reqs):
-        errors.append("requirements: непустой список")
-        reqs = []
-    for i, r in enumerate(reqs):
-        if not isinstance(r, dict):
-            errors.append(f"requirement[{i}] должен быть объектом"); continue
-        rn = r.get("name", f"#{i}")
-        if not (isinstance(r.get("name"), str) and r["name"].strip()):
-            errors.append(f"requirement[{i}]: нет name")
-        if not (isinstance(r.get("text"), str) and r["text"].strip()):
-            errors.append(f"{rn}: нет text (нормативная формулировка)")
-        scs = r.get("scenarios")
-        if not (isinstance(scs, list) and scs):
-            errors.append(f"{rn}: нужен непустой scenarios")
-            scs = []
-        for s in scs:
-            if not (isinstance(s, dict) and isinstance(s.get("when"), str) and s["when"].strip()
-                    and isinstance(s.get("then"), str) and s["then"].strip()):
-                errors.append(f"{rn}: каждый scenario требует непустые when + then")
-    return errors
-
-
-def provided_evidence(data):
-    """requirements_covered — структурный ключ (есть требования). openspec_valid добавляет ДВИЖОК
-    после реального `openspec validate`. Пусто, если структура невалидна."""
-    return ["requirements_covered"] if not check(data) else []
-
-
-def _slug_tasks(tasks):
-    return "\n".join(f"- [ ] 1.{i+1} {t.strip()}" for i, t in enumerate(tasks))
+try:                                          # v3.38 (лента №5): валидатор двурежимен
+    from ai_ops_kit.validation import _bootstrap   # noqa: F401 — импорт пакетом (после pip install)
+except ImportError:                                # запуск скриптом: корня на пути ещё нет,
+    import _bootstrap                              # noqa: F401 — и положить его может только он сам
+# Проверка ФОРМЫ и рендер СОДЕРЖИМОГО вынесены ВНИЗ (пакет `checks`, слой primitives): и рантайм
+# (engine.pipeline_evidence), и эта CLI-обёртка зовут их вниз — без восходящего ребра engine ->
+# validation. Запись файлов (I/O) остаётся здесь и в движке — ниже ядра ей не место.
+from ai_ops_kit.checks.spec_artifact import (   # noqa: E402,F401
+    REQUIRED_EVIDENCE, _CAP_RE, _slug_tasks, check, provided_evidence, render_content)
 
 
 def render(data, openspec_root, change_id):
-    """Отрендерить spec-change в OpenSpec-структуру под <openspec_root>/changes/<change_id>/.
-    Возвращает список записанных файлов. Предполагает, что data уже прошла check()."""
+    """Записать spec-change в OpenSpec-структуру под <openspec_root>/changes/<change_id>/.
+    Возвращает список записанных файлов. Предполагает, что data уже прошла check().
+
+    Содержимое строит чистая `checks.spec_artifact.render_content`; здесь — только запись (I/O).
+    Ту же чистую функцию зовёт движок (engine.pipeline_evidence) и пишет файлы сам, поэтому она
+    ниже ядра, а запись — нет."""
     root = Path(openspec_root)
-    change = root / "changes" / change_id
-    cap = data["capability"]
-    (change / "specs" / cap).mkdir(parents=True, exist_ok=True)
-
-    what = "\n".join(f"- {x.strip()}" for x in data["what_changes"])
-    impact = data.get("impact") or f"Затрагивает capability `{cap}`."
-    proposal = f"## Why\n{data['why'].strip()}\n\n## What Changes\n{what}\n\n## Impact\n{impact}\n"
-    tasks = f"## 1. Implementation\n{_slug_tasks(data['tasks'])}\n"
-
-    blocks = ["## ADDED Requirements\n"]
-    for r in data["requirements"]:
-        blocks.append(f"### Requirement: {r['name'].strip()}\n{r['text'].strip()}\n")
-        for s in r["scenarios"]:
-            nm = (s.get("name") or "Scenario").strip()
-            blocks.append(f"#### Scenario: {nm}\n- WHEN {s['when'].strip()}\n- THEN {s['then'].strip()}\n")
-    spec = "\n".join(blocks)
-
     written = []
-    for rel, content in ((change / "proposal.md", proposal),
-                         (change / "tasks.md", tasks),
-                         (change / "specs" / cap / "spec.md", spec)):
-        rel.write_text(content, encoding="utf-8")
-        written.append(str(rel))
+    for rel, content in render_content(data, change_id):
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        written.append(str(target))
     return written
 
 

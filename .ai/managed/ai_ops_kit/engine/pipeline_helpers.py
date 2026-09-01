@@ -40,6 +40,45 @@ def work_produced(rep) -> bool:
     return ((rep.get("loop") or {}).get("applied_writes") or 0) > 0
 
 
+def delivery_pending(rep) -> bool:
+    """Работа готова на ветке, а новых правок в этом прогоне нет. -> bool.
+
+    B2-20 (повтор незакрытой B2-12, живой прогон 14.08.2026): `resume` завершённой-но-НЕДОСТАВЛЕННОЙ
+    работы снова звал писателя, получал ноль правок — делать уже нечего — и хоронил готовый
+    READY_FOR_PR в `blocked: код не написан`. Работа с коммитом на ветке исчезала из активного
+    состояния, и владелец видел «кит не справился» там, где кит справился и ждал доставки.
+
+    Предикат отвечает ровно на этот вопрос и живёт рядом с `work_produced`, потому что это его
+    обратная сторона: там «работа произведена СЕЙЧАС», здесь «произведена РАНЬШЕ и ждёт заявки».
+    """
+    rep = rep or {}
+    return bool((rep.get("resume") or {}).get("reused_branch")) and not work_produced(rep)
+
+
+def acceptance_blocks_ready(acceptance_criteria) -> tuple:
+    """Приёмка НЕ пускает работу в READY_FOR_PR? -> (block: bool, reason | None).
+
+    Блокирует, когда: `verified` и есть `unmet` (B2-30); ЛИБО `attempted` без `verified` — судья
+    приёмки поднят и отработал, но сверка не состоялась (green-means-checked). Судью не поднимали
+    вовсе (`attempted=False`) — НЕ блокируем (граница #176). Разбор — в
+    tests/unit/test_acceptance_rubber_stamp_not_ready.py.
+    """
+    ac = acceptance_criteria or {}
+    if not ac.get("declared"):
+        return False, None                       # нечего сверять — нечем и блокировать
+    if ac.get("verified"):
+        if ac.get("unmet"):
+            return True, (f"сверка приёмки состоялась: НЕ ВЫПОЛНЕНО {len(ac.get('unmet') or [])} "
+                          f"из {ac.get('count')} ({', '.join(ac.get('unmet') or [])}) — задача не "
+                          f"доведена, READY_FOR_PR объявлять нельзя")
+        return False, None
+    if ac.get("attempted"):
+        return True, ((ac.get("reason") or "приёмка объявлена, но сверка не состоялась")
+                      + " — судья приёмки был поднят, но результат с критериями не сверил; закрыть "
+                        "можно сверкой судьёй, который читает результат, либо приёмкой человеком")
+    return False, None
+
+
 def _profile_summary(profile):
     stacks = profile.get("stacks") or []
     langs = ", ".join(s.get("language", "?") for s in stacks) or "не определён"
@@ -203,9 +242,10 @@ def _openspec_validate(work_root, change_id):
 def _authoring_specs():
     """v2.86: артефакт-гейты, которые движок умеет ЗАКРЫВАТЬ производством артефакта + детерминированной
     проверкой ФОРМЫ (не «качества»). specification обрабатывается ОТДЕЛЬНО."""
-    from ai_ops_kit.shared import _bootstrap  # noqa: F401 — кладёт validation/ в sys.path ДО плоских импортов ниже
-    from ai_ops_kit.validation import validate_requirements_artifact as vra
-    from ai_ops_kit.validation import validate_plan_artifact as vpa
+    # Чистые проверки формы живут ВНИЗ, в пакете `checks` (слой primitives): зовём их вниз, без
+    # восходящего ребра engine -> validation (лента №5).
+    from ai_ops_kit.checks import requirements_artifact as vra
+    from ai_ops_kit.checks import plan_artifact as vpa
     return {
         "requirements": ("requirements.yaml", vra, "requirements-artifact",
                          "requirements: список объектов {id, statement (тестируемое требование), "

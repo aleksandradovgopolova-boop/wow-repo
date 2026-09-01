@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -77,6 +78,78 @@ def _git(root: Path, *args):
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout.strip() if r.returncode == 0 else None
+
+
+def _product_ci(root) -> list:
+    """Признаки CI, ПРИНАДЛЕЖАЩЕГО продукту (не поставленного китом). -> [путь].
+
+    `.github/workflows` считается признаком CI только если в нём есть хотя бы один workflow,
+    который положил не кит. Файлы кита узнаются по имени (`ai-ops-*.yml`) — так их называет
+    установщик, и это же имя проверяет `validate_ci_templates`.
+    """
+    from pathlib import Path as _P
+    root = _P(root)
+    found = []
+    wf = root / ".github" / "workflows"
+    if wf.is_dir():
+        own = [f for f in wf.iterdir()
+               if f.is_file() and f.suffix in (".yml", ".yaml") and not f.name.startswith("ai-ops-")]
+        if own:
+            found.append(".github/workflows")
+    for rel in (".gitlab-ci.yml", "Jenkinsfile", ".circleci"):
+        if (root / rel).exists():
+            found.append(rel)
+    return found
+
+
+def _measure_storybook(root: Path) -> dict:
+    """Измерить профиль Storybook ЗАМЕРОМ, а не package.json (storybook-profile-measured).
+
+    Возвращает: {present: bool, config: bool, stories: int, build_script: bool, version: str|None}.
+    present = config существует И stories существуют (не только dependency в package.json).
+    """
+    result = {"present": False, "config": False, "stories": 0,
+              "build_script": False, "version": None}
+
+    # Конфигурация: .storybook/ каталог или storybook в package.json scripts
+    config_dir = root / ".storybook"
+    has_config = config_dir.is_dir() and any(config_dir.glob("main.*"))
+    result["config"] = has_config
+
+    # Stories: файлы *.stories.* (измеряем количеством, не наличием)
+    story_count = 0
+    for ext in ("*.stories.tsx", "*.stories.ts", "*.stories.jsx", "*.stories.js",
+                "*.stories.mdx"):
+        story_count += len(list(root.rglob(ext)))
+        if story_count >= 100:  # кап, чтобы не считать вечно
+            break
+    result["stories"] = story_count
+
+    # Build script: storybook в package.json scripts
+    pkg_json = root / "package.json"
+    if pkg_json.is_file():
+        try:
+            import json
+            pkg = json.loads(pkg_json.read_text(encoding="utf-8"))
+            scripts = pkg.get("scripts", {})
+            result["build_script"] = any("storybook" in v for v in scripts.values()
+                                         if isinstance(v, str))
+            # Версия из dependencies
+            for dep_key in ("dependencies", "devDependencies"):
+                deps = pkg.get(dep_key, {})
+                for name in ("@storybook/react", "@storybook/vue", "@storybook/svelte",
+                             "@storybook/web-components", "storybook"):
+                    if name in deps:
+                        result["version"] = deps[name]
+                        break
+                if result["version"]:
+                    break
+        except (OSError, ValueError, KeyError):
+            pass
+
+    # present = config + stories (не только dependency)
+    result["present"] = has_config and story_count > 0
+    return result
 
 
 def discover(child_root) -> dict:
@@ -124,7 +197,13 @@ def discover(child_root) -> dict:
     ev["test_files"] = tests if readable else None
     ev["commits"] = commits
     ev["release_history"] = [t for t in (tags or "").splitlines() if t][:5] if tags is not None else None
-    ev["ci"] = _exists(".github/workflows", ".gitlab-ci.yml", "Jenkinsfile", ".circleci")
+    # CI ПРОДУКТА, А НЕ СВОЙ (F-019, живой прогон severnaya_traektoriya 2026-08-12). Каталог
+    # `.github/workflows` создаёт САМ установщик — он кладёт туда `ai-ops-*.yml`. Прежде условие
+    # «каталог существует» выполнялось этими файлами, и в репозитории БЕЗ собственного CI кит
+    # объявлял владельцу «ci_pipeline: build/lint/test, status=verified», ссылаясь на артефакты,
+    # которые сам же и записал секунду назад. Придуманный продуктовый факт со статусом
+    # «подтверждено» — худший из возможных: владелец верит, что кит прочитал ЕГО конвейер.
+    ev["ci"] = _product_ci(root)
     ev["containers"] = _exists("Dockerfile", "docker-compose.yml", "docker-compose.yaml")
     ev["dependency_manifests"] = _exists("package.json", "requirements.txt", "pyproject.toml",
                                          "go.mod", "Cargo.toml", "pom.xml", "Gemfile",
@@ -156,6 +235,12 @@ def discover(child_root) -> dict:
     ev["architecture_docs"] = _exists("context/system", "docs/architecture", "ARCHITECTURE.md")
     ev["decisions"] = _exists("decisions", "docs/adr")
     ev["env_configs"] = _exists(".env.example", ".env.sample", "config")
+
+    # storybook-profile-measured: профиль Storybook измеряется ЗАМЕРОМ, а не package.json.
+    # F-019 класс: доказательство, указанное китом, указывает на артефакт, который кит сам создал.
+    # Здесь: наличие @storybook/react в package.json — не доказательство работающего Storybook.
+    # Доказательство: конфигурация существует + stories существуют + build-скрипт есть.
+    ev["storybook"] = _measure_storybook(root)
 
     try:
         from ai_ops_kit.shared import project_detector
@@ -238,6 +323,15 @@ def answers_path(child_root) -> Path:
     return Path(child_root) / ANSWERS_REL
 
 
+class AnswersCorrupt(Exception):
+    """Файл ответов онбординга существует, но не разбирается.
+
+    Отдельный тип, а не `return {}`: «ответов нет» и «ответы есть, но прочитать нечем» — разные
+    ответы, и второй НЕ даёт права переспрашивать и перезаписывать. Ровно так был потерян
+    заполненный файл в живом прогоне niti (F-023).
+    """
+
+
 def read_answers(child_root) -> dict:
     """Ответы человека из файла онбординга. Пустое значение — это «ещё не ответил», а не ответ."""
     p = answers_path(child_root)
@@ -245,11 +339,91 @@ def read_answers(child_root) -> dict:
         return {}
     try:
         data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
-        return {}
+    except yaml.YAMLError as e:
+        # НЕРАЗОБРАННЫЙ ФАЙЛ — ЭТО НЕ «ОТВЕТОВ НЕТ» (F-023, живой прогон niti 2026-08-12).
+        # Прежде здесь стоял `return {}`, и это было началом потери данных: кит получал «ответов
+        # нет», переспрашивал всё заново и ПЕРЕЗАПИСЫВАЛ файл пустым. Ответы владельца исчезали
+        # молча — вместе с тем, что он вписал руками. Тот же инвариант, что «не смог прочитать» !=
+        # «нет»: см. DeliveryReceipt и реестр гейтов.
+        raise AnswersCorrupt(f"{p}: файл ответов не разбирается ({e}) — починить, а не отвечать "
+                             f"заново; иначе ответы будут перезаписаны пустыми") from e
     ans = (data.get("answers") or {}) if isinstance(data, dict) else {}
     return {k: v for k, v in ans.items()
             if v not in (None, "", [], {}) and str(v).strip() not in ("", "?")}
+
+
+_ANSWER_KEY_RE = re.compile(r"^ {2}([A-Za-z_][A-Za-z0-9_.-]*):(?:\s|$)")
+
+
+def _inline_comment(rest: str) -> str:
+    """Комментарий в хвосте строки значения. -> `# …` или пустая строка.
+
+    Резать по первому `#` нельзя: значение пишется как JSON-строка и `#` внутри кавычек — часть
+    ОТВЕТА, а не комментарий (`goal: "рост #1 по выручке"`). Поэтому кавычки считаются, экранирование
+    учитывается, и решётка признаётся началом комментария только вне кавычек и после пробела —
+    ровно правило YAML.
+    """
+    in_quotes, escaped = False, False
+    for i, ch in enumerate(rest):
+        if escaped:
+            escaped = False
+            continue
+        if in_quotes and ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            in_quotes = not in_quotes
+            continue
+        if ch == "#" and not in_quotes and (i == 0 or rest[i - 1] in " \t"):
+            return rest[i:].rstrip()
+    return ""
+
+
+def _owner_comments(text: str, kit_lines: set) -> dict:
+    """Что в существующем файле написал ЧЕЛОВЕК, а не кит. -> {header, before, inline, tail}.
+
+    ЗАЧЕМ (F-020, живой прогон niti 2026-08-12). `write_question_file` пересобирает файл целиком:
+    значения переносились через `read_answers`, а комментарии — нет. Владелец вписал к каждому
+    ответу источник (`file:line`), и после следующего `ai-ops model` их осталось НОЛЬ строк. Для
+    файла, чья роль — «подтверждённые факты», это потеря ОСНОВАНИЯ: утверждение остаётся, а отличить
+    подтверждённое от переписанного больше нечем. Обход в том прогоне — прятать ссылки внутрь
+    значений — был обходом, а не решением.
+
+    ЧЕЙ КОММЕНТАРИЙ — РЕШАЕТСЯ СРАВНЕНИЕМ С ТЕМ, ЧТО КИТ ПИШЕТ САМ (`kit_lines`), а не догадкой по
+    форме. Строка, совпавшая с собственной строкой кита, принадлежит киту и будет сгенерирована
+    заново; всё остальное — владельца и переносится дословно.
+
+    ГРАНИЦА НАЗВАНА, А НЕ СПРЯТАНА: если формулировка вопроса ИЗМЕНИЛАСЬ между версиями кита, старая
+    строка перестаёт совпадать с новой и будет сохранена как авторская — один раз, при первом
+    прогоне после обновления. Выбор осознанный: лишняя строка видна и удаляется рукой, а потерянное
+    основание не восстанавливается ничем. Обратный порядок предпочтений сделал бы ровно тот дефект,
+    который здесь чинится.
+    """
+    header, before, inline, tail = [], {}, {}, []
+    pending, in_answers = [], False
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not in_answers:
+            if stripped == "answers:":
+                in_answers = True
+            elif stripped.startswith("#") and line not in kit_lines:
+                header.append(stripped)
+            continue
+        m = _ANSWER_KEY_RE.match(line)
+        if m:
+            qid = m.group(1)
+            if pending:
+                before[qid] = list(pending)
+                pending = []
+            c = _inline_comment(line[m.end(1) + 1:])
+            if c:
+                inline[qid] = c
+            continue
+        if stripped.startswith("#") and line not in kit_lines:
+            pending.append(stripped)
+    tail = pending                      # комментарии после последнего ключа — тоже человеческие
+    return {"header": header, "before": before, "inline": inline, "tail": tail}
 
 
 def write_question_file(child_root, ask: dict):
@@ -260,6 +434,9 @@ def write_question_file(child_root, ask: dict):
     сценария, при том что онбординг обещал «соберу материалы и покажу на проверку».
 
     Существующие ответы НЕ затираются никогда: файл дополняется новыми вопросами, ответы остаются.
+    ВМЕСТЕ С НИМИ ОСТАЮТСЯ КОММЕНТАРИИ ВЛАДЕЛЬЦА (F-020): и те, что стоят над ответом, и хвостовые
+    в той же строке. Ответ без основания — это утверждение, которое нечем проверить, а основание
+    владелец пишет именно комментарием: `main_goal_now: "…"  # docs/product.md:14`.
 
     ЛИШНЕЙ ЗАПИСИ НЕ ДЕЛАЕМ. Если содержимое не изменилось, файл не перезаписывается: `ai-ops model`
     зовут и просто «посмотреть состояние», и трогать mtime (а в чужом репозитории — показывать файл
@@ -267,8 +444,10 @@ def write_question_file(child_root, ask: dict):
     она создаёт, и создаёт ровно потому, что вопросам нужно место для ответа.
     """
     p = answers_path(child_root)
+    # Если файл есть, но не читается — НЕ перезаписываем: это уничтожило бы ответы владельца.
+    # Пусть ошибка дойдёт до человека словами «починить, а не отвечать заново» (F-023).
     existing = read_answers(child_root)
-    lines = [
+    header = [
         "# Ответы владельца на вопросы онбординга AI Ops.",
         "#",
         "# Здесь только то, что из кода честно не выводится: цели продукта, его пользователи,",
@@ -279,28 +458,73 @@ def write_question_file(child_root, ask: dict):
         "# (`user_confirmed`) и больше не переспрашивается.",
         "#",
         "# После заполнения запустите снова:  ./ai-ops model",
-        "answers:",
     ]
+    # Строки, которые кит пишет САМ, — эталон для разбора «чей комментарий» (F-020). Собираются до
+    # генерации, потому что разбор существующего файла обязан знать их заранее.
+    kit_comments, kit_lines = {}, set(header)
+    for q in ask.get("questions") or []:
+        qid = q.get("id")
+        if not qid or qid in kit_comments:
+            continue
+        block = [f"  # {q.get('ask', '')}"]
+        if q.get("proposal") and q["proposal"].get("value"):
+            block.append(f"  #   по коду предполагаю: {q['proposal']['value']} — подтвердите или "
+                         f"замените")
+        kit_comments[qid] = block
+        kit_lines.update(block)
+
+    own = {"header": [], "before": {}, "inline": {}, "tail": []}
+    if p.is_file():
+        try:
+            own = _owner_comments(p.read_text(encoding="utf-8"), kit_lines)
+        except OSError:
+            pass                               # прочитать не смогли — комментариев не будет, но
+            # ответы уже прочитаны выше через `read_answers`, и потерять их этот путь не может
+
+    def _value_line(qid, val):
+        """Строка значения вместе с хвостовым комментарием владельца, если он был."""
+        dumped = json.dumps(val, ensure_ascii=False) if val is not None else '""'
+        c = own["inline"].get(qid)
+        return f"  {qid}: {dumped}" + (f"  {c}" if c else "")
+
+    lines = header + own["header"] + ["answers:"]
     seen = set()
     for q in ask.get("questions") or []:
         qid = q.get("id")
         if not qid or qid in seen:
             continue
         seen.add(qid)
-        lines.append(f"  # {q.get('ask', '')}")
-        if q.get("proposal") and q["proposal"].get("value"):
-            lines.append(f"  #   по коду предполагаю: {q['proposal']['value']} — подтвердите или "
-                         f"замените")
+        lines.extend(kit_comments[qid])
+        lines.extend(f"  {c}" for c in own["before"].get(qid, []))
         val = existing.get(qid)
-        lines.append(f"  {qid}: " + (yaml.safe_dump(val, allow_unicode=True,
-                                                   default_flow_style=True).strip()
-                                     if val is not None else '""'))
+        # ЗНАЧЕНИЕ ПИШЕТСЯ ОДНОЙ СТРОКОЙ, БЕЗ МАРКЕРОВ ДОКУМЕНТА (F-023, живой прогон niti).
+        #
+        # Прежде стоял `yaml.safe_dump(val, default_flow_style=True).strip()`, и он ломал файл
+        # ДВАЖДЫ. Первое: для голого скаляра PyYAML дописывает маркер конца документа —
+        # `safe_dump("текст")` даёт `'текст\n...\n'`, а `.strip()` убирает только пробелы, поэтому
+        # в файл попадала строка `...`, начинавшая НОВЫЙ YAML-документ. Второе: дефолт `width=80`
+        # переносил длинное значение, а префикс `  {qid}: ` добавлялся лишь к первой строке —
+        # продолжение оказывалось на отступе соседних ключей.
+        #
+        # Итог был потерей данных: кит записывал файл, который сам не мог прочитать, `read_answers`
+        # отдавал «ответов нет», кит переспрашивал всё заново и перезаписывал файл пустым. Ломалось
+        # ровно на содержательных ответах — короткие выживали.
+        #
+        # `json.dumps` даёт валидный YAML (YAML — надмножество JSON): двойные кавычки, одна строка,
+        # никаких маркеров документа.
+        lines.append(_value_line(qid, val))
         lines.append("")
     # Ответы на вопросы, которых больше не задают, сохраняем: человек их дал, они факт.
     for qid, val in existing.items():
         if qid not in seen:
-            lines.append(f"  {qid}: " + yaml.safe_dump(val, allow_unicode=True,
-                                                       default_flow_style=True).strip())
+            # ТОТ ЖЕ json.dumps, ЧТО ВЫШЕ (F-021, вторая половина). Первая правка закрыла только
+            # ветку «вопрос ещё задаётся», а ОТВЕЧЕННЫЕ идут ИМЕННО СЮДА — их уже не спрашивают.
+            # То есть дефект остался ровно там, где живут данные: на niti ответы гибли и после
+            # «исправления», пока это место не поправили. Поймано повторным прогоном на живом
+            # продукте, а не чтением кода.
+            lines.extend(f"  {c}" for c in own["before"].get(qid, []))
+            lines.append(_value_line(qid, val))
+    lines.extend(own["tail"])
     body = "\n".join(lines).rstrip() + "\n"
     if p.is_file():
         try:
@@ -385,8 +609,14 @@ def reconstruct(child_root, evidence: dict, model: dict | None = None) -> dict:
             for k, v in (s.get("commands") or {}).items():
                 if v:
                     cmds[k] = v
+        # ССЫЛКА СОВПАДАЕТ С ИСТОЧНИКОМ (F-019, часть 2). Значения команд читаются из МАНИФЕСТОВ
+        # стека (`package.json` -> scripts и т.п.), а не из шагов workflow — прежде evidence
+        # указывал только на CI, то есть «подтверждено» ссылалось не туда, где взяты данные.
+        _cmd_ev = list(evidence.get("dependency_manifests") or [])
         out["ci_pipeline"] = {"value": sorted(cmds) or "CI объявлен", "status": VERIFIED,
-                              "evidence": list(evidence["ci"])}
+                              "evidence": list(evidence["ci"]) + _cmd_ev,
+                              "note": "CI продукта обнаружен; перечисленные команды взяты из "
+                                      "манифестов стека, шаги workflow не разбирались"}
 
     if evidence.get("containers"):
         out["deployment"] = {"value": "контейнерная поставка", "status": INFERRED,
@@ -531,8 +761,14 @@ def _contour_state(child_root, c: dict, evidence: dict, model: dict) -> dict:
             from ai_ops_kit.planning import delivery_plan as _dp
             if _dp.is_template(_dp.load(root)):
                 state = PARTIAL
-        except Exception:                              # noqa: BLE001 — план не обязан разбираться
-            pass
+        # «НЕ СМОГ ПРОВЕРИТЬ» НЕ РАВНО «ПРОВЕРЕНО» (срез ратчета, 2026-08-12). Прежний `pass`
+        # оставлял состояние VERIFIED: при БИТОМ `planning/plan.yaml` контур объявлялся
+        # подтверждённым, хотя проверка не состоялась. И это не гипотеза — `delivery_plan.load()`
+        # по контракту БРОСАЕТ `PlanCorrupt` на неразобранном файле («„работы нет“ и „файл не
+        # заполнен“ это разные ответы»), то есть путь достижим ровно там, где ошибка дороже всего.
+        # Тот же класс, что F-018: существование файла принималось за заполненность.
+        except Exception:  # noqa: BLE001 — любой отказ проверки -> UNKNOWN, а не VERIFIED
+            state = UNKNOWN
 
     rec = c.get("reconstruction") or {}
     qs = c.get("questions") or []

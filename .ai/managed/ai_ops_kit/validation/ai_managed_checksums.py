@@ -34,12 +34,32 @@ def sha256(path):
     return h.hexdigest()
 
 
+def is_interpreter_artifact(path) -> bool:
+    """Байткод, который создаёт САМ python. -> bool.
+
+    F-025. Это не часть managed-слоя и не правка владельца: файл появляется от любого запуска
+    модуля из `.ai/managed/` без `-B`. Установщик это уже знал — `detect_drift` исключает
+    `__pycache__`/`.pyc`/`.pyo` с 3.x и в комментарии описывает тот же инцидент («прогон на 3.9
+    создавал __pycache__ внутри тестовой установки, и проверка рапортовала ДРИФТ»). А этот сканер —
+    второй ответ на тот же вопрос — не исключал, и ответы разошлись.
+
+    Цена расхождения замерена на живой дочке: `validate_ai_ops_child` (его гоняет CI ребёнка)
+    краснел с «managed-слой изменён вручную» и советовал перенести правку в custom/-overlay —
+    то есть кит обвинял владельца в том, чего тот не делал, СВОИМИ артефактами. Ложный красный
+    в чужом CI для продукта про «зелёное значит проверенное».
+    """
+    p = Path(path)
+    return "__pycache__" in p.parts or p.suffix in (".pyc", ".pyo")
+
+
 def content_files(root):
     files = []
     for p in sorted(root.rglob("*")):
         if p.is_dir():
             continue
         if p.name in EXCLUDE or p.name == ".gitkeep":
+            continue
+        if is_interpreter_artifact(p):
             continue
         files.append(p)
     return files

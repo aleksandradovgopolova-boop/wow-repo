@@ -3,9 +3,14 @@ schema_version: 1
 kind: ai-ops-child-config
 parent:
   source: git+https://github.com/aleksandradovgopolova-boop/ai-ops-kit.git
-  installed_version: 3.36.8
+  installed_version: 3.39.0
   allowed_version_range: ">=3.0.0 <4.0.0"
-  update_channel: stable
+  # РАННИЙ ПОЛУЧАТЕЛЬ, 01.09.2026. Стоял `stable` (дефолт от init) — и `qualification`-версии сюда
+  # не приезжали, поэтому репозиторий застрял на 3.36.8. wow-repo — наш полигон, а не продуктовая
+  # дочка заказчика: он осознанно берёт роль второго раннего получателя (рядом с ai-ops-cockpit) и
+  # своим зелёным контуром даёт полевую обкатку версии ДО её продвижения в `stable`. Именно вторая
+  # живая дочка — то, чего не хватает 3.39.0 до `stable`.
+  update_channel: qualification
   update_policy: pr
   auto_update: true   # по умолчанию ВКЛ: ежедневный workflow сам открывает update-PR (не авто-мерж;
                       #   мажорный bump всё равно блокируется). Поставьте false, чтобы отключить (опт-аут).

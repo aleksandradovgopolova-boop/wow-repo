@@ -10,28 +10,19 @@ from pathlib import Path
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
 def _git(root, *args):
-    from ai_ops_kit.engine import gitio
+    from ai_ops_kit.shared import gitio
     return gitio.git(root, *args)   # v3.0.13 (блок C): единый git-хелпер с таймаутом
 
 
 def _committed_changed_files(root, sha):
-    """Файлы, изменённые коммитом sha относительно его первого родителя. -> [path] (пусто при ошибке).
+    """Делегат к `shared.gitio.committed_changed_files` — ОДИН источник git-запроса.
 
-    `-z` ОБЯЗАТЕЛЕН, а не украшение. При `core.quotePath` (включён по умолчанию) git отдаёт не-ASCII
-    имена в escape-кавычках: `"context/product/\320\236..."`. Такой путь не совпадает ни с одним
-    сигнальным паттерном, и гейт связности превращал `changed` в `not_changed` — утверждение вместо
-    признания, то есть главный инвариант модели ломался на любом файле с русским именем. Для
-    русскоязычного продукта это отменяло гейт целиком. `-z` отдаёт имена как есть, разделённые NUL,
-    и попутно снимает вторую дыру: путь с переводом строки или запятой больше не распадается.
+    Тело переехало в `shared/gitio.py` (2026-08-12): его импортировал `gates/regression_evidence` по
+    ПРИВАТНОМУ имени через границу пакета. Здесь остался делегат, потому что внутри `engine` функция
+    зовётся из трёх мест, и переписывать их ради переезда — лишний риск без пользы.
     """
-    if not sha:
-        return []
-    rc, out, _ = _git(root, "diff", "--name-only", "-z", f"{sha}~1", sha)
-    if rc != 0:
-        rc, out, _ = _git(root, "show", "--name-only", "-z", "--pretty=format:", sha)
-    if rc != 0:
-        return []
-    return [ln for ln in out.split("\0") if ln.strip()]
+    from ai_ops_kit.shared import gitio
+    return gitio.committed_changed_files(root, sha)
 
 
 def _commit_on_branch(root, branch, message):
@@ -222,6 +213,50 @@ def _verify_remote_base(root, base_ref, base_sha):
     if remote_sha == base_sha:
         return {"verdict": "verified-equal", "remote_sha": remote_sha}
     return {"verdict": "verified-moved", "remote_sha": remote_sha}
+
+
+def delivery_preflight(root, base_ref, base_sha, open_pr) -> dict | None:
+    """Предупреждение о невозможной доставке ДО работы. -> dict или None, если предупреждать не о чем.
+
+    B2-23 (пере-прогон 14.08.2026): доставка проверяла remote-базу ПОСЛЕ работы. Прогон отработал
+    13.5 минуты живой модели и ~$3.5 и только в конце сказал «remote base сдвинулась — PR не открыт».
+    Отказ верный, момент — нет: база резолвится ДО первого вызова модели, и предупредить можно
+    бесплатно. Прогон при этом НЕ останавливается: работа сама по себе может быть нужна, а решение
+    «платить или нет» остаётся за владельцем — ему лишь возвращают факт вовремя.
+    """
+    if not open_pr or not base_sha:
+        return None
+    rv = _verify_remote_base(root, base_ref, base_sha) or {}
+    if rv.get("verdict") == "verified-equal":
+        return None
+    return {"verdict": rv.get("verdict"), "base_ref": base_ref, "base_sha": base_sha,
+            "remote_sha": rv.get("remote_sha"),
+            "warning": (f"доставка запрошена, но база '{base_ref}' на remote не совпадает "
+                        f"({rv.get('verdict')}): PR открыть не удастся, пока база не отправлена. "
+                        f"Сказано ДО работы — прогон продолжается, но заявки в конце не будет")}
+
+
+def managed_drift_preflight(root) -> dict | None:
+    """B2-27 (прогон 19.08.2026): update --in-place оставляет managed-файлы в рабочем дереве,
+    но прогон изолируется в worktree от HEAD (коммита). Незакоммиченные managed-файлы не попадают
+    в worktree — прогон идёт на старом ките, а doctor говорит «версии ✓».
+
+    Проверка: git status --porcelain -- .ai/managed/ .ai-ops.yaml
+    Если есть незакоммиченные изменения — warning, прогон продолжается, но человек предупреждён.
+    Граница: НЕ коммитим автоматически, решение остаётся за человеком.
+    """
+    rc, out, _ = _git(root, "status", "--porcelain", "--", ".ai/managed/", ".ai-ops.yaml")
+    if rc != 0 or not (out or "").strip():
+        return None
+    files = [line.strip() for line in out.strip().splitlines() if line.strip()]
+    sample = ", ".join(f[3:] for f in files[:5])
+    more = f" и ещё {len(files) - 5}" if len(files) > 5 else ""
+    return {
+        "warning": (f"managed-файлы изменены, но не закоммичены ({len(files)} файл(ов)): "
+                    f"прогон пойдёт от HEAD (старое), а не от обновлённого дерева. "
+                    f"Чтобы прогон увидел обновление, закоммитьте изменения. "
+                    f"Файлы: {sample}{more}")
+    }
 
 
 def _change_context(work_root, revision, max_chars=12000):

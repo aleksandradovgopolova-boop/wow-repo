@@ -34,6 +34,20 @@ def advise(signals, snapshot=None, child_root=None):
     def add(priority, category, advice):
         out.append({"priority": priority, "category": category, "advice": advice})
 
+    def skipped(priority, category, exc):
+        """Категорию совета оценить не удалось — СКАЗАТЬ это, а не выдать 4 совета вместо 5.
+
+        Срез `providers` ратчета (2026-08-12). Три блока стояли под `except Exception: pass`, и при
+        сбое под-советчика целая категория (гигиена сессии / делегирование / выбор runtime) молча
+        исчезала из выдачи. Инструмент, чья работа — советовать, советовал меньше и не говорил об
+        этом: человек читал полный список, не зная, что он неполный. Тот же класс, что заниженное
+        число в наблюдаемости и «нет расписки» вместо «не смог прочитать».
+
+        Канал вывода уже есть — сама выдача советов, поэтому пропуск называется в ней же.
+        Прогон при этом не падает: совет — не блокирующий контур.
+        """
+        add(priority, category, f"НЕ ОЦЕНЕНО: {category} — {type(exc).__name__}: {exc}"[:300])
+
     # 1. Гигиена сессии/контекста
     try:
         from ai_ops_kit.engops import session_guardrails as _sg
@@ -51,16 +65,27 @@ def advise(signals, snapshot=None, child_root=None):
         elif state == "unknown":
             add(1, "session_hygiene", "объём контекста неизвестен — передайте `--context N` из /context рантайма "
                                       "для точной оценки")
-    except Exception:  # noqa: BLE001
-        pass
+        # Потолок РАСХОДА СЕССИИ, а не только текущего контекста (2026-08-13). Названо отдельной
+        # строкой намеренно: после компакции контекст возвращается в «норму», и совет по контексту
+        # молчит — а сессия к этому моменту уже оплатила перечитывание истории десятки раз.
+        spend = _sg.classify_session_spend((snapshot or {}).get("session_total_tokens"), pol)
+        if spend == "over_budget":
+            add(1, "session_hygiene", "сессия исчерпала потолок расхода (session_token_budget) — "
+                                      "новый блок работы начинать в чистой сессии; `ai-ops session` "
+                                      "даст точную команду")
+        elif spend == "attention":
+            add(1, "session_hygiene", "расход сессии подходит к потолку — следующую независимую "
+                                      "задачу лучше начать в новой сессии")
+    except Exception as _e:  # noqa: BLE001 — совет не роняет прогон; пропуск НАЗЫВАЕТСЯ, см. skipped()
+        skipped(1, "session_hygiene", _e)
 
     # 2. Делегирование разведки
     try:
         from ai_ops_kit.engops import delegation_advisor as _da
         for d in _da.advise(s):
             add(2, "delegation", f"{d['trigger']}: {d['reason']} -> {d['delegate_to']}")
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as _e:  # noqa: BLE001 — см. skipped()
+        skipped(2, "delegation", _e)
 
     # 3. Ограничение бесполезных итераций
     attempts = int(s.get("fix_attempts") or 0)
@@ -76,8 +101,8 @@ def advise(signals, snapshot=None, child_root=None):
             add(4, "runtime", f"{wt['reason']} — Opus/сильный writer не нужен; дешёвый qualified writer")
         else:
             add(4, "runtime", f"{wt['reason']} — задача сложная: сильный executor оправдан")
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as _e:  # noqa: BLE001 — см. skipped()
+        skipped(4, "runtime", _e)
 
     # 5. Effort и краткость
     tt = str(s.get("task_type") or "").upper()

@@ -17,64 +17,20 @@ ADR — это governed-набор, а не разрозненные файлы.
 from __future__ import annotations
 import json
 import sys
-from pathlib import Path
+from pathlib import Path  # noqa: F401 — тело не зовёт, но селфтест импортирует ЧЕРЕЗ этот модуль
 
-import yaml
+import yaml  # noqa: F401 — то же: селфтест берёт yaml из пространства имён валидатора
 
-PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is_file()),
-            Path(__file__).resolve().parents[1])
-try:                                          # v3.34: валидатор двурежимен
+try:                                          # v3.38 (лента №5): валидатор двурежимен
     from ai_ops_kit.validation import _bootstrap   # noqa: F401 — импорт пакетом (после pip install)
 except ImportError:                                # запуск скриптом: корня на пути ещё нет,
     import _bootstrap                              # noqa: F401 — и положить его может только он сам
-from ai_ops_kit.validation import validate_architecture_decision as vad  # noqa: E402
-from ai_ops_kit.gates import gate_policy  # noqa: E402
-
-DEFAULT_DIR = PKG / "decisions" / "adr"
-
-
-def check_registry(adr_dir: Path):
-    errors = []
-    adrs = {}
-    files = sorted(Path(adr_dir).glob("ADR-*.yaml")) if Path(adr_dir).is_dir() else []
-    for f in files:
-        try:
-            data = yaml.safe_load(f.read_text(encoding="utf-8"))
-        except yaml.YAMLError as ex:
-            errors.append(f"{f.name}: не парсится YAML ({ex})")
-            continue
-        for e in vad.check(data):
-            errors.append(f"{f.name}: {e}")
-        aid = (data or {}).get("id")
-        if isinstance(aid, str):
-            if f.stem != aid:
-                errors.append(f"{f.name}: имя файла не совпадает с id ({aid})")
-            if aid in adrs:
-                errors.append(f"дубликат id {aid}")
-            else:
-                adrs[aid] = data
-    ids = set(adrs)
-    for aid, d in adrs.items():
-        sup, by = d.get("supersedes"), d.get("superseded_by")
-        if sup == aid or by == aid:
-            errors.append(f"{aid}: само-supersede запрещён")
-        if sup:
-            if sup not in ids:
-                errors.append(f"{aid}.supersedes -> несуществующий {sup}")
-            elif adrs[sup].get("superseded_by") != aid:
-                errors.append(f"{aid} supersedes {sup}, но {sup}.superseded_by != {aid} (несогласовано)")
-        if by:
-            if by not in ids:
-                errors.append(f"{aid}.superseded_by -> несуществующий {by}")
-            elif adrs[by].get("supersedes") != aid:
-                errors.append(f"{aid}.superseded_by={by}, но {by}.supersedes != {aid} (несогласовано)")
-        for r in d.get("related", []) or []:
-            if r not in ids:
-                errors.append(f"{aid}.related -> несуществующий {r}")
-        ui = d.get("ui_impact")
-        if ui is not None and ui not in gate_policy.UI_IMPACT:
-            errors.append(f"{aid}.ui_impact '{ui}' не в gate_policy.UI_IMPACT")
-    return errors, adrs
+# Проверка реестра ADR (read-only чтение каталога) вынесена ВНИЗ в пакет `checks`: рантайм
+# (intelligence.evolution_triggers) зовёт check_registry()/DEFAULT_DIR отсюда вниз, без ребра
+# intelligence -> validation. Раньше проверка ui_impact бралась из gate_policy.UI_IMPACT (gates,
+# capabilities) — из primitives его тянуть нельзя, вокабуляр теперь из architecture_decision.
+# Имена ре-экспортируются для обратной совместимости.
+from ai_ops_kit.checks.adr_registry import DEFAULT_DIR, check_registry  # noqa: E402,F401
 
 
 def main(argv):

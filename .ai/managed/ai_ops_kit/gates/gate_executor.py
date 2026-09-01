@@ -39,7 +39,11 @@ PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is
 # v3.34: валидаторы переехали в пакет. Путь один на модуль — чтобы следующий перенос правился
 # в одном месте, а не в каждом вызове подпроцесса.
 VALIDATION = PKG / "ai_ops_kit" / "validation"
-_EVIDENCE_KEYS = {"status", "provided", "checks", "evidence", "warnings", "blockers", "override"}
+# `pending_human`/`human_handoff` — часть формы evidence, а не приписка сбоку: гейт, который ждёт
+# ЧЕЛОВЕКА, отличается от гейта, который нашёл дефект. Без объявления здесь такой признак в
+# загруженном evidence считался бы «неизвестным полем».
+_EVIDENCE_KEYS = {"status", "provided", "checks", "evidence", "warnings", "blockers", "override",
+                  "pending_human", "human_handoff"}
 
 
 def validate_evidence(evidence) -> list:
@@ -93,6 +97,158 @@ _VERDICT_FAIL = re.compile(
     r"(fail|failed|blocker|blocked|отклонено|провален)\b", re.I)
 
 
+def extract_reviewer_json(text):
+    """Достать структурное `reviewer-result` из ответа судьи. None — блока нет или он не тот.
+
+    ЕДИНОЕ место разбора (v3.37): раньше эта эвристика жила в `orchestrator._write_reviewer_json`
+    и повторялась глазами в gate-евалах. Две копии разбора вердикта — это две правды о том, что
+    судья сказал; корпус C1 меряет устойчивость вердикта и обязан мерить ТОТ разбор, который
+    работает в бою, а не свой похожий.
+
+    Форма проверяется структурно (kind + status из словаря). Схему целиком сверяет
+    `validation/validate_reviewer_result.py` — там, где вердикт принимают (orchestrator);
+    здесь пакетного импорта валидатора нет намеренно: `gates` лежит слоем ниже `validation`.
+
+    РАЗБОР ИСПРАВЛЕН ЗАМЕРОМ (первый живой прогон корпуса gate-евалов, 20.08.2026). Здесь стояло
+    `re.search(r"[{].*[}]", text, re.S)` — жадный захват от ПЕРВОЙ `{` до ПОСЛЕДНЕЙ `}`. На живом
+    ответе code-reviewer'а это сломалось сразу: ревью цитировало проверяемый код со строкой
+    `issues.append({"type": "undefined_flag"})`, захват начался с неё, `json.loads` упал, и
+    структурное заключение судьи было МОЛЧА ОТБРОШЕНО. Дальше срабатывал фолбэк на regex по прозе,
+    и гейт получал безымянное «reviewer verdict FAIL @ …» вместо конкретных блокеров судьи
+    (в трёх записанных ответах их 8, 4 и 6) и его же checks. Класс — не «редкий случай»: ревью питоновского или js-кода цитирует
+    фигурную скобку почти всегда.
+
+    Теперь кандидаты разбираются по одному через `raw_decode` (он корректно проходит строки и
+    экранирование) и берётся ПОСЛЕДНИЙ валидный: промпт роли требует структурный блок в КОНЦЕ
+    ответа, а всё, что раньше, — цитата или пример.
+    """
+    if not text:
+        return None
+    decoder = json.JSONDecoder()
+    found = None
+    idx = text.find("{")
+    while idx != -1:
+        try:
+            obj, end = decoder.raw_decode(text, idx)
+        except ValueError:
+            idx = text.find("{", idx + 1)
+            continue
+        if (isinstance(obj, dict) and obj.get("kind") == "reviewer-result"
+                and obj.get("status") in ("pass", "warn", "fail")):
+            found = obj
+            idx = text.find("{", end)
+        else:
+            idx = text.find("{", idx + 1)
+    return found
+
+
+def evidence_from_reviewer_result(gate: dict, rr: dict, source: str) -> dict:
+    """Структурный вердикт судьи -> evidence одного гейта (источник истины, не regex по прозе)."""
+    if rr["status"] == "fail":
+        return {"status": "fail",
+                "blockers": rr.get("blockers") or [f"reviewer FAIL @ {source}"],
+                "evidence": [source]}
+    # pass/warn: та же дисциплина — required_evidence авто-даём только ai-review
+    prov = list(gate.get("required_evidence", []) or []) if classify(gate) == "ai-review" else []
+    return {"status": rr["status"], "provided": prov,
+            "checks": rr.get("checks", []), "evidence": [source]}
+
+
+def evidence_from_markdown(gate: dict, text: str, source: str):
+    """Фолбэк для артефактов без структурного заключения: строка вердикта в прозе.
+    None — вердикта в тексте нет (и тогда гейт остаётся НЕзакрытым, а не «зелёным по умолчанию»)."""
+    if _VERDICT_FAIL.search(text or ""):
+        return {"status": "fail", "blockers": [f"reviewer verdict FAIL @ {source}"],
+                "evidence": [source]}
+    if _VERDICT_PASS.search(text or ""):
+        # Дисциплина evidence (v2.16): «pass» ревьюера — доказательство ТОЛЬКО для
+        # ai-review гейтов (судья и есть evidence). Для детерминированных/human гейтов
+        # слово ревьюера НЕ фабрикует required_evidence (build_passed/tests_passed/…):
+        # их закрывают реальные валидаторы/факты, иначе «evidence» снова = «поверьте на слово».
+        if classify(gate) == "ai-review":
+            return {"status": "pass", "provided": list(gate.get("required_evidence", []) or []),
+                    "evidence": [f"reviewer verdict @ {source}"]}
+        # provided пуст -> при наличии required_evidence evaluate_gate честно даст fail
+        return {"status": "pass", "evidence": [f"reviewer verdict @ {source}"]}
+    return None
+
+
+# Отказ провайдера, у которого причина «человеческая»: модель отказалась отвечать — тут нужен
+# человек. Пустой или обрезанный ответ — не человеческий случай: его чинит повтор с другим
+# потолком, и помечать его ожиданием человека значило бы звать не того.
+_REFUSAL_NEEDS_HUMAN = {"refused_by_model"}
+
+
+def evidence_from_judge_refusal(gate: dict, refusal: dict, source: str):
+    """Отказ судьи -> evidence, которое НАЗЫВАЕТ причину, а не растворяется в «нет заключения».
+
+    Статус повторяет то, что дал бы гейт без evidence (блокирующий -> fail, advisory -> warn):
+    отказ не строже и не мягче отсутствия вердикта — он ровно так же его не даёт. Меняется одно:
+    человек читает, ЧТО именно случилось, вместо «нет заключения reviewer»."""
+    reason = refusal.get("reason_text") or refusal.get("reason") or "причина не названа"
+    detail = refusal.get("detail")
+    who = refusal.get("provider") or "провайдер"
+    text = (f"заключение судьи не получено ({who}): {reason}"
+            f"{'; ' + detail if detail else ''}")
+    ev = {"status": "fail" if gate.get("blocking") else "warn", "evidence": [source]}
+    if gate.get("blocking"):
+        ev["blockers"] = [text]
+    else:
+        ev["warnings"] = [text]
+    if refusal.get("reason") in _REFUSAL_NEEDS_HUMAN:
+        ev["pending_human"] = True
+    return ev
+
+
+def evidence_from_no_verdict(gate: dict, *, gate_id: str, stopped=None, reads=None,
+                             errors=None, refusal=None):
+    """Ревью-петля завершилась без разбираемого вердикта -> evidence, которое НАЗЫВАЕТ причину.
+
+    Тот же принцип, что evidence_from_judge_refusal: гейт остаётся НЕзакрытым (blocking -> fail,
+    advisory -> warn), но человек читает, ПОЧЕМУ вердикта нет, а не общее «нет заключения reviewer».
+
+    ПОВОД — находка поля P0 (obs-2026-08-20, ai-ops-cockpit): code_review ОБА прогона кончился
+    stopped=no-verdict, valid=false, а `_run_reviews` тихо ронял гейт (`if errs: continue`) — тот
+    падал на общий `_unmet_reason`, не называя причину, и `_hard_stop` не распознавал reviewer-blocked
+    (работа МОЛЧА вставала). Здесь причина названа, а `"reviewer verdict"` в evidence взводит
+    распознавание reviewer-blocked (см. workpackage_executor._hard_stop).
+
+    Различает под-случаи: провайдер назвал отказ (refusal) / бюджет вызовов исчерпан / лимит чтений
+    исчерпан без вердикта / ответы судьи не разобрались в reviewer-result."""
+    if refusal:                       # провайдер назвал причину (пусто/обрезано/отказ) — она первична
+        ev = evidence_from_judge_refusal(gate, refusal, f"reviewer verdict @ {gate_id} (refusal)")
+        return ev
+    nreads = len(reads or []) if not isinstance(reads, int) else reads
+    stopped = stopped or "no-verdict"
+    if str(stopped).startswith("budget"):
+        why, needs_human = f"судья исчерпал бюджет вызовов до вердикта ({stopped})", False
+    elif nreads:
+        why, needs_human = (f"судья прочитал {nreads} файл(ов), но на форс-ходе не вынес "
+                            f"разбираемого reviewer-result"), True
+    else:
+        detail = "; ".join(errors or []) or str(stopped)
+        why, needs_human = f"судья не вернул разбираемого reviewer-result ни разу ({detail})", True
+    text = f"независимый ревьюер не вынес вердикт по гейту {gate_id}: {why}. Гейт не закрыт."
+    ev = {"status": "fail" if gate.get("blocking") else "warn", "checks": [],
+          "evidence": [f"reviewer verdict @ {gate_id} (no-verdict: {stopped})"]}
+    if gate.get("blocking"):
+        ev["blockers"] = [text]
+    else:
+        ev["warnings"] = [text]
+    if needs_human:
+        ev["pending_human"] = True
+    return ev
+
+
+def evidence_from_judge_output(gate: dict, text: str, source: str = "judge-output"):
+    """Ответ судьи (сырой текст) -> evidence одного гейта. Тот же путь, что в бою:
+    структурный reviewer-result имеет приоритет, проза — фолбэк, отсутствие вердикта -> None."""
+    rr = extract_reviewer_json(text)
+    if rr is not None:
+        return evidence_from_reviewer_result(gate, rr, source)
+    return evidence_from_markdown(gate, text, source)
+
+
 def collect_evidence(workflow_id: str, run_dir) -> dict:
     """Собрать evidence из артефактов reviewer-стадий (orchestrator --collect-evidence).
     Для каждого гейта ищем ответственную стадию (gate.stage / gate.responsible_role),
@@ -110,6 +266,18 @@ def collect_evidence(workflow_id: str, run_dir) -> dict:
                         None)
         if not stage_id:
             continue
+        # ОТКАЗ ЧИТАЕТСЯ ПЕРВЫМ (v3.37, C2): если судья вердикта не вынес и провайдер назвал
+        # причину, эта причина и есть то, что человеку надо знать. Разбирать после отказа нечего —
+        # артефакт стадии содержит объяснение отказа, а не заключение.
+        rfl = run_dir / f"stage-{stage_id}.refusal.json"
+        if rfl.exists():
+            try:
+                rec = json.loads(rfl.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                rec = None
+            if isinstance(rec, dict) and rec.get("kind") == "provider-refusal":
+                ev[gid] = evidence_from_judge_refusal(g, rec, rfl.name)
+                continue
         # v2.33: структурный reviewer-result — ИСТОЧНИК ИСТИНЫ (не regex по markdown).
         # Если рядом со стадией есть stage-<id>.reviewer.json (schemas/reviewer-result.schema.json),
         # берём вердикт/blockers из него; markdown-regex остаётся фолбэком для старых артефактов.
@@ -120,34 +288,14 @@ def collect_evidence(workflow_id: str, run_dir) -> dict:
             except (OSError, json.JSONDecodeError):
                 rr = None
             if isinstance(rr, dict) and rr.get("status") in ("pass", "warn", "fail"):
-                if rr["status"] == "fail":
-                    ev[gid] = {"status": "fail",
-                               "blockers": rr.get("blockers") or [f"reviewer FAIL @ {rjson.name}"],
-                               "evidence": [rjson.name]}
-                else:
-                    # pass/warn: та же дисциплина — required_evidence авто-даём только ai-review
-                    prov = list(g.get("required_evidence", []) or []) if classify(g) == "ai-review" else []
-                    ev[gid] = {"status": rr["status"], "provided": prov,
-                               "checks": rr.get("checks", []), "evidence": [rjson.name]}
+                ev[gid] = evidence_from_reviewer_result(g, rr, rjson.name)
                 continue
         art = run_dir / f"stage-{stage_id}.md"
         if not art.exists():
             continue
-        text = art.read_text(encoding="utf-8")
-        if _VERDICT_FAIL.search(text):
-            ev[gid] = {"status": "fail", "blockers": [f"reviewer verdict FAIL @ {art.name}"],
-                       "evidence": [art.name]}
-        elif _VERDICT_PASS.search(text):
-            # Дисциплина evidence (v2.16): «pass» ревьюера — доказательство ТОЛЬКО для
-            # ai-review гейтов (судья и есть evidence). Для детерминированных/human гейтов
-            # слово ревьюера НЕ фабрикует required_evidence (build_passed/tests_passed/…):
-            # их закрывают реальные валидаторы/факты, иначе «evidence» снова = «поверьте на слово».
-            if classify(g) == "ai-review":
-                ev[gid] = {"status": "pass", "provided": list(g.get("required_evidence", []) or []),
-                           "evidence": [f"reviewer verdict @ {art.name}"]}
-            else:
-                ev[gid] = {"status": "pass", "evidence": [f"reviewer verdict @ {art.name}"]}
-                # provided пуст -> при наличии required_evidence evaluate_gate честно даст fail
+        e = evidence_from_markdown(g, art.read_text(encoding="utf-8"), art.name)
+        if e is not None:
+            ev[gid] = e
     return ev
 
 
@@ -172,7 +320,22 @@ def deterministic_run(validator):
         return _freshness_run()
     if validator == "validate-deploy-readiness":
         return _deploy_readiness_run()
+    if validator == "validate-documentation-updated":
+        return _documentation_updated_run()
     return None
+
+
+def _documentation_updated_run(base=None):
+    """v3.37 (C3): гейт `documentation_updated` переведён из самозаявления в машинный.
+
+    Оба его доказательства — факты о дифе (документация тронута; запись для CHANGELOG добавлена),
+    и спрашивать о них стадию, которая работу и сделала, было лишним. Непроверяемое даёт warn с
+    причиной, а не pass: гейт advisory, и «нечем проверить» не равно «в порядке»."""
+    from ai_ops_kit.gates import documentation_evidence
+    rep = documentation_evidence.assess(Path(base) if base else Path.cwd())
+    ev = documentation_evidence.gate_evidence(rep)
+    provided = ev.get("provided", [])
+    return ev["status"], ev.get("checks", []), provided
 
 
 def _deploy_readiness_run(base=None):
@@ -183,11 +346,8 @@ def _deploy_readiness_run(base=None):
     а исполняемого пути нет. Недоступность инструмента -> warn, а НЕ pass (бездоказательного pass
     не существует)."""
     b = Path(base) if base else Path.cwd()
-    for cand in (b / ".ai" / "managed" / "tools", PKG / "tools"):
-        if (cand / "deploy_readiness.py").is_file() and str(cand) not in sys.path:
-            sys.path.insert(0, str(cand))
     try:
-        from ai_ops_kit.engops import deploy_readiness
+        from ai_ops_kit.gates import deploy_readiness
     except Exception as e:  # noqa: BLE001 — нет инструмента -> warn с причиной, не тихий pass
         return "warn", [{"id": f"deploy_readiness_tool_unavailable:{e}", "status": "warn"}], []
     rep = deploy_readiness.assess(b)
@@ -237,7 +397,7 @@ def _freshness_run(base=None):
 
 # ключи, разрешённые схемой gate-result (additionalProperties: false)
 _ALLOWED_KEYS = {
-    "schema_version", "gate", "status", "blocking", "scope", "checks", "blockers",
+    "schema_version", "gate", "status", "blocking", "awaiting_human", "scope", "checks", "blockers",
     "warnings", "evidence", "affected_files", "affected_artifacts", "tested_revision",
     "artifact_hashes", "owner", "review_mode", "created_at", "expires_at", "override",
     "suggested_next",
@@ -323,6 +483,49 @@ def classify(gate: dict, signals: dict = None) -> str:
     return "writer-check"
 
 
+# КТО ЗАКРЫВАЕТ ГЕЙТ — четыре ответа, а не три (работа `gate-map-says-who-closes-it`).
+#
+# Замер 19.08.2026: из 35 гейтов 19 не имеют исполняемого валидатора. Их «зелёное» — не результат
+# машины, и дочка об этом не знала: в отчёте прогона все гейты выглядели одинаково.
+#
+# ЧЕТВЁРТОЕ ЗНАЧЕНИЕ (`writer`) добавлено НЕ для полноты таксономии. Гейт с `review_mode: writer`
+# и без валидатора закрывает СВОЯ ЖЕ стадия — тот, кто произвёл работу, объявляет её проверенной.
+# Назвать это `judge` значило бы напечатать в отчёте ровно то утверждение, против которого стоит
+# инвариант «writer ≠ judge».
+CLOSED_BY = {
+    "deterministic": "validator",   # машина: детерминированный валидатор
+    "ai-review":     "judge",       # мнение независимого судьи-роли (read-only)
+    "writer-check":  "writer",      # самозаявление стадии, которая работу и сделала
+    "human-approval": "human",      # решение человека
+}
+CLOSED_BY_VALUES = tuple(dict.fromkeys(CLOSED_BY.values()))
+
+
+def closed_by(gate: dict, signals: dict = None) -> str:
+    """Кто закрывает гейт СЕЙЧАС: validator | judge | writer | human.
+
+    Выводится из той же классификации, по которой гейт исполняется, а не объявляется рядом:
+    второе объявление разошлось бы с поведением на первой же правке. Реестр `quality/gates.yaml`
+    несёт то же значение для ДОЧКИ (она читает реестр, а не код), и тест сверяет их между собой.
+    """
+    return CLOSED_BY[classify(gate, signals)]
+
+
+def closure_breakdown(gates: dict, signals: dict = None) -> dict:
+    """Разбивка «кто закрывает» по набору гейтов -> {counts, by_gate, judged_or_human}.
+
+    `judged_or_human` — то, ради чего разбивка существует: список гейтов, чьё «зелёное» является
+    мнением. Человек, читающий отчёт, обязан видеть его как список, а не выводить из чисел.
+    """
+    by_gate = {gid: closed_by(g or {}, signals) for gid, g in (gates or {}).items()}
+    counts = {v: 0 for v in CLOSED_BY_VALUES}
+    for v in by_gate.values():
+        counts[v] = counts.get(v, 0) + 1
+    return {"counts": counts, "by_gate": by_gate,
+            "machine_checked": sorted(g for g, v in by_gate.items() if v == "validator"),
+            "judged_or_human": sorted(g for g, v in by_gate.items() if v != "validator")}
+
+
 def _unmet_reason(kind: str, gate: dict) -> str:
     return {
         "deterministic": f"валидатор '{gate.get('validator')}' не запущен или evidence не предоставлен",
@@ -333,7 +536,7 @@ def _unmet_reason(kind: str, gate: dict) -> str:
 
 
 def evaluate_gate(gate_id: str, gate: dict, evidence: dict, tested_revision=None, signals=None,
-                  not_applicable=None) -> dict:
+                  not_applicable=None, exempt_reason=None) -> dict:
     """Один гейт -> machine-readable gate-result (schemas/gate-result.schema.json).
 
     Дисциплина evidence (v2.16): бездоказательного pass не существует — если гейт
@@ -353,6 +556,9 @@ def evaluate_gate(gate_id: str, gate: dict, evidence: dict, tested_revision=None
     if rw and not any((signals or {}).get(s) for s in rw):
         return {
             "schema_version": 1, "gate": gate_id, "status": "pass", "blocking": False,
+            # признак обязан быть у КАЖДОГО результата, включая честный пропуск: отсутствие поля
+            # читается как «не знаю», а здесь это неотличимо от «нет»
+            "awaiting_human": False,
             "scope": ["not_applicable"], "checks": [], "blockers": [],
             "warnings": [f"гейт неприменим: нет ни одного сигнала {rw} — не оценивался (honest skip)"],
             "evidence": [], "tested_revision": tested_revision,
@@ -387,7 +593,13 @@ def evaluate_gate(gate_id: str, gate: dict, evidence: dict, tested_revision=None
             covered = real_covered | exempt
             used_exempt = [k for k in required if k in exempt and k not in real_covered]
             if used_exempt:
-                warnings = warnings + [f"освобождено (нет инструмента в стеке): {', '.join(used_exempt)}"]
+                # ПРИЧИНА ОСВОБОЖДЕНИЯ НАЗЫВАЕТСЯ, А НЕ ПОДРАЗУМЕВАЕТСЯ. Прежде текст был жёстко
+                # «нет инструмента в стеке» — единственная причина, которая существовала в v2.61.
+                # Освобождение по другому поводу (изменение только документации) писало бы в отчёт
+                # ЧУЖУЮ причину: владелец читал бы «нет инструмента» там, где инструмент есть и
+                # просто не нужен. Ложное основание хуже отсутствующего — по нему принимают решения.
+                warnings = warnings + [f"освобождено ({exempt_reason or 'нет инструмента в стеке'}): "
+                                       f"{', '.join(used_exempt)}"]
             missing = [k for k in required if k not in covered]
             if missing:
                 msg = f"бездоказательный pass: не подтверждены required_evidence: {', '.join(missing)}"
@@ -427,6 +639,19 @@ def evaluate_gate(gate_id: str, gate: dict, evidence: dict, tested_revision=None
         "gate": gate_id,
         "status": status,
         "blocking": blocking,
+        # ХОД ЗА ЧЕЛОВЕКОМ — ОТДЕЛЬНЫЙ ФАКТ, А НЕ ОТТЕНОК ТЕКСТА БЛОКЕРА (наблюдение 19.08.2026,
+        # работа `security-gate-closable-on-quick`). Конвейер уже ставил `pending_human` в evidence
+        # гейта, но сюда признак не доезжал: результат собирается из фиксированного набора полей, и
+        # всё остальное терялось при уплощении. В `run-report.json` его не было НИ РАЗУ.
+        #
+        # ПОЧЕМУ ЭТО НЕ КОСМЕТИКА. «Гейт нашёл дефект» и «гейт ждёт решения человека» требуют разных
+        # действий: первое чинит агент, второе он не может сделать в принципе. Читая отчёт, оба
+        # случая выглядели одинаково — как «работа не готова», — и ожидание человека молча
+        # засчитывалось в неудачу прогона.
+        #
+        # ВСЕГДА bool, НИКОГДА не отсутствует: пропущенное поле читается как «не знаю», а «не знаю»
+        # здесь неотличимо от «нет» — ровно та подмена, против которой стоит остальной контур.
+        "awaiting_human": bool(ev.get("pending_human") or ev.get("human_handoff")),
         "checks": checks,
         "blockers": blockers,
         "warnings": warnings,
@@ -443,7 +668,7 @@ def evaluate_gate(gate_id: str, gate: dict, evidence: dict, tested_revision=None
     return result
 
 
-def evaluate(workflow_id: str, evidence: dict = None, tested_revision=None, gate_ids=None, signals=None, not_applicable=None) -> dict:
+def evaluate(workflow_id: str, evidence: dict = None, tested_revision=None, gate_ids=None, signals=None, not_applicable=None, exempt_reason=None) -> dict:
     """Оценить quality_gates. По умолчанию — гейты контракта; если передан gate_ids (напр.
     агрегированные гейты RunPlan: base_workflow + треки), оцениваются именно они. Так прогон
     проверяет ТО, ЧТО спланировал (finding аудита: треки планировались, но не оценивались).
@@ -463,7 +688,8 @@ def evaluate(workflow_id: str, evidence: dict = None, tested_revision=None, gate
             raise SystemExit(f"workflow {workflow_id}: гейт '{gid}' отсутствует в quality/gates.yaml")
         kinds[gid] = classify(gate, signals)
         r = evaluate_gate(gid, gate, evidence, tested_revision, signals=signals,
-                          not_applicable=(not_applicable or {}).get(gid))
+                          not_applicable=(not_applicable or {}).get(gid),
+                          exempt_reason=(exempt_reason or {}).get(gid))
         results.append(r)
         overridden = override_effective(gate, r.get("override"))
         if r["blocking"] and r["status"] == "fail" and not overridden:
@@ -474,6 +700,10 @@ def evaluate(workflow_id: str, evidence: dict = None, tested_revision=None, gate
         "workflow": workflow_id,
         "evaluated_gates": gate_ids,
         "gate_kinds": kinds,
+        # КТО ЗАКРЫЛ КАЖДЫЙ ГЕЙТ. Классификация существовала и раньше (`gate_kinds`), но наружу не
+        # выходила: в отчёте прогона все гейты выглядели одинаково, и «зелёное» от валидатора было
+        # неотличимо от «зелёного» по мнению судьи. Дочка, читающая отчёт, обязана видеть разницу.
+        "closure": closure_breakdown({gid: gates[gid] for gid in gate_ids}, signals),
         "gate_results": results,
         "unmet_gates": unmet,
         "blocked": bool(unmet),

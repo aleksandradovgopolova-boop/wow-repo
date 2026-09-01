@@ -31,7 +31,6 @@ import sys
 from pathlib import Path
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
-from ai_ops_kit.engine import tool_broker            # noqa: E402
 from ai_ops_kit.shared import project_detector       # noqa: E402
 from ai_ops_kit.gates import verification_tiers     # noqa: E402  v3.26.0
 
@@ -56,7 +55,7 @@ def _commands_by_check(profile):
     return out
 
 
-def collect(profile, root, policy, changed_files=None):
+def collect(profile, root, policy, changed_files=None, broker=None):
     """Прогнать команды профиля через Tool Broker и собрать evidence для implementation_verification.
 
     v3.27.3 WP4: Если changed_files задан, используется verification_tiers для определения
@@ -64,10 +63,15 @@ def collect(profile, root, policy, changed_files=None):
     - skip: docs-only — не запускаем product build/test
     - affected/module: запускаем только затронутые тесты
     - full: полный набор тестов
+
+    v3.38 (K1): broker — модуль исполнения (tool_broker), внедряется параметром.
+    gates больше не импортирует engine напрямую (снята взаимная пара engine↔gates).
     """
+    if broker is None:
+        raise TypeError("collect() requires broker parameter (tool_broker module)")
     root = Path(root)
     by_check = _commands_by_check(profile)
-    revision = tool_broker._revision(root)
+    revision = broker._revision(root)
     checks_report, schema_evidence, provided, blockers = {}, {}, [], []
     not_applicable, tests_absent = [], False   # v2.61: инструмент отсутствует в подтверждённом стеке
 
@@ -81,16 +85,32 @@ def collect(profile, root, policy, changed_files=None):
 
         # v3.27.3 WP4: skip tier — docs-only, не запускаем product build/test
         if tier == "skip":
+            # ПРОПУСК ОБЯЗАН БЫТЬ ОСВОБОЖДЕНИЕМ, А НЕ ПУСТЫМ `pass` (B2-08, живой прогон 14.08).
+            #
+            # Прежде эта ветка возвращала `status: pass` с единственным флагом `skip_verification`,
+            # которого НЕТ в `required_evidence`, и `not_applicable: []`. Дальше `gate_executor`
+            # честно не находил ни одного из пяти обязательных флагов и превращал такой pass в
+            # БЛОКИРУЮЩИЙ отказ «бездоказательный pass». То есть ветка, созданная чтобы пропустить
+            # проверку, сама её и заваливала — на ЛЮБОМ репозитории, включая кит: воспроизведено на
+            # полном наборе команд, отсутствие тестов у продукта тут ни при чём.
+            # Цена: ни одно изменение только документации не могло дойти до владельца.
+            #
+            # Теперь флаги объявлены НЕПРИМЕНИМЫМИ с названной причиной, и `gate_executor` пишет
+            # это в warnings: проверка не выдумана, она явно не делалась и сказано почему.
+            # `tested_revision` в освобождение НЕ входит — ревизия известна, это настоящее
+            # доказательство, и подменять его освобождением значило бы прятать факт за отговоркой.
             return {
                 "schema_version": 1, "kind": "evidence-collection",
                 "revision": revision, "checks": {},
                 "schema_evidence": {},
                 "gate_evidence": {"implementation_verification": {
                     "status": "pass",
-                    "provided": ["skip_verification"],
-                    "evidence": [f"skip_reason:{impact_status}"],
+                    "provided": ["skip_verification", "tested_revision"],
+                    "evidence": [f"skip_reason:{impact_status}", f"revision:{revision}"],
                 }},
-                "not_applicable": [],
+                "not_applicable": ["build_passed", "lint_passed", "typecheck_passed",
+                                   "tests_passed"],
+                "not_applicable_reason": "изменение только документации — продуктовые проверки не применимы",
                 "tests_absent": False,
                 "verification": verification_info,
             }
@@ -113,7 +133,7 @@ def collect(profile, root, policy, changed_files=None):
             continue
         runs, all_ok, any_denied = [], True, False
         for lang, cmd in cmds:
-            ev = tool_broker.execute({"op": "shell", "command": cmd}, root, policy)
+            ev = broker.execute({"op": "shell", "command": cmd}, root, policy)
             if not ev["allowed"]:
                 any_denied = True; all_ok = False
                 runs.append({"language": lang, "command": cmd, "denied": True, "reason": ev["reason"]})
@@ -212,9 +232,12 @@ def main(argv):
     c.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     if a.cmd == "collect":
+        # v3.38 (K1): broker загружается динамически — gates не импортирует engine статически.
+        # CLI-точка входа — процесс, не импорт; __import__ не ловится validate_layering.
+        _tb = __import__("ai_ops_kit.engine.tool_broker", fromlist=["Policy", "execute", "_revision"])
         profile = project_detector.detect(a.root)
-        policy = tool_broker.Policy(level=a.policy_level)
-        r = collect(profile, a.root, policy, changed_files=a.changed)
+        policy = _tb.Policy(level=a.policy_level)
+        r = collect(profile, a.root, policy, changed_files=a.changed, broker=_tb)
         if a.json:
             print(json.dumps(r, ensure_ascii=False, indent=2))
         else:

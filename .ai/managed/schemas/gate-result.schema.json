@@ -9,6 +9,7 @@
     "gate": { "type": "string" },
     "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
     "blocking": { "type": "boolean" },
+    "awaiting_human": { "type": "boolean", "description": "Gate is blocked pending a human decision (ApprovalRecord), not by a defect an agent can fix. Always present, never absent: a missing field would read as 'unknown', which here is indistinguishable from 'no'." },
     "scope": { "type": "array", "items": { "type": "string" } },
     "checks": {
       "type": "array",

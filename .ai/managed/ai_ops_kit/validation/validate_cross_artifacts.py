@@ -22,76 +22,19 @@
 """
 from __future__ import annotations
 
-import re
 import sys
-import tempfile
+import tempfile  # noqa: F401 — тело валидатора не зовёт, но селфтест импортирует ЧЕРЕЗ этот модуль
 from pathlib import Path
 
-EVENT_RE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
-TRACKING = "analytics/tracking-plan.md"
-DASHBOARD = "analytics/dashboard-spec.md"
-
-
-def md_section(text: str, title_re: str) -> str:
-    """Вернуть текст раздела '## <title>' до следующего '## '."""
-    m = re.search(rf"^##\s+{title_re}.*?$", text, re.MULTILINE | re.IGNORECASE)
-    if not m:
-        return ""
-    rest = text[m.end():]
-    nxt = re.search(r"^##\s+", rest, re.MULTILINE)
-    return rest[:nxt.start()] if nxt else rest
-
-
-def declared_events(tracking_text: str):
-    """События из первой колонки таблицы раздела Events tracking plan'а."""
-    section = md_section(tracking_text, r"Events")
-    events = set()
-    for line in section.splitlines():
-        line = line.strip()
-        if not line.startswith("|"):
-            continue
-        first = line.strip("|").split("|")[0].strip().strip("`")
-        if re.fullmatch(EVENT_RE.pattern, first):
-            events.add(first)
-    return events
-
-
-def used_events(dashboard_text: str):
-    """snake_case-токены из колонки Source events и раздела Funnels."""
-    used = set()
-    for line in dashboard_text.splitlines():
-        if line.strip().startswith("|") and "---" not in line:
-            cells = [c.strip() for c in line.strip("|").split("|")]
-            # эвристика: колонки после третьей в таблице Blocks — source events;
-            # надёжнее взять токены из всех ячеек, содержащих snake_case
-            for c in cells:
-                used.update(EVENT_RE.findall(c))
-    used.update(EVENT_RE.findall(md_section(dashboard_text, r"Funnels")))
-    return used
-
-
-def check_feature(feature_dir: Path):
-    """-> (problems, warns, skipped_note|None)"""
-    tp = feature_dir / TRACKING
-    ds = feature_dir / DASHBOARD
-    if not ds.exists():
-        return [], [], f"{feature_dir.name}: dashboard-spec отсутствует — сверять нечего (skip)"
-    if not tp.exists():
-        return [f"{feature_dir.name}: dashboard-spec есть, а tracking plan ({TRACKING}) — нет"], [], None
-    declared = declared_events(tp.read_text(encoding="utf-8"))
-    if not declared:
-        return [], [f"{feature_dir.name}: таблица Events в tracking plan не распарсилась — "
-                    "сверка пропущена (проверьте формат)"], None
-    used = used_events(ds.read_text(encoding="utf-8"))
-    problems = [f"{feature_dir.name}: dashboard-spec использует событие '{e}', "
-                f"не объявленное в tracking plan" for e in sorted(used - declared)]
-    warns = []
-    unused = declared - used
-    if used and unused:
-        warns.append(f"{feature_dir.name}: события объявлены, но не используются "
-                     f"в dashboard-spec: {sorted(unused)}")
-    return problems, warns, None
-
+try:                                          # v3.38 (лента №5): валидатор двурежимен
+    from ai_ops_kit.validation import _bootstrap   # noqa: F401 — импорт пакетом (после pip install)
+except ImportError:                                # запуск скриптом: корня на пути ещё нет,
+    import _bootstrap                              # noqa: F401 — и положить его может только он сам
+# Проверяющая логика (чтение tracking-plan/dashboard-spec — read-only I/O) вынесена ВНИЗ в пакет
+# `checks` (слой primitives): и рантайм (lifecycle.run_report), и эта CLI-обёртка импортируют её
+# вниз — без восходящего ребра lifecycle -> validation. Имена ре-экспортируются для совместимости.
+from ai_ops_kit.checks.cross_artifacts import (   # noqa: E402,F401
+    DASHBOARD, EVENT_RE, TRACKING, check_feature, declared_events, md_section, used_events)
 
 TP_OK = """# Tracking Plan
 ## Events

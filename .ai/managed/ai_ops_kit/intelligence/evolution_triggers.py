@@ -22,11 +22,11 @@ import json
 import sys
 from pathlib import Path
 
-from ai_ops_kit.shared import _bootstrap  # noqa: E402,F401 — кладёт validation/ в sys.path
-                                         # ДО плоских импортов ниже; повторный импорт того же
-                                         # модуля ниже удалён ревизией 2026-08-11 как дубль
-from ai_ops_kit.validation import validate_adr_registry as reg          # noqa: E402
-from ai_ops_kit.validation import validate_quality_attributes as qa     # noqa: E402
+# profile() и проверка реестра ADR (read-only) живут ВНИЗ, в пакете `checks` (слой primitives):
+# зовём их вниз, без восходящего ребра intelligence -> validation (лента №5). Ни sys.path, ни
+# bootstrap больше не нужны — импорт по пакетному имени.
+from ai_ops_kit.checks import adr_registry as reg
+from ai_ops_kit.checks import quality_attributes as qa
 
 DEGRADED = 0.7   # normalized ниже -> метрика деградирует (== порог findings в product_health)
 

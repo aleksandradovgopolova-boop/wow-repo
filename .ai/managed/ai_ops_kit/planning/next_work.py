@@ -131,6 +131,11 @@ def _rank(w, res, model, plan):
         why.append(f"разблокирует {unblocks} {_plural(unblocks)}")
     if goal_rank == 0 and len(prio) > 1:
         why.append("работает на цель первого приоритета")
+    if not _plan.goal_is_live(plan, gid):
+        # Названо вслух: работа осталась под целью, которая больше никуда не ведёт. Молча опустить
+        # её было бы вторым дефектом того же рода — человек не понял бы, почему совет изменился.
+        why.append(f"цель '{gid}' уже не ведёт вперёд (достигнута или на паузе) — "
+                   f"приоритет ниже живых целей; работу стоит перевесить в плане")
     if w.get("value") == "high":
         why.append("объявленная ценность высокая")
     if risk_score:
@@ -201,7 +206,65 @@ def _parallel_set(candidates, by_id, anchor=None):
     return chosen, skipped
 
 
-def compute(child_root, budget_left=None):
+def _holders(child_root, me=None):
+    """Кто держит работы сейчас. -> (держат другие, держу я, досягаемость).
+
+    ЗАЧЕМ ЭТО ЗДЕСЬ. `next` уже считал важность и непересечение по `write_scope`, но отвечал на
+    вопрос РЕПОЗИТОРИЯ («какая работа следующая»), а не участника («что взять МНЕ»). Заявка
+    потребителя #150: сессия B взяла работу, которую уже держала сессия A, и половина труда ушла в
+    закрытый пустой дубль.
+
+    ДОСЯГАЕМОСТЬ НАЗЫВАЕТСЯ, А НЕ ПОДРАЗУМЕВАЕТСЯ: пока публикация заявок выключена, видно только
+    свою машину — и «никем не держится» в этом случае проверено лишь для неё. Молчаливое «свободных
+    работ нет» при непрочитанном реестре запрещено тем же правилом, что и в `status`: «не знаю» — не
+    «нет».
+
+    РАБОЧИЕ КОПИИ — ОТДЕЛЬНАЯ ДОСЯГАЕМОСТЬ (замер 20.08.2026). Локальный реестр лежит внутри
+    рабочего дерева, поэтому у каждого worktree он свой: до правки `next` во второй копии одного
+    репозитория предлагал работу, которую держала первая. Заявки соседних копий подаёт `team_view`
+    через носитель в общем каталоге git; сколько копий он покрывает — в `reach["copies"]`, и это
+    ЗАМЕР, а не догадка: не измерили — там None, и об этом сказано словами.
+
+    Личность спрашивающего (`me`) обязательна для РАЗДЕЛЕНИЯ «моё/чужое». Не передали — считаем все
+    заявки чужими (fail-closed: не предлагать работу, которую может кто-то держать) и говорим об этом
+    полем `identity` в досягаемости.
+    """
+    from ai_ops_kit.lifecycle import active_work
+    p = Path(child_root) / ".ai" / "runtime" / "active-work.yaml"
+    published = active_work.publication_enabled(child_root)
+    local = []
+    registry_read = False
+    if p.is_file():
+        try:
+            local = active_work.load(p).get("active") or []
+            registry_read = True
+        except active_work.ActiveWorkCorrupt:
+            registry_read = False        # причину назовёт `status`; здесь важно НЕ выдать «свободно»
+    entries = active_work.team_view(child_root, local, published)
+    entries = active_work.reconcile_with_base(entries, child_root)
+    others, mine = [], []
+    for e in entries:
+        if (e.get("status") or "") in ("done", "superseded"):
+            continue
+        if active_work.holder_is_gone(e):
+            continue                     # мёртвый процесс работу не держит
+        wid = _plan._workitem_key(e)
+        row = {"id": wid, "title": None, "branch": e.get("branch"),
+               "owner_session": e.get("owner_session"), "machine": e.get("machine"),
+               # «где именно» на одной машине: имя хоста у всех рабочих копий одно, и без копии
+               # ответ «держит другой на этой машине» никуда участника не отправляет.
+               "worktree": e.get("worktree"),
+               "since": e.get("started_at")}
+        (mine if (me and e.get("owner_session") == me) else others).append(row)
+    copies = active_work.working_copies(child_root)
+    reach = {"published": published, "registry_read": registry_read,
+             "identity": bool(me), "copies": copies,
+             "note": active_work.reach_note(published),
+             "copies_note": active_work.copies_reach_note(copies)}
+    return others, mine, reach
+
+
+def compute(child_root, budget_left=None, me=None):
     """Ответ на четыре вопроса. -> dict (машиночитаемо; печать — в `render`).
 
     Отсутствие плана — законное состояние, а не ошибка: ответ называет пробел и говорит, чем его
@@ -236,8 +299,15 @@ def compute(child_root, budget_left=None):
                        f"Впишите свою работу и снимите строку `template: true`; советовать из "
                        f"примера кит не станет."}
 
-    val = _plan.validate(plan, model)
-    res = _plan.resolve(plan, child_root, model)
+    # ИСТОРИЯ ПОДАЁТСЯ И ЗДЕСЬ. Разнос плана на активное и закрытое (`plan-as-control-plane`) даёт
+    # правду только если её видят ВСЕ потребители плана: этот шов кит нашёл на себе сам — `next`
+    # отказался советовать работу, потому что `depends_on` смотрел на работу, уехавшую в историю.
+    try:
+        closed = _plan.load_history(child_root)
+    except _plan.PlanCorrupt:
+        closed = []       # причину назовёт валидатор истории; падать здесь незачем, молчать — нельзя
+    val = _plan.validate(plan, model, closed=closed, root=child_root)
+    res = _plan.resolve(plan, child_root, model, closed=closed)
     ws = _plan.items(plan)
     by_id = {w["id"]: w for w in ws if w.get("id")}
     caps_known = _known_capabilities()
@@ -279,6 +349,30 @@ def compute(child_root, budget_left=None):
                 row["blocked_by_admission"] = [c["id"] for c in checks if not c["ok"]]
                 not_ready.append(row)
 
+    # ВЫЧИТАНИЕ ТОГО, ЧТО ДЕРЖАТ ДРУГИЕ (работа `next-offers-work-nobody-holds`). Важность и
+    # непересечение кит считал и раньше; отсутствовало ровно одно — вопрос УЧАСТНИКА «что взять МНЕ».
+    # Держателя называет реестр рантайма, а не план: правило «роль, а не исполнитель» остаётся, и
+    # поля `assignee` в плане по-прежнему нет.
+    # ЗАМОРОЗКА УМЕНИЙ ВЫЧИТАЕТСЯ ИЗ ГОТОВОГО (работа `capability-freeze-enforced`). 18.08.2026 кит
+    # сам предложил взять `watch-contract-for-night-review` — работу из замороженной цели: решение
+    # владельца существовало ЗАПИСЬЮ и ничем не сверялось. Совет, противоречащий решению, хуже
+    # отсутствия совета: он выглядит как санкция.
+    frozen = _plan.frozen_work(plan)
+    frozen_rows = []
+    if frozen:
+        frozen_rows = [{"id": r["id"], "title": (by_id.get(r["id"]) or {}).get("title"),
+                        "reason": frozen[r["id"]]}
+                       for r in ready if r["id"] in frozen]
+        ready = [r for r in ready if r["id"] not in frozen]
+
+    held_by_others, held_by_me, holders_reach = _holders(child_root, me)
+    if held_by_others:
+        _ids = {h["id"] for h in held_by_others}
+        ready = [r for r in ready if r["id"] not in _ids]
+        for h in held_by_others:
+            if h["id"] in by_id:
+                h["title"] = by_id[h["id"]].get("title") or h["id"]
+
     ready.sort(key=lambda r: (-r["score"], r["id"]))
     in_progress.sort(key=lambda r: r["id"])
     blocked.sort(key=lambda r: r["id"])
@@ -288,12 +382,25 @@ def compute(child_root, budget_left=None):
     if len(ready) > 1:
         parallel, par_skipped = _parallel_set(ready[1:], by_id, anchor=next_best)
 
-    return {"schema_version": 1, "plan_present": True,
+    # ПРОТУХАНИЕ — часть ответа «что дальше» (наблюдение владельца 14.08.2026). Кит отвечал честно
+    # на заданные вопросы и молчал обо всём, о чём не спросили: рядом жили документация про мёртвый
+    # продукт и план, отставший на 31 изменение. Оба факта дешёвые и проверяемые, поэтому кит
+    # называет их сам — но именно как разговор, а не как гейт: проверка, останавливающая прогон на
+    # каждом устаревшем абзаце, обучает себя обходить.
+    try:
+        from ai_ops_kit.planning import staleness as _stale
+        stale = _stale.assess(child_root, plan_rel)
+    except Exception:                                   # noqa: BLE001 — обзор не обязан ронять ответ
+        stale = {"dead_references": [], "plan_behind": None, "error": "проверка протухания не выполнена"}
+    return {"schema_version": 1, "plan_present": True, "staleness": stale,
             "plan_errors": val["errors"], "plan_warnings": val["warnings"],
             "roadmap": {"errors": rm["errors"], "warnings": rm["warnings"]},
             "where_are_we": where, "in_progress": in_progress, "blocked": blocked,
             "ready": ready, "next_best": next_best, "parallel_with": parallel,
-            "parallel_skipped": par_skipped, "not_ready": not_ready}
+            "parallel_skipped": par_skipped, "not_ready": not_ready,
+            "held_by_others": held_by_others, "held_by_me": held_by_me,
+            "holders_reach": holders_reach, "asked_by": me,
+            "frozen": frozen_rows, "freeze": _plan.freeze_state(plan)}
 
 
 def render(rep) -> str:
@@ -362,6 +469,23 @@ def render(rep) -> str:
             L.append(f"      {s['id']} одновременно НЕ брать: {s['reason']}")
     for w in rep["plan_warnings"] + rep["roadmap"]["warnings"]:
         L.append(f"  ⚠ {w}")
+
+    # 5. ПРОТУХШЕЕ — то, о чём не спросили. Раздел появляется, только если есть что сказать:
+    # пустой раздел на каждом ответе обесценил бы его за неделю.
+    st = rep.get("staleness") or {}
+    dead, behind = st.get("dead_references") or [], st.get("plan_behind")
+    if dead or behind:
+        L.append("5. ЧЕГО НИКТО НЕ СПРАШИВАЛ")
+        if behind:
+            L.append(f"  план отстал от истории: {behind['commits']} изменени(й) влито после "
+                     f"последней правки {behind['plan_rel']} — работа идёт мимо объявленного")
+        for d in dead[:5]:
+            L.append(f"  описание ссылается на то, чего нет: {d['doc']}:{d['line']} — "
+                     f"{d['kind']} «{d['ref']}»")
+        if dead:
+            L.append("      это факт, а не оценка: ссылка не резолвится. Если речь о другом "
+                     "репозитории — так и напишите в документе, тогда проверка замолчит")
+
     return "\n".join(L)
 
 

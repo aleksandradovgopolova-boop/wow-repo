@@ -6,11 +6,10 @@ usage honesty, and budget. Each invariant has a unique ID, description, severity
 a check function that returns True when the invariant HOLDS.
 
 Usage:
-    from invariants import check_invariant, ALL_INVARIANTS, selftest
+    from ai_ops_kit.gates.invariants import check_invariant, ALL_INVARIANTS
     assert check_invariant("INV-PREFLIGHT-001", blocked=True, reasons=["spec missing"])
-    selftest()
 
-python3 tools/invariants.py --selftest
+Селфтесты инвариантов — в tests/unit/test_invariants_selftest.py (pytest).
 """
 from __future__ import annotations
 
@@ -141,6 +140,17 @@ _register({
     "check": lambda status, sha_verified, **kw: (
         status != "reconciled"
     ) or sha_verified,
+})
+
+_register({
+    "id": "INV-DELIVERY-004",
+    "description": "DeliveryReceipt with checks_verified=True must have checks_total >= 1",
+    "severity": "critical",
+    # R-41: вердикт «доставку проверяли» нельзя выдать при нуле прогонов. Инвариант закрывает не
+    # ошибку записи, а соблазн: единственный способ получить checks_verified=True — реальные прогоны.
+    "check": lambda checks_verified=None, checks_total=None, **kw: (
+        not checks_verified
+    ) or (isinstance(checks_total, int) and checks_total >= 1),
 })
 
 _register({

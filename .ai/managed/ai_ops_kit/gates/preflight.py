@@ -118,7 +118,11 @@ def assess(signals, child_root, wid, plan=None, bundle=None, payload=None,
     # destructive не является security-доменом -> требуем отдельный ApprovalRecord "destructive"
     if signals.get("destructive"):
         recs = approvals.load_approvals(child_root, wid)
-        has_destructive = any(r.get("approval") == "destructive" and approvals._record_valid(r) for r in recs)
+        # v3.37: plan_hash передаём ЯВНО. Без него `_record_valid` не сверял привязку вовсе — то есть
+        # самый опасный домен (деструктивное действие) проверялся слабее остальных, хотя выглядел так же.
+        _ph = approvals.plan_binding_hash(child_root, wid)
+        has_destructive = any(r.get("approval") == "destructive"
+                              and approvals._record_valid(r, plan_hash=_ph) for r in recs)
         if not has_destructive:
             missing = missing + [{"domain": "destructive", "condition": "деструктивное действие",
                                   "trigger": "destructive", "reason": "нет валидного ApprovalRecord"}]
@@ -165,8 +169,24 @@ def assess(signals, child_root, wid, plan=None, bundle=None, payload=None,
                       or "economic-preflight: прогон не разрешён политикой экономики")
 
     ok = not reasons
-    return {"schema_version": 1, "kind": "PreflightTruth", "ok": ok, "blocked": not ok,
-            "task_type": tt, "checks": checks, "reasons": reasons}
+    result = {"schema_version": 1, "kind": "PreflightTruth", "ok": ok, "blocked": not ok,
+              "task_type": tt, "checks": checks, "reasons": reasons}
+    # v3.38 (K7): инварианты preflight — fail-closed, нарушение не молчит.
+    from ai_ops_kit.gates.invariants import check_invariant
+    _inv_breaches = []
+    for _inv_id, _kw in [
+        ("INV-PREFLIGHT-001", {"blocked": result["blocked"], "reasons": result["reasons"]}),
+        ("INV-PREFLIGHT-002", {"ok": result["ok"], "blocked": result["blocked"]}),
+        ("INV-PREFLIGHT-005", {"checks": result["checks"]}),
+    ]:
+        try:
+            if not check_invariant(_inv_id, **_kw):
+                _inv_breaches.append(_inv_id)
+        except (KeyError, TypeError):
+            pass
+    if _inv_breaches:
+        result["invariant_breaches"] = _inv_breaches
+    return result
 
 
 def main(argv):

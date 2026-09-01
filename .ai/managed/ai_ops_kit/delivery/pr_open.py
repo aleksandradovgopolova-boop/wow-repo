@@ -34,7 +34,7 @@ def _pr_payload(branch, title, body, base):
 
 
 def _git(root, *args):
-    from ai_ops_kit.engine import gitio
+    from ai_ops_kit.shared import gitio
     return gitio.git(root, *args)   # v3.0.13 (блок C): единый git-хелпер с таймаутом
 
 
@@ -137,6 +137,57 @@ def _find_pr_for_branch(owner, name, branch, token, state="all"):
     return None
 
 
+def _checks_for_sha(owner, name, sha, token):
+    """R-41: были ли на этом SHA прогоны проверок и чем кончились. ФАКТЫ, не вердикт.
+
+    Три исхода различаются намеренно и никогда не смешиваются:
+      * `unavailable` — спросить не удалось (сеть, токен, ошибка API). Это НЕ «проверок нет»;
+      * `absent`      — спросили успешно и получили НОЛЬ прогонов. Ровно тот случай, ради которого
+                        правило и заводится: «проверок нет» внешне неотличимо от «проверки прошли»;
+      * `found`       — есть прогоны, с разбивкой по исходам.
+
+    Спрашиваем ДВА API: `check-runs` (GitHub Actions и приложения) и классические commit statuses.
+    Только check-runs мало: репозиторий на внешнем CI (статусы) выглядел бы как «проверок нет», и
+    правило начало бы врать против таких дочек.
+    -> {status, total, failed, pending, success}."""
+    runs, err1 = _gh_request(f"{_api_base()}/repos/{owner}/{name}/commits/{sha}/check-runs", token)
+    st, err2 = _gh_request(f"{_api_base()}/repos/{owner}/{name}/commits/{sha}/status", token)
+    if err1 and err2:
+        return {"status": "unavailable", "note": f"API недоступен ({err1}/{err2})"}
+    total = failed = pending = success = 0
+    for r in ((runs or {}).get("check_runs") or []):
+        total += 1
+        if r.get("status") != "completed":
+            pending += 1
+        elif r.get("conclusion") in ("success", "neutral", "skipped"):
+            success += 1
+        else:
+            failed += 1
+    for s in ((st or {}).get("statuses") or []):
+        total += 1
+        state = s.get("state")
+        if state == "pending":
+            pending += 1
+        elif state == "success":
+            success += 1
+        else:
+            failed += 1
+    if total == 0:
+        return {"status": "absent", "total": 0, "failed": 0, "pending": 0, "success": 0}
+    return {"status": "found", "total": total, "failed": failed,
+            "pending": pending, "success": success}
+
+
+def checks_verified(checks):
+    """Вердикт по фактам `_checks_for_sha`: можно ли говорить, что доставку кто-то проверял.
+
+    True ТОЛЬКО при status=found, нуле упавших и нуле незавершённых. `absent` и `unavailable` дают
+    False по разным причинам, и обе честные: в первом случае проверок не было, во втором мы не знаем.
+    Отдельная функция, а не поле, чтобы вердикт нельзя было записать в расписку мимо фактов."""
+    c = checks or {}
+    return (c.get("status") == "found" and not c.get("failed") and not c.get("pending"))
+
+
 def reconcile_delivery(root, branch):
     """v3.0.16/v3.0.17 (finding аудита #2/P0): СВЕРКА фактического состояния доставки на remote для ветки.
     Возвращает ФАКТЫ (repository, head_sha, base_ref, pr_state, merged, url, number) — строгую проверку
@@ -155,11 +206,17 @@ def reconcile_delivery(root, branch):
     pr = _find_pr_for_branch(owner, name, branch, token, state="all")
     if not pr:
         return {"status": "absent", "repository": f"{owner}/{name}"}
+    head_sha = (pr.get("head") or {}).get("sha")
+    # R-41: к фактам о PR добавляем факты о ПРОВЕРКАХ на том же SHA. Без них «доставлено» означало
+    # «PR существует и не красный» — а «не красный» и «не проверялся» выглядели одинаково.
+    checks = _checks_for_sha(owner, name, head_sha, token) if head_sha else {"status": "unavailable",
+                                                                            "note": "нет head_sha"}
     return {"status": "found", "repository": f"{owner}/{name}",
             "url": pr.get("html_url"), "number": pr.get("number"),
-            "head_sha": (pr.get("head") or {}).get("sha"),
+            "head_sha": head_sha,
             "base_ref": (pr.get("base") or {}).get("ref"),
-            "pr_state": pr.get("state"), "merged": bool(pr.get("merged_at"))}
+            "pr_state": pr.get("state"), "merged": bool(pr.get("merged_at")),
+            "checks": checks}
 
 
 def main(argv):

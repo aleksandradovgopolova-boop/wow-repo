@@ -67,8 +67,16 @@ def _scrub_output(text):
         from ai_ops_kit.security import security_scan as _ss
         for _name, _pat in _ss.SECRET_PATTERNS:
             text = _pat.sub("«***REDACTED-SECRET***»", text)
-    except Exception:  # noqa: BLE001 — скраб не должен ронять брокер; в худшем случае — без редактирования
-        pass
+    # СРЕЗ engine РАТЧЕТА 2026-08-12: здесь стояло `pass` с причиной «в худшем случае — без
+    # редактирования». Причина была записана, но НЕВЕРНА: «худший случай» этой функции — это
+    # напечатанный тулом токен, уехавший в evidence открытым текстом и МОЛЧА, то есть ровно то,
+    # против чего функция и существует. Скраб — не украшение вывода, а его условие.
+    # Поэтому fail-closed: не смогли отредактировать — не отдаём содержимое вовсе, и причина
+    # видна на месте вывода, а не только в логе. Брокер по-прежнему не падает.
+    except Exception as _e:  # noqa: BLE001 — сбой скраба не роняет брокер, но и не пропускает контент
+        return (f"«***OUTPUT-WITHHELD: скраб секретов не выполнен "
+                f"({type(_e).__name__}: {_e}) — содержимое не показано, чтобы не унести секрет "
+                f"в evidence***»")
     return text
 
 
@@ -135,9 +143,45 @@ def _protected_prefixes(child_root=None):
     return out
 
 
-def _under(path: str, prefix: str) -> bool:
-    p = path.strip("/")
-    pre = prefix.strip("/")
+def _canon_rel(rel: str) -> str:
+    """Каноническое написание относительного пути ДО сравнения с правилом (R-37).
+
+    Было: сравнение строковым префиксом после одного `strip("/")`. Тогда одно и то же место,
+    записанное иначе, правило не накрывало — `./p`, `p//q`, `p/./q` проходили мимо
+    protected_paths и write_scope, и запись доходила до диска (проба через execute(): 4 из 5
+    написаний перезаписали защищённый файл). `normpath` схлопывает эти формы к одной.
+
+    ЧЕСТНО про границы: нормализация ЛЕКСИЧЕСКАЯ. Регистр она не трогает — им заведует
+    `_under(ignore_case=...)`, потому что для запрета и для разрешения ответ РАЗНЫЙ (см. ниже).
+    Симлинки — тоже не сюда: их ловит физическая проверка `_within_root` в execute()."""
+    p = (rel or "").strip().strip("/")
+    if not p:
+        return ""
+    return os.path.normpath(p).strip("/")
+
+
+def _under(path: str, prefix: str, *, ignore_case: bool = False) -> bool:
+    """Путь лежит под префиксом? `ignore_case` НЕ симметричен по умолчанию — и это суть.
+
+    Регистр (второй под-вектор R-37): на регистронезависимой ФС (macOS) `Migrations/x` и
+    `migrations/x` — один файл, на Linux — два разных. Соблазн «сравнивать без учёта регистра
+    везде» неверен, потому что `_under` обслуживает ДВА правила с противоположной полярностью:
+
+      * protected_paths — ЗАПРЕТ. Пропустить запрещённое хуже, чем лишний раз спросить
+        одобрение, поэтому здесь сравнение ШИРОКОЕ: ignore_case=True. Цена — на Linux
+        `Migrations/x` попросит approval, хотя это другой файл. Отказ виден и обратим.
+      * write_scope — РАЗРЕШЕНИЕ. Здесь широкое сравнение работало бы в обратную сторону:
+        `SRC/x` засчитался бы как «в пределах зоны», то есть fail-OPEN. Поэтому строгое.
+
+    Второй довод за константу вместо определения регистрозависимости ФС: вердикт политики
+    обязан быть одинаковым на машине владельца и в CI. Судья, который щупает ФС, даёт разные
+    вердикты на разных машинах — а на них ссылается evidence, привязанный к SHA."""
+    p = _canon_rel(path)
+    pre = _canon_rel(prefix)
+    if not p or not pre:
+        return False
+    if ignore_case:
+        p, pre = p.casefold(), pre.casefold()
     return p == pre or p.startswith(pre + "/")
 
 
@@ -146,8 +190,10 @@ def _under(path: str, prefix: str) -> bool:
 NETWORK_RE = re.compile(r"\b(curl|wget|nc|ncat|netcat|ssh|scp|sftp|telnet|rsync|ftp|"
                         r"nmap|dig|nslookup|http|https)\b", re.I)
 # git push из tool-loop: доставка ветки/PR — только доверенным кодом движка (pr_open), не моделью
-# (finding аудита v2.79 P0.2). ЧЕСТНО (v2.85): это best-effort текстовый денай — quote-обфускацию
-# снимаем нормализацией (_normalize), но ПЕРЕМЕННЫЕ/eval (`p=push; git $p`) статически не ловятся.
+# (finding аудита v2.79 P0.2). ЧЕСТНО (v2.85, уточнено R-38): это best-effort текстовый денай.
+# _normalize снимает кавычки, продолжение строки и backslash-escape; ПЕРЕМЕННЫЕ/eval
+# (`p=push; git $p`) статически не ловятся — перечень обходов держать в _normalize актуальным,
+# иначе комментарий обещает больше, чем код (тот же класс, что R-33).
 # Жёсткая гарантия недоставки — окружение (нет push-credentials / git-wrapper), не regex.
 GIT_PUSH_RE = re.compile(r"\bgit\b[^\n;&|]*\bpush\b", re.I)
 
@@ -160,9 +206,25 @@ _SUBST_RE = re.compile(r"\$\(|`|<\(|>\(")
 
 
 def _normalize(cmd):
-    """Снять кавычки для текстовых денай-проверок: `git pu\"\"sh` -> `git push` (quote-обфускация).
-    ЧЕСТНО: переменные/eval так не раскрыть — это защита от кавычек, не полный разбор shell."""
-    return (cmd or "").replace('"', "").replace("'", "")
+    """Снять поверхностную обфускацию перед текстовыми денай-проверками.
+
+    Снимается три формы, все проверены на векторах (R-38):
+      * кавычки: `git pu""sh` -> `git push`;
+      * продолжение строки: `git \\`↵`push` -> `git push`. Без этого `GIT_PUSH_RE` не срабатывал
+        вовсе — его класс `[^\\n;&|]*` не пересекает перевод строки, а shell команду склеивает;
+      * одиночный backslash-escape: `cu\\rl` -> `curl`. `/bin/sh` съедает escape перед обычным
+        символом и исполняет команду, а денайлист видел другое слово и молчал.
+
+    ЧЕСТНО, что НЕ раскрывается и здесь раскрыто быть не может: переменные и eval
+    (`p=push; git $p`), подстановка команд, кодировки. Это по-прежнему поверхностная
+    нормализация, а не разбор shell. Жёсткие гарантии живут не тут: недоставка — в окружении
+    без push-credentials, изоляция сети и ФС — в контейнере, сужение входных бинарников —
+    в allowlist-режиме (он оба вектора выше ловил и до этой правки)."""
+    s = (cmd or "").replace('"', "").replace("'", "")
+    # Продолжение строки shell УДАЛЯЕТ, не заменяет пробелом: `cur\`↵`l` исполняется как `curl`.
+    # Пробел здесь давал бы `cur l` — денайлист снова не видел бы слова (поймано тестом).
+    s = re.sub(r"\\\r?\n", "", s)
+    return re.sub(r"\\(.)", r"\1", s)  # escape перед обычным символом: shell его съест
 
 
 class Policy:
@@ -202,10 +264,12 @@ class Policy:
         return LEVEL_ORDER.index(self.level) >= LEVEL_ORDER.index(required)
 
     def protected_match(self, rel: str):
-        """(prefix, approval) первого protected-правила, накрывающего путь, иначе None."""
+        """(prefix, approval) первого protected-правила, накрывающего путь, иначе None.
+
+        ignore_case=True: правило-ЗАПРЕТ сравнивается широко (обоснование — в `_under`)."""
         path = (rel or "").strip("/")
         for pre, appr in self.protected:
-            if path and _under(path, pre):
+            if path and _under(path, pre, ignore_case=True):
                 return pre, appr
         return None
 
@@ -214,12 +278,15 @@ class Policy:
 
         Возвращает причину-строку, если путь писать НЕЛЬЗЯ, иначе None. Используется и ветвью
         write в decide(), и пост-фактум сторожем shell — чтобы канал записи не менял вердикт
-        (finding живого прогона: `sed -i` правил .github/workflows там, где write отклонялся)."""
+        (finding живого прогона: `sed -i` правил .github/workflows там, где write отклонялся).
+
+        Полярность сравнения РАЗНАЯ и намеренно (R-37, обоснование в `_under`): protected —
+        широко (ignore_case), write_scope — строго. Иначе `SRC/x` засчитался бы «в зоне»."""
         path = (rel or "").strip("/")
         if not path:
             return None
         for pre, appr in self.protected:
-            if _under(path, pre):
+            if _under(path, pre, ignore_case=True):
                 if self._level_ok("privileged") and "protected_path_write" in self.approvals:
                     return None
                 return f"protected path '{pre}' ({appr}) — нужен privileged + approval"

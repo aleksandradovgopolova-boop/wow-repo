@@ -209,10 +209,16 @@ def build_context(child_root, query, role, *, sha, afp, dcp=None, budget_tokens=
 
     # --- источник 3: Repository Graph augmentation (граф строится ТОЛЬКО по разрешённым .py) ---
     graph_added = 0
+    graph_reason = None
     try:
         graph = repo_graph.build_graph(root, subdirs=("",), path_filter=_allowed_path)
-    except Exception:
+    # СБОЙ СБОРКИ ГРАФА НАЗЫВАЕТСЯ (срез ратчета, 2026-08-12). Прежде он давал пустой граф, и
+    # `graph_added` оставался 0 — неотличимо от «граф построен, добавить было нечего». Отчёт
+    # контекста говорил «0», а правда была «не смог посчитать»: тот же инвариант, что
+    # `unavailable != 0` в учёте стоимости и `unknown != not_changed` в контурах.
+    except Exception as _ge:  # noqa: BLE001 — граф не роняет сборку контекста, но молчать не вправе
         graph = {"import_edges": {}}
+        graph_reason = f"граф не построен: {type(_ge).__name__}: {_ge}"[:200]
     ft_files = [r["file"] for r in ft]
     for rel in ft_files:
         if not rel.endswith(".py"):
@@ -238,8 +244,12 @@ def build_context(child_root, query, role, *, sha, afp, dcp=None, budget_tokens=
                 c = cand.setdefault(r["file"], {"file": r["file"], "sources": set(), "score": 0,
                                                 "mandatory": False})
                 c["sources"].add("semantic")
-        except Exception:
-            semantic_reason += " (semantic-индекс не построен: нет подходящих файлов)"
+        # ПРИЧИНА БЕРЁТСЯ ИЗ ИСКЛЮЧЕНИЯ, А НЕ ВЫДУМЫВАЕТСЯ (срез ратчета, 2026-08-12). Прежде на
+        # ЛЮБОЙ отказ дописывалось «нет подходящих файлов» — утверждение о причине, которой код не
+        # знает: там могли быть отказ импорта, ввод-вывод, битый индекс. Эта строка уходит в отчёт
+        # (`sources_used.semantic_reason`), то есть человеку объясняли поведение придуманным поводом.
+        except Exception as _se:  # noqa: BLE001 — semantic не роняет сборку; причина называется точно
+            semantic_reason += f" (semantic-индекс не построен: {type(_se).__name__}: {_se})"[:220]
 
     # --- access-filter (AFP роли + DataClassificationPolicy child) + классификация ---
     included, excl_access, excl_budget, mandatory_missing = [], [], [], []
@@ -302,7 +312,8 @@ def build_context(child_root, query, role, *, sha, afp, dcp=None, budget_tokens=
         "valid": not invalid_reasons, "invalid_reasons": invalid_reasons,
         "snapshot_verified": snapshot_verified,
         "sources_used": {"mandatory_v1": len(v1_mandatory or []), "fulltext": deterministic_count,
-                         "graph_added": graph_added, "semantic_used": semantic_used,
+                         "graph_added": graph_added, "graph_reason": graph_reason,
+                         "semantic_used": semantic_used,
                          "semantic_reason": semantic_reason},
         "included": included, "excluded_access": excl_access, "excluded_budget": excl_budget,
         "mandatory_missing": sorted(mandatory_missing),

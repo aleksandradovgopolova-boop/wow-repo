@@ -25,7 +25,7 @@ from ai_ops_kit.shared import _bootstrap  # noqa: E402
 def _env_recommendation(child_root):
     """Layer 1: какие окружения использовать."""
     from ai_ops_kit.engops import environment_map
-    from ai_ops_kit.engops import deploy_readiness
+    from ai_ops_kit.gates import deploy_readiness
     recs = []
     try:
         env_map = environment_map.assess(child_root)
@@ -134,7 +134,7 @@ def _delivery_plan(child_root, task_type=None):
                     "source": "project_detector",
                 })
         # Deploy/rollback
-        from ai_ops_kit.engops import deploy_readiness
+        from ai_ops_kit.gates import deploy_readiness
         deploy = deploy_readiness.assess(child_root)
         maturity = deploy.get("deploy_maturity", "absent")
         if maturity in ("runnable", "verified"):

@@ -45,10 +45,11 @@ STAGES = ["discovery", "definition", "ux", "architecture", "delivery",
 # оболочку: подмену sys.modules внутри алиаса такая загрузка обходит, и модуль оставался без
 # своих функций (AttributeError: module 'ga' has no attribute 'cmd_new'). Обычный импорт даёт
 # настоящий модуль независимо от того, где физически лежит файл.
-from ai_ops_kit.shared import _bootstrap  # noqa: F401 — кладёт validation/ в sys.path ДО плоских импортов ниже
-from ai_ops_kit.validation import validate_feature_blueprint as vfb   # noqa: E402
-from ai_ops_kit.shared import generate_artifacts as ga            # noqa: E402
-from ai_ops_kit.validation import validate_cross_artifacts as vca     # noqa: E402
+# Проверяющая логика feature-blueprint и кросс-артефактов живёт ВНИЗ, в пакете `checks` (слой
+# primitives): рантайм зовёт её вниз, без восходящего ребра lifecycle -> validation (лента №5).
+from ai_ops_kit.checks import feature_blueprint as vfb
+from ai_ops_kit.checks import cross_artifacts as vca
+from ai_ops_kit.shared import generate_artifacts as ga
 
 
 def graph_findings(feature_dir: Path, graph_path: Path, current_stage: str):

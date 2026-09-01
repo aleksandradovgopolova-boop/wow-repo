@@ -96,8 +96,13 @@ def _approvals_dir(child_root, wid):
 # изменения. Теперь запись связывается с: (1) хэшем плана/спеки (binds_to) — если план меняется после
 # одобрения, запись перестаёт покрывать новую ревизию; (2) сроком (expires_at) — просроченное одобрение
 # невалидно; (3) scope, который после диффа обязан покрывать реально изменённые пути (recheck_after_diff).
-# Связывание аддитивно: старые записи без binds_to/expires_at валидируются как раньше (нет регрессии),
-# но НОВЫЕ записи создаются связанными и корректно инвалидируются при расхождении.
+# v2.121 связывание было АДДИТИВНЫМ: старые записи без binds_to валидировались как раньше.
+# v3.37 это отменено — привязка к содержимому БЕЗУСЛОВНА (повод: RR-014/EV-1105, у соседа по жанру
+# она required по схеме для любого одобрения, у нас была привилегией high-risk доменов). Запись без
+# `binds_to` невалидна; несвязываемая запись не создаётся вовсе (write_record бросает). Цена решения
+# названа: legacy-записи без binds_to перестают проходить проверку и требуют перезаписи — это
+# осознанный fail-closed, а не регрессия. Срок (expires_at), риск (risk) и доверенный source
+# по-прежнему обязательны только для high-risk доменов: их цена выше, и они решаются отдельно.
 
 def plan_binding_hash(child_root, wid):
     """Стабильный хэш плана+спеки WorkItem — то, к чему привязывается одобрение. None, если привязывать
@@ -205,7 +210,10 @@ def load_approvals(child_root, wid):
                 r = yaml.safe_load(p.read_text(encoding="utf-8"))
                 if isinstance(r, dict) and r.get("kind") == "ApprovalRecord":
                     recs.append(r)
-            except Exception:  # noqa: BLE001 — битую запись игнорируем (не считаем одобрением)
+            # Причина подавления (срез ратчета, 2026-08-12): FAIL-CLOSED и он верен — битая
+            # запись НЕ становится одобрением. Тип широк намеренно: любой отказ чтения обязан
+            # дать «одобрения нет», а не исключение наружу посреди проверки прав.
+            except Exception:  # noqa: BLE001,S110 — битая запись не считается одобрением
                 pass
     return recs
 
@@ -228,15 +236,37 @@ def _is_high_risk(domain_id, domains=None):
 
 
 def _record_reason_invalid(rec, now=None, plan_hash=None, strict=False):
-    """Причина невалидности ApprovalRecord или None, если валиден. v2.121: срок (expires_at) + привязка
-    к плану (binds_to) — аддитивно (проверяются при наличии поля). v2.123: strict=True (high-risk домен)
-    ТРЕБУЕТ полный binding — binds_to, expires_at, risk и доверенный source; legacy-запись без них невалидна."""
+    """Причина невалидности ApprovalRecord или None, если валиден.
+
+    v2.121: срок (expires_at) и привязка (binds_to) проверялись аддитивно — при наличии поля.
+    v2.123: strict=True (high-risk домен) требовал полный binding.
+
+    v3.37 — ПРИВЯЗКА К СОДЕРЖИМОМУ СТАЛА БЕЗУСЛОВНОЙ. Повод — RR-014/EV-1105: у соседа по жанру
+    (mestre-yoda) связывание одобрения с дайджестами обязательно по схеме для ЛЮБОГО одобрения, у
+    нас же оно было привилегией high-risk доменов, а остальным «проверялось при наличии поля».
+    Одобрение без привязки не отвечает на вопрос «что именно одобрено»: оно переживает любую
+    правку плана и спеки, то есть человек одобрил один текст, а исполняется другой.
+
+    Две проверки, и вторая не менее важна первой:
+      * `binds_to` обязателен ВСЕГДА — записи без него невалидны (см. подсказку в сообщении);
+      * привязка обязана быть СВЕРЯЕМОЙ: если сверять не с чем (`plan_hash` не передан или на
+        диске нет ни run-plan.yaml, ни spec.yaml), запись отклоняется. Прежде такой вызов молча
+        пропускал запись — поле есть, сверка не выполнялась (реальный путь: preflight звал
+        `_record_valid(r)` без plan_hash для destructive).
+    """
     if not (bool(rec.get("approval")) and bool(rec.get("approved_by"))
             and bool(rec.get("scope")) and bool(rec.get("reason"))):
         return "нужны approved_by/scope/reason"
     if _is_expired(rec, now):
         return f"одобрение просрочено (expires_at={rec.get('expires_at')})"
-    if rec.get("binds_to") and plan_hash and rec.get("binds_to") != plan_hash:
+    if not rec.get("binds_to"):
+        return ("одобрение не привязано к содержимому (нет binds_to): нельзя доказать, ЧТО именно "
+                "одобрено. Перезапишите одобрение — `approvals.py record … --bind-to-plan`")
+    if not plan_hash:
+        return ("привязку одобрения не с чем сверить (нет хэша плана/спеки): при отсутствии "
+                "run-plan.yaml и spec.yaml одобрять нечего, а вызов без plan_hash не проверяет "
+                "привязку вовсе")
+    if rec.get("binds_to") != plan_hash:
         return "одобрение выдано для другой ревизии плана/спеки (binds_to не совпадает)"
     if strict:
         missing = [f for f in ("binds_to", "expires_at", "risk") if not rec.get(f)]
@@ -310,8 +340,19 @@ def write_record(child_root, wid, approval, approved_by, scope, reason, revision
     import yaml
     d = _approvals_dir(child_root, wid)
     d.mkdir(parents=True, exist_ok=True)
-    if bind_to_plan and binds_to is None:
+    # v3.37: привязка безусловна (см. _record_reason_invalid), поэтому связываем ВСЕГДА, а не только
+    # по флагу bind_to_plan — иначе запись создавалась бы заведомо невалидной. Флаг оставлен ради
+    # совместимости вызовов, но на поведение больше не влияет.
+    if binds_to is None:
         binds_to = plan_binding_hash(child_root, wid)
+    if not binds_to:
+        # Отказ на ЗАПИСИ, а не на проверке: несвязываемое одобрение нельзя сохранить, иначе на диске
+        # появится запись, которая никогда не пройдёт проверку, и человек узнает об этом позже и в
+        # другом месте. Если плана и спеки нет — одобрять пока нечего.
+        raise ValueError(
+            f"ApprovalRecord '{approval}' нечем связать: в features/{wid}/ нет ни run-plan.yaml, "
+            f"ни spec.yaml. Одобрение обязано ссылаться на содержимое (v3.37) — сначала план/спека, "
+            f"потом одобрение")
     rec = {"schema_version": 1, "kind": "ApprovalRecord", "approval": approval,
            "approved_by": approved_by, "scope": scope, "revision": revision,
            "created_at": created_at or "unspecified", "reason": reason}
@@ -328,7 +369,7 @@ def write_record(child_root, wid, approval, approved_by, scope, reason, revision
     p = d / f"{approval}.yaml"
     # v3.0.14 (finding аудита #2): ApprovalRecord — человеческий источник истины для high-risk; пишем
     # DURABLE (атомарно+fsync+перечитывание), а не plain write_text (частичная запись = потеря одобрения).
-    from ai_ops_kit.lifecycle import lifecycle_store as _ls
+    from ai_ops_kit.shared import lifecycle_store as _ls
     _r = _ls.durable_write(p, rec, require_keys=("approval", "approved_by", "scope"))
     if not _r.get("ok"):
         raise OSError(f"не удалось надёжно сохранить ApprovalRecord {p}: {_r.get('error')}")
@@ -369,18 +410,23 @@ def main(argv):
                 print(f"  ✗ {m['domain']}: {m['reason']} (условие: {m['condition']})")
         return 0 if res["ok"] else 1
     if a.cmd == "record":
-        # v2.123: high-risk домен -> запись обязана быть связанной (schema v2). Авто-привязываем к плану
-        # и требуем risk+source, иначе запись будет невалидна при проверке (сообщаем сразу, не молча).
+        # v2.123: high-risk домен -> запись обязана быть связанной (schema v2), требуем risk+source,
+        # иначе запись будет невалидна при проверке (сообщаем сразу, не молча).
+        # v3.37: привязка к содержимому безусловна, поэтому `bind` больше не вычисляется — связывает
+        # сам write_record и отказывает, если связывать не с чем.
         high_risk = _is_high_risk(a.approval)
-        bind = a.bind_to_plan or high_risk
         if high_risk and (not a.risk or (a.source or "") not in _TRUSTED_SOURCES):
             print(f"APPROVAL-RECORD: домен '{a.approval}' high-risk (schema v2) — обязательны --risk и "
                   f"--source из {sorted(_TRUSTED_SOURCES)}; запись без них будет отклонена при проверке.")
             return 2
-        p = write_record(Path(a.child_root), a.wid, a.approval, a.by, a.scope, a.reason,
-                         revision=a.revision, created_at=a.created_at,
-                         expires_at=a.expires_at, risk=a.risk, bind_to_plan=bind, source=a.source,
-                         covers_packages=a.package)
+        try:
+            p = write_record(Path(a.child_root), a.wid, a.approval, a.by, a.scope, a.reason,
+                             revision=a.revision, created_at=a.created_at,
+                             expires_at=a.expires_at, risk=a.risk, source=a.source,
+                             covers_packages=a.package)
+        except ValueError as e:                      # нечем связать -> говорим прямо, не пишем мусор
+            print(f"APPROVAL-RECORD: {e}")
+            return 2
         print(f"APPROVAL-RECORD: записан {p}")
         return 0
     return 1

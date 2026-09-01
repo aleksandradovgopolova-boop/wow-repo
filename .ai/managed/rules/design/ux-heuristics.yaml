@@ -1,22 +1,28 @@
-# rules/design/ux-heuristics.yaml — машиночитаемый UX-чек-лист (Ф2 roadmap, v1.4).
+# rules/design/ux-heuristics.yaml — машиночитаемый UX-чек-лист (Ф2 roadmap, v1.5).
 # Основа: 10 эвристик Nielsen + обязательные состояния экранов (Design by Default).
 # Используется ux-reviewer'ом: каждая находка ревью ссылается на id пункта.
+#
+# constitution_id (волна 2, design-gates-cite-constitution-ids): стабильный ID правила
+# UI/UX-Конституции (standards/uiux/), к которому пункт привязан ПО СМЫСЛУ. Находка ревью цитирует
+# этот ID — как code-review цитирует rule id. `none` — у пункта нет правила-двойника в Конституции
+# (наблюдение, не дефект; расхождения зафиксированы в standards/uiux/gate-reconciliation.md).
+# Это НАБЛЮДЕНИЕ: сила гейта ux_review (blocking/severity_policy) не меняется.
 schema_version: 1
 kind: design-checklist
 id: ux-heuristics
 used_by: [ux-reviewer]
 gate: ux_review
 items:
-  - {id: h1-system-status, check: "Пользователь всегда видит статус системы (прогресс, подтверждения, результат действия)", severity_default: major}
-  - {id: h2-real-world-match, check: "Язык и понятия — из мира пользователя, не из внутренней модели системы", severity_default: major}
-  - {id: h3-user-control, check: "Есть отмена/выход из нежелательного состояния; деструктивные действия обратимы или подтверждаются", severity_default: critical}
-  - {id: h4-consistency, check: "Паттерны консистентны внутри продукта и с платформенными конвенциями", severity_default: major}
-  - {id: h5-error-prevention, check: "Ошибки предотвращаются до совершения (валидация, ограничения, безопасные дефолты)", severity_default: critical}
-  - {id: h6-recognition, check: "Распознавание вместо припоминания: опции и контекст видимы, не требуют держать в памяти", severity_default: major}
-  - {id: h7-efficiency, check: "Есть ускорители для опытных (шорткаты, дефолты, недавнее) без усложнения для новичков", severity_default: minor}
-  - {id: h8-minimalism, check: "Нет информации, не нужной для решения задачи на этом шаге", severity_default: minor}
-  - {id: h9-error-recovery, check: "Сообщения об ошибках на языке пользователя: что случилось и какое действие доступно", severity_default: critical}
-  - {id: h10-help, check: "Помощь доступна в контексте, где она нужна (не только в отдельном разделе)", severity_default: minor}
-  - {id: states-coverage, check: "Каждый экран имеет состояния Empty / Loading / Error (с recovery) / Success", severity_default: critical}
-  - {id: responsive, check: "Адаптивность по матрице устройств из DesignSystem — детальный чек-лист rules/design/responsive-baseline.yaml", severity_default: critical, details: rules/design/responsive-baseline.yaml}
-  - {id: copy-actionable, check: "Copy проверен: тон, ясность, CTA осмысленны, ошибки содержат действие", severity_default: major}
+  - {id: h1-system-status, check: "Пользователь всегда видит статус системы (прогресс, подтверждения, результат действия)", severity_default: major, constitution_id: UI-002}
+  - {id: h2-real-world-match, check: "Язык и понятия — из мира пользователя, не из внутренней модели системы", severity_default: major, constitution_id: UI-003}
+  - {id: h3-user-control, check: "Есть отмена/выход из нежелательного состояния; деструктивные действия обратимы или подтверждаются", severity_default: critical, constitution_id: UI-006}
+  - {id: h4-consistency, check: "Паттерны консистентны внутри продукта и с платформенными конвенциями", severity_default: major, constitution_id: UI-004}
+  - {id: h5-error-prevention, check: "Ошибки предотвращаются до совершения (валидация, ограничения, безопасные дефолты)", severity_default: critical, constitution_id: UI-007}
+  - {id: h6-recognition, check: "Распознавание вместо припоминания: опции и контекст видимы, не требуют держать в памяти", severity_default: major, constitution_id: UI-005}
+  - {id: h7-efficiency, check: "Есть ускорители для опытных (шорткаты, дефолты, недавнее) без усложнения для новичков", severity_default: minor, constitution_id: none}
+  - {id: h8-minimalism, check: "Нет информации, не нужной для решения задачи на этом шаге", severity_default: minor, constitution_id: UI-010}
+  - {id: h9-error-recovery, check: "Сообщения об ошибках на языке пользователя: что случилось и какое действие доступно", severity_default: critical, constitution_id: UI-020}
+  - {id: h10-help, check: "Помощь доступна в контексте, где она нужна (не только в отдельном разделе)", severity_default: minor, constitution_id: none}
+  - {id: states-coverage, check: "Каждый экран имеет состояния Empty / Loading / Error (с recovery) / Success", severity_default: critical, constitution_id: UI-035}
+  - {id: responsive, check: "Адаптивность по матрице устройств из DesignSystem — детальный чек-лист rules/design/responsive-baseline.yaml", severity_default: critical, details: rules/design/responsive-baseline.yaml, constitution_id: UI-033}
+  - {id: copy-actionable, check: "Copy проверен: тон, ясность, CTA осмысленны, ошибки содержат действие", severity_default: major, constitution_id: UI-022}

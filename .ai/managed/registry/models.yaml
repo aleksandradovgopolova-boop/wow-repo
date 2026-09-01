@@ -34,6 +34,7 @@ models:
     context_window: {status: documented, value: 200000}
     capabilities: {tool_calling: true, structured_output: true, vision: true, streaming: true}
     cost_class: high
+    pricing: {status: pending, currency: USD}
     last_documented_at: "2026-07-08"
   - id: claude-sonnet-class
     provider: anthropic
@@ -41,6 +42,7 @@ models:
     context_window: {status: documented, value: 200000}
     capabilities: {tool_calling: true, structured_output: true, vision: true, streaming: true}
     cost_class: medium
+    pricing: {status: documented, currency: USD, per_mtok: {input: 3.0, output: 15.0}, noted_at: "2026-07-08"}
     last_documented_at: "2026-07-08"
   - id: claude-haiku-class
     provider: anthropic
@@ -144,6 +146,7 @@ models:
     context_window: {status: documented, value: 256000}
     capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
     cost_class: medium
+    pricing: {status: documented, currency: USD, per_mtok: {input: 1.90, output: 8.00}, noted_at: "2026-07-28"}
     note: "live-qual N6: implementation conditional (6/6 верно, вкл. Decimal Money), но дороже всех ($1.90/$8.00 /1M, 2026-07-28 -> ~$0.47/изменение)"
     last_documented_at: "2026-07-28"
   - id: kimi-k2.6
@@ -192,6 +195,7 @@ models:
     context_window: {status: documented, value: 64000}
     capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
     cost_class: low
+    pricing: {status: documented, currency: USD, per_mtok: {input: 0.27, output: 1.10}, noted_at: "2026-07-28"}
     note: "live-qual N6: implementation conditional (4/6 верно, 0 false-green). LEGACY-алиас: эндпоинт теперь отдаёт V4 -> ревизия под вопросом; цена V4 image-only -> tokens-fallback до тарифа владельца"
     last_documented_at: "2026-07-28"
   - id: deepseek-v4-flash
@@ -203,6 +207,7 @@ models:
     classes: [balanced, fast]
     capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
     cost_class: low
+    pricing: {status: documented, currency: USD, per_mtok: {input: 0.14, output: 0.28}, noted_at: "2026-07-28"}
     note: "implementation conditional (N6 via deepseek-chat alias, 4/6 верно, 0 false-green). Цена $0.14/$0.28 /1M cache-miss -> ~$0.0115/изменение = САМЫЙ дешёвый по ДЕНЬГАМ -> router preferred implementation"
     last_documented_at: "2026-07-28"
   - id: deepseek-v4-pro
@@ -230,6 +235,7 @@ models:
     context_window: {status: documented, value: 128000}
     capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
     cost_class: medium
+    pricing: {status: documented, currency: USD, per_mtok: {input: 1.00, output: 5.00}, noted_at: "2026-07-28"}
     note: "live-qual N6: implementation conditional (5/6 верно, 0 false-green). Цена INTL $1.00/$5.00 /1M (2026-07-28)"
     last_documented_at: "2026-07-28"
   - id: qwen3-coder-next
@@ -242,6 +248,7 @@ models:
     classes: [balanced, fast]
     capabilities: {tool_calling: {status: declared, value: true}, structured_output: {status: unstable, value: partial}, streaming: {status: declared, value: true}}
     cost_class: low
+    pricing: {status: documented, currency: USD, per_mtok: {input: 0.30, output: 1.50}, noted_at: "2026-07-28"}
     verification_required: true   # доступна у эндпоинта; НЕ квалифицирована (Bench v2). Цена $0.30/$1.50 /1M
     note: "реальная ревизия эндпоинта; дешевле coder-plus втрое — сильный кандидат в quick/standard implementation"
     last_documented_at: "2026-07-28"
@@ -255,6 +262,7 @@ models:
     classes: [fast, balanced]
     capabilities: {tool_calling: {status: declared, value: true}, structured_output: {status: unstable, value: partial}, streaming: {status: declared, value: true}}
     cost_class: low
+    pricing: {status: documented, currency: USD, per_mtok: {input: 0.30, output: 1.50}, noted_at: "2026-07-28"}
     verification_required: true   # доступна у эндпоинта; НЕ квалифицирована. Цена $0.30/$1.50 /1M
     note: "реальная ревизия эндпоинта; самый дешёвый кодовый Qwen — кандидат в массовые quick-задачи"
     last_documented_at: "2026-07-28"
