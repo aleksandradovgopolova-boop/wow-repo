@@ -15,7 +15,7 @@ parent:
   auto_update: true   # по умолчанию ВКЛ: ежедневный workflow сам открывает update-PR (не авто-мерж;
                       #   мажорный bump всё равно блокируется). Поставьте false, чтобы отключить (опт-аут).
 project:
-  name: <project-name>
+  name: wow-repo
   documentation_language: ru
   confidentiality_policy: internal
 presets: {enabled: []}
