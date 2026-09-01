@@ -1,0 +1,19 @@
+schema_version: 1
+kind: delivery-plan-history
+work:
+- id: RESEARCH-01
+  title: Исследовать способы решения
+  type: research
+  goal: goal-id-1
+  status: done
+  owner_role: researcher
+  depends_on: []
+  write_scope:
+  - research/
+  value: high
+  affects:
+    research_decisions: true
+  result: 'перенесено миграцией кита: работа была закрыта до правила «закрытая работа
+    живёт в history», результат при закрытии не записан — восстановить его из плана
+    нельзя'
+  migrated_without_result: true

@@ -1,0 +1,61 @@
+schema_version: 1
+kind: delivery-plan
+goals:
+- id: goal-id-1
+  status: active
+  outcome:
+    user_can_do_the_thing: false
+work:
+- id: ARCH-01
+  title: Спроектировать pipeline
+  type: architecture
+  goal: goal-id-1
+  status: todo
+  owner_role: architect
+  depends_on:
+  - RESEARCH-01
+  write_scope:
+  - context/system/
+  value: high
+  affects:
+    system_architecture: true
+    data_contracts: true
+- id: UI-01
+  title: Реализовать интерфейс
+  type: visual
+  goal: goal-id-1
+  status: todo
+  owner_role: frontend
+  depends_on: []
+  write_scope:
+  - src/ui/
+  value: medium
+  affects:
+    engineering_quality_security: true
+- id: ENG-01
+  title: Реализовать backend
+  type: engineering
+  goal: goal-id-1
+  status: todo
+  owner_role: engineer
+  depends_on:
+  - ARCH-01
+  write_scope:
+  - src/api/
+  value: high
+  affects:
+    engineering_quality_security: true
+    data_contracts: true
+- id: REVIEW-01
+  title: Независимо проверить итог
+  type: review
+  goal: goal-id-1
+  status: todo
+  owner_role: reviewer
+  depends_on:
+  - ENG-01
+  - UI-01
+  write_scope: []
+  value: high
+  affects:
+    engineering_quality_security: true
