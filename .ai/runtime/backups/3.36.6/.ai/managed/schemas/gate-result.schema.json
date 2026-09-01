@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/gate-result.schema.json",
+  "title": "GateResult",
+  "description": "Unified machine-readable quality gate result (Section 21). Reviewer is read-only w.r.t. the reviewed artifact.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "gate": { "type": "string" },
+    "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
+    "blocking": { "type": "boolean" },
+    "scope": { "type": "array", "items": { "type": "string" } },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
+          "detail": { "type": "string" }
+        },
+        "required": ["id", "status"],
+        "additionalProperties": false
+      }
+    },
+    "blockers": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "affected_files": { "type": "array", "items": { "type": "string" } },
+    "affected_artifacts": { "type": "array", "items": { "type": "string" } },
+    "tested_revision": { "type": ["string", "null"], "description": "git revision the gate was evaluated against; null means not bound" },
+    "artifact_hashes": { "type": "object", "additionalProperties": { "type": "string" } },
+    "owner": { "type": "string" },
+    "review_mode": { "type": "string", "enum": ["read-only", "writer"] },
+    "created_at": { "type": ["string", "null"], "format": "date-time" },
+    "expires_at": { "type": ["string", "null"], "format": "date-time" },
+    "override": {
+      "type": ["object", "null"],
+      "properties": {
+        "by": { "type": "string" },
+        "reason": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["by", "reason"],
+      "additionalProperties": false
+    },
+    "suggested_next": {
+      "type": ["object", "null"],
+      "properties": {
+        "workflow": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema_version", "gate", "status", "blocking", "owner", "review_mode"],
+  "additionalProperties": false,
+  "x-extensibility": "tested_revision + artifact_hashes enable stale-result detection: a gate is stale if the current revision/hash differs.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "gate": "specification",
+      "status": "pass",
+      "blocking": true,
+      "scope": ["change/specs/reports-export/spec.md"],
+      "checks": [{ "id": "openspec_valid", "status": "pass", "detail": "0 errors" }],
+      "blockers": [],
+      "warnings": [],
+      "evidence": ["openspec validate --strict"],
+      "affected_files": ["change/specs/reports-export/spec.md"],
+      "affected_artifacts": ["requirements.md"],
+      "tested_revision": "abc1234",
+      "artifact_hashes": { "change/specs/reports-export/spec.md": "sha256:deadbeef" },
+      "owner": "final-verifier",
+      "review_mode": "read-only",
+      "created_at": null,
+      "expires_at": null,
+      "override": null,
+      "suggested_next": { "workflow": "planning", "reason": "Specification complete and testable" }
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/experience-contract.schema.json",
+  "title": "ExperienceContract",
+  "description": "Опыт, из которого обязательные stories выводятся КОДОМ. Сторона СОЗДАНИЯ дизайна; сторона доказательства — UIEvidenceBundle (storybook-evidence). Обязательные состояния описывать в `states` НЕ требуется: их добавит генератор из одного общего источника (ai_ops_kit/ui/storybook_adapter.REQUIRED_STATES). Неописанное владельцем состояние — вопрос к нему, а не ошибка контракта.",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "user_goal",
+    "context",
+    "roles",
+    "flow",
+    "screens",
+    "states",
+    "microcopy",
+    "responsive",
+    "accessibility",
+    "components",
+    "tokens",
+    "analytics",
+    "open_questions",
+    "tradeoffs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_goal": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Чего хочет достичь пользователь — словами пользователя"
+    },
+    "context": {
+      "type": "string"
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array"
+          },
+          "views": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    "flow": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step": {},
+          "action": {
+            "type": "string"
+          },
+          "screen": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "components": {
+            "type": "array"
+          },
+          "states": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "condition": {},
+          "visual": {},
+          "derived_from": {
+            "type": "string",
+            "description": "Проставляется генератором у состояний, которых владелец не описал: видно, что это заглушка, а не решение"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    "microcopy": {
+      "type": "object"
+    },
+    "responsive": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "min_width": {},
+          "layout": {}
+        }
+      }
+    },
+    "accessibility": {
+      "type": "array"
+    },
+    "components": {
+      "type": "array"
+    },
+    "tokens": {
+      "type": "object"
+    },
+    "analytics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "trigger": {},
+          "data": {}
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "description": "Нерешённое НАЗЫВАЕТСЯ, а не заполняется правдоподобным текстом"
+    },
+    "tradeoffs": {
+      "type": "array",
+      "description": "Осознанные компромиссы: что сознательно НЕ делаем и почему"
+    }
+  }
+}

@@ -1,0 +1,188 @@
+# providers.yaml — Provider capability registry (AI Ops Platform V2)
+# Provider = поставщик API / семейство моделей. НЕ содержит credentials (принцип 15.8).
+# Разрешены только имена env-переменных и secret-reference.
+# status: declared | documented | verified | degraded | unsupported | unknown
+# Источники см. EXTERNAL_CAPABILITY_EVIDENCE.md
+schema_version: 1
+registry_type: providers
+
+providers:
+  anthropic:
+    display_name: Anthropic
+    kind: hosted-api
+    protocols: [rest]
+    auth:
+      method: api_key
+      env: [ANTHROPIC_API_KEY]
+      secret_ref: <secret-reference>
+    base_url_env: ANTHROPIC_BASE_URL
+    confidentiality_class: external-cloud
+    data_residency: us
+    cost_class: high
+    capabilities:
+      structured_output: {status: documented, value: true}
+      tool_calling: {status: documented, value: true}
+      streaming: {status: documented, value: true}
+      vision: {status: documented, value: true}
+      embeddings: {status: unsupported, value: false, fallback: use-openai-or-gigachat}
+      web_access: {status: degraded, value: runtime-dependent}
+    recommended_use_cases: [high_reasoning, coding, architecture, review]
+    known_limitations: [no-first-party-embeddings]
+    last_documented_at: "2026-07-08"
+
+  openai:
+    display_name: OpenAI
+    kind: hosted-api
+    protocols: [rest]
+    auth:
+      method: api_key
+      env: [OPENAI_API_KEY]
+      secret_ref: <secret-reference>
+    base_url_env: OPENAI_BASE_URL
+    confidentiality_class: external-cloud
+    data_residency: us
+    cost_class: medium
+    capabilities:
+      structured_output: {status: documented, value: true}
+      tool_calling: {status: documented, value: true}
+      streaming: {status: documented, value: true}
+      vision: {status: documented, value: true}
+      embeddings: {status: documented, value: true}
+      web_access: {status: degraded, value: runtime-dependent}
+    recommended_use_cases: [balanced, coding, embeddings]
+    last_documented_at: "2026-07-08"
+
+  gigachat:
+    display_name: GigaChat (Sber)
+    kind: hosted-api
+    adoption_status: planned-future   # опциональный провайдер на будущее: включается по конфигу, без переписывания
+    first_class: true                 # спроектирован как полноценный (не второсортный) adapter, когда понадобится
+    protocols: [rest, openai-compatible-via-gateway]
+    auth:
+      method: oauth_authorization_key
+      token_ttl_minutes: 30
+      oauth_url_note: NGW OAuth endpoint (see GIGACHAT_ADAPTER_SPEC.md)
+      env: [GIGACHAT_AUTH_KEY, GIGACHAT_SCOPE, GIGACHAT_BASE_URL]
+      secret_ref: <secret-reference>
+      scopes_supported: [GIGACHAT_API_PERS, GIGACHAT_API_B2B, GIGACHAT_API_CORP]
+    base_url_env: GIGACHAT_BASE_URL
+    confidentiality_class: ru-cloud            # on-prem доступен как GigaChat Enterprise (verification_required)
+    data_residency: {status: inferred, value: ru, verification_required: true}
+    cost_class: medium
+    capabilities:
+      structured_output: {status: documented, value: true, limitations: "JSON Schema/Pydantic parse — Beta в SDK"}
+      tool_calling: {status: documented, value: true}
+      streaming: {status: documented, value: true}
+      vision: {status: documented, value: true, limitations: "Pro/Max модели"}
+      image_generation: {status: documented, value: true, limitations: "built-in tool -> file IDs"}
+      embeddings: {status: documented, value: true, limitations: "dimension не подтверждён офиц. источником"}
+      files: {status: documented, value: true}
+      token_count: {status: documented, value: true}
+      web_access: {status: documented, value: true, limitations: "built-in web search tool, scope-gated"}
+      mcp_native: {status: unsupported, value: false, fallback: wrap-behind-tool-gateway}
+      context_window: {status: inferred, value: "~128k (3rd-party)", verification_required: true}
+      rate_limits: {status: unknown, value: null, verification_required: true}
+      on_premise: {status: inferred, value: "GigaChat Enterprise", verification_required: true}
+    tool_gateway: {status: documented, value: "gpt2giga (official) / LiteLLM gigachat provider"}
+    recommended_use_cases: [russian_language, confidential, corporate, closed_loop]
+    known_limitations:
+      - "developers.sber.ru был недоступен в сессии аудита -> ряд числовых лимитов verification_required"
+      - "MCP не поддерживается нативно"
+    last_documented_at: "2026-07-08"
+    smoke_tests_required: [provider_auth, model_response, valid_json, russian_language_quality]
+
+  google:
+    display_name: Google (Gemini)
+    kind: hosted-api
+    protocols: [rest]
+    auth: {method: api_key, env: [GOOGLE_API_KEY], secret_ref: <secret-reference>}
+    confidentiality_class: external-cloud
+    cost_class: medium
+    capabilities:
+      structured_output: {status: documented, value: true}
+      tool_calling: {status: documented, value: true}
+      streaming: {status: documented, value: true}
+      vision: {status: documented, value: true}
+      embeddings: {status: documented, value: true}
+    last_documented_at: "2026-07-08"
+
+  deepseek:
+    display_name: DeepSeek
+    kind: hosted-api
+    protocols: [rest, openai-compatible]
+    auth: {method: api_key, env: [DEEPSEEK_API_KEY], secret_ref: <secret-reference>}
+    confidentiality_class: external-cloud
+    cost_class: low
+    capabilities:
+      structured_output: {status: documented, value: true}
+      tool_calling: {status: documented, value: true}
+      streaming: {status: documented, value: true}
+      embeddings: {status: unknown, value: null, verification_required: true}
+    last_documented_at: "2026-07-08"
+
+  qwen:
+    display_name: Qwen (Alibaba)
+    kind: hosted-api
+    protocols: [rest, openai-compatible]
+    auth: {method: api_key, env: [QWEN_API_KEY], secret_ref: <secret-reference>}
+    confidentiality_class: external-cloud
+    cost_class: low
+    capabilities:
+      structured_output: {status: documented, value: true}
+      tool_calling: {status: documented, value: true}
+      streaming: {status: documented, value: true}
+    last_documented_at: "2026-07-08"
+
+  kimi:
+    display_name: Kimi (Moonshot)
+    kind: hosted-api
+    protocols: [rest, openai-compatible]
+    auth: {method: api_key, env: [KIMI_API_KEY], secret_ref: <secret-reference>}
+    confidentiality_class: external-cloud
+    cost_class: low
+    capabilities:
+      tool_calling: {status: documented, value: true}
+      structured_output: {status: unknown, value: null, verification_required: true}
+    last_documented_at: "2026-07-08"
+
+  local:
+    display_name: Local / self-hosted (Ollama, vLLM, llama.cpp)
+    kind: local
+    protocols: [rest, openai-compatible]
+    auth: {method: none_or_local_token, env: [LOCAL_LLM_BASE_URL], secret_ref: <secret-reference>}
+    confidentiality_class: on-premise
+    data_residency: on-premise
+    cost_class: infra-only
+    capabilities:
+      structured_output: {status: degraded, value: model-dependent}
+      tool_calling: {status: degraded, value: model-dependent}
+      streaming: {status: documented, value: true}
+      embeddings: {status: degraded, value: model-dependent}
+    recommended_use_cases: [confidential, air_gapped, offline]
+    known_limitations: [capabilities-depend-on-loaded-model]
+    last_documented_at: "2026-07-08"
+
+  openai-compatible:
+    display_name: Generic OpenAI-compatible endpoint
+    kind: hosted-or-local
+    protocols: [openai-compatible]
+    auth: {method: api_key, env: [OPENAI_COMPATIBLE_BASE_URL, OPENAI_COMPATIBLE_API_KEY], secret_ref: <secret-reference>}
+    confidentiality_class: configurable
+    cost_class: configurable
+    capabilities:
+      structured_output: {status: unknown, value: null, verification_required: true}
+      tool_calling: {status: unknown, value: null, verification_required: true}
+      streaming: {status: documented, value: true}
+    note: Capabilities MUST be verified per-endpoint via capability self-test.
+    last_documented_at: "2026-07-08"
+
+  custom:
+    display_name: Custom corporate API
+    kind: custom
+    protocols: [rest, custom]
+    auth: {method: configurable, env: [CUSTOM_PROVIDER_BASE_URL, CUSTOM_PROVIDER_TOKEN], secret_ref: <secret-reference>}
+    confidentiality_class: configurable
+    capabilities:
+      any: {status: unknown, value: null, verification_required: true}
+    note: All capabilities unknown until declared + self-tested.
+    last_documented_at: "2026-07-08"

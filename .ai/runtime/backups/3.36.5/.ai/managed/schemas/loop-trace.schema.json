@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/loop-trace.schema.json",
+  "title": "LoopTrace",
+  "description": "LoopTrace — v3.5 Observability. Трейс итераций governed-цикла (привязан к LoopPolicy по id; поверх Trace v0.2 journal). Делает loops измеримыми: прогресс по итерациям (LoopPolicy.progress_measure), детект no-progress и repeated-failure, честная причина остановки. Инвариант: loop, переставший прогрессировать, обязан остановиться (no_progress/budget/escalated), а не крутиться.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "loop_policy", "progress_direction", "iterations",
+               "stopped_reason"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "LoopTrace" },
+    "id": { "type": "string", "pattern": "^LT-[0-9]{3,}$" },
+    "loop_policy": { "type": "string", "pattern": "^LP-[0-9]{3,}$" },
+    "progress_direction": { "type": "string", "enum": ["lower_is_better", "higher_is_better"],
+      "description": "как трактовать progress_value (напр. число незакрытых гейтов — lower_is_better)" },
+    "iterations": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["n", "progress_value", "outcome"],
+        "additionalProperties": false,
+        "properties": {
+          "n": { "type": "integer", "minimum": 1 },
+          "progress_value": { "type": "number" },
+          "outcome": { "type": "string", "enum": ["continue", "blocked", "success"] },
+          "signature": { "type": ["string", "null"],
+            "description": "подпись провала/блокера (для детекта repeated-failure)" }
+        }
+      }
+    },
+    "stopped_reason": { "type": "string",
+      "enum": ["success", "budget_exhausted", "no_progress", "repeated_failure", "escalated"] },
+    "escalated": { "type": "boolean" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "LoopTrace", "id": "LT-001", "loop_policy": "LP-001",
+      "progress_direction": "lower_is_better",
+      "iterations": [
+        { "n": 1, "progress_value": 1, "outcome": "blocked", "signature": "ux_review warn" },
+        { "n": 2, "progress_value": 0, "outcome": "success", "signature": null }
+      ],
+      "stopped_reason": "success", "escalated": false
+    }
+  ]
+}

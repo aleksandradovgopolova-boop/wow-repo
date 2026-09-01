@@ -1,0 +1,20 @@
+# rules/thinking/contradiction-resolution.yaml — гейты разрешения противоречий (v2.8).
+# Машиночитаемый чек-лист к скиллу skills/contradiction-resolution/SKILL.md.
+# ТРИЗ: техническое/физическое противоречие, разделения, IFR, тест растворения.
+# Инструмент-агностично. Находки ссылаются на id. Opt-in: только при чётком компромиссе.
+schema_version: 1
+kind: thinking-checklist
+id: contradiction-resolution
+used_by: [solution-architect]
+skill: skills/contradiction-resolution/SKILL.md
+adapted_from: "BayramAnnakov/systems-thinking-skills — triz-dissolve (MIT)"
+items:
+  - {id: tradeoff-gate, check: "Есть чёткое двустороннее противоречие 'улучшая X, ухудшаем Y' в измеримой форме (не расплывчатое 'хочется получше')", severity_default: critical}
+  - {id: both-layers, check: "Сформулированы оба слоя: техническое (параметры) И физическое (элемент должен быть A и не-A) противоречия", severity_default: critical}
+  - {id: structure-vs-physics, check: "Противоречие классифицировано: структура (устранимо) vs физика (реальный закон); разрешение реального закона не фабрикуется", severity_default: critical}
+  - {id: ifr-stated, check: "Сформулирован Ideal Final Result конкретно (функция есть, стоимость исчезла)", severity_default: major}
+  - {id: separations-scanned, check: "Пройдены 4 принципа разделения (время, пространство, условие, уровень системы)", severity_default: major}
+  - {id: principles-scanned, check: "Сделан полный проход по 40 приёмам, а не только очевидные; учтены ресурсы (неиспользованная ёмкость, побочные продукты, имеющаяся информация)", severity_default: major}
+  - {id: three-to-five, check: "Выдано 3–5 различных разрешений", severity_default: minor}
+  - {id: dissolve-not-relocate, check: "Каждое разрешение прошло тест: стоимость ИСЧЕЗАЕТ из системы, а не переезжает на другую команду/потом/пользователя/техдолг", severity_default: critical}
+  - {id: no-compromise, check: "В ответе нет 'найти оптимальный баланс'/'подкрутить соотношение' как решения", severity_default: critical}

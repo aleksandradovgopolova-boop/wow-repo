@@ -1,0 +1,12 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>calcfixture</groupId><artifactId>calcfixture</artifactId><version>0.0.0</version>
+  <!-- Стек-фикстура квалификации (java). НЕ продукт. Требует Maven Central (junit5) на прогоне. -->
+  <properties><maven.compiler.release>17</maven.compiler.release></properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version><scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

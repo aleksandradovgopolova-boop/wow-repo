@@ -1,0 +1,22 @@
+# rules/thinking/decision-support.yaml — гейты сопровождения решений (v2.10).
+# Машиночитаемый чек-лист к скиллу skills/decision-support/SKILL.md.
+# Recommendation-first + one-way-door + калибровка принципов. Находки ссылаются на id.
+# Opt-in: для значимых решений; мелкие обратимые не требуют церемоний.
+schema_version: 1
+kind: thinking-checklist
+id: decision-support
+used_by: [product-manager, product-reviewer]
+skill: skills/decision-support/SKILL.md
+registry: decisions/registry.yaml
+adapted_from: "BayramAnnakov/team-os-toolkit — init-team-decisions (MIT)"
+items:
+  - {id: human-recommendation-first, check: "Человек сформулировал собственную рекомендацию с аргументами ДО того, как система дала вердикт; без неё вердикт не выдаётся", severity_default: critical}
+  - {id: checked-against-principles, check: "Рекомендация сверена с принципами команды из decisions/registry.yaml (scope применим)", severity_default: major}
+  - {id: reasoning-gaps-surfaced, check: "Показаны пробелы рассуждения: неучтённое, непроверенные допущения", severity_default: major}
+  - {id: similar-decisions-found, check: "Найдены похожие прошлые эпизоды и их исходы (или явно сказано, что их нет)", severity_default: minor}
+  - {id: risks-named, check: "Названы риски решения, без сокрытия", severity_default: major}
+  - {id: reversibility-classified, check: "Классифицирована обратимость: two-way door (обратимо) vs one-way door (необратимо/дорого)", severity_default: critical}
+  - {id: one-way-door-escalated, check: "Для one-way door подготовлен бриф на эскалацию (рекомендация/альтернативы/риски/обратимость), решение НЕ принято автономно", severity_default: critical}
+  - {id: episode-recorded, check: "Решение зафиксировано эпизодом (вопрос, решение, причина, контекст, обратимость, дата, источник)", severity_default: major}
+  - {id: principle-calibrated, check: "Извлекаемый принцип имеет confidence, recurrence_count, counterexamples, review_date; принцип из одного случая не подаётся как закон", severity_default: major}
+  - {id: status-and-supersede, check: "Статус принципа валиден (proposed/ratified/retired); retired/замена оформлены через supersedes", severity_default: minor}

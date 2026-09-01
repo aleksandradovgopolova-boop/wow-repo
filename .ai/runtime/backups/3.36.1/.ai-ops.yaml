@@ -1,0 +1,49 @@
+# .ai-ops.yaml — заготовка child-конфига (создаётся ai-ops init, отредактируйте под проект)
+schema_version: 1
+kind: ai-ops-child-config
+parent:
+  source: git+https://github.com/aleksandradovgopolova-boop/ai-ops-kit.git
+  installed_version: 3.36.1
+  allowed_version_range: ">=3.0.0 <4.0.0"
+  update_channel: stable
+  update_policy: pr
+  auto_update: true   # по умолчанию ВКЛ: ежедневный workflow сам открывает update-PR (не авто-мерж;
+                      #   мажорный bump всё равно блокируется). Поставьте false, чтобы отключить (опт-аут).
+project:
+  name: <project-name>
+  documentation_language: ru
+  confidentiality_policy: internal
+presets: {enabled: []}
+adapters: {enabled: [claude-code, codex, generic]}
+providers:
+  default: anthropic
+  configured:
+    - {id: anthropic, credentials_ref: "env:ANTHROPIC_API_KEY"}
+    - {id: openai, credentials_ref: "env:OPENAI_API_KEY"}
+  fallback_chain: [anthropic, openai]
+runtimes: {default: claude-code, configured: [claude-code, codex, generic-orchestrator]}
+openspec: {enabled: true, profile: core, schema: spec-driven}
+agents: {source: parent-package, disabled: [], custom: []}
+workflows:
+  mappings: {bug: QUICK, feature: ENGINEERING, discovery: PRODUCT, research: RESEARCH}
+quality_gates:
+  blocking: [intake_completeness, requirements, specification, plan_readiness, implementation_verification, code_review]
+  overrides: []
+routing_policy: default
+approval_policy: {human_approval_required_for: [protected_paths, destructive]}
+overlays: {project: .ai/project/, custom: .ai/custom/}
+protected_paths: [.github/workflows/]
+confidentiality_policy: {send_code_to_external_provider: allowed}
+
+# v3.35: где в ЭТОМ продукте лежат контуры. Кит знает типовые места (context/**, schemas/**,
+# **/migrations/**), а wow-repo — Astro/React-проект: контракты в pipeline/schema/, движок в
+# src/engine/. Без этого объявления кит честно говорил `unknown` по четырём контурам из восьми, то
+# есть гейт связности на этом репозитории не срабатывал вообще (замер: 8 коммитов, 0 находок,
+# включая коммит на 54 файла «Build WowRepo MVP engine, design system»).
+product_operating_model:
+  contours:
+    data_contracts:
+      source_of_truth: [pipeline/schema/]
+      change_signals: ["pipeline/schema/**", "src/engine/**"]
+    system_architecture:
+      change_signals: ["astro.config.mjs", "pipeline/stages/**", "src/layouts/**"]

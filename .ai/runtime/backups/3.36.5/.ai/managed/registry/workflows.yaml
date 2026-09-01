@@ -1,0 +1,346 @@
+# registry/workflows.yaml — декларативные workflow-контракты (package v0.2.0)
+# MVP: QUICK, ENGINEERING, PRODUCT, RESEARCH. Runtime-independent (принцип 12.6):
+# provider-specific логики нет; adapter преобразует контракт в исполнение.
+# Стадии ссылаются на id из registry/agents.yaml; gates — на id из quality/gates.yaml.
+# Прозаические workflows/*.md остаются рабочими до перевода (Ф11).
+schema_version: 1
+registry_type: workflows
+contract_version: 1
+
+workflows:
+  QUICK:
+    id: QUICK
+    purpose: Малое локальное изменение с низким риском.
+    layer: core
+    selection_criteria: {size: small, risk: low, task_type: [bug-fix, small-change, docs, config]}
+    disqualifying_conditions:
+      - "risk in [high, critical]"
+      - "touches protected_paths"
+      - "requires new requirement or architecture"
+    required_artifacts: [intake, TaskState, VerificationEvidence]
+    optional_artifacts: [LearningPatch]
+    stages:
+      - {id: intake, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      - {id: local-change, owner: implementation-integrator, writer: implementation-integrator, review_mode: writer}
+      - {id: local-verify, owner: final-verifier, review_mode: read-only}
+      - {id: result, owner: documentation-steward, writer: documentation-steward, review_mode: writer}
+    quality_gates: [intake_completeness, concurrency_preflight, implementation_verification]
+    required_capabilities: [file_read, file_write]
+    preferred_execution_mode: native
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: false, escalate_if: [protected_paths, destructive]}
+    archive_criteria: "implementation_verification pass; изменение применено"
+    resumability: TaskState
+    learning_output: optional
+    maps_from: [workflows/bug-fix.md]
+
+  ENGINEERING:
+    id: ENGINEERING
+    purpose: Инженерная задача с требованиями, спецификацией и ревью.
+    layer: core
+    selection_criteria: {size: [medium, large], risk: [low, medium], task_type: [feature, refactoring, integration-change]}
+    disqualifying_conditions:
+      - "risk == critical"
+      - "pure discovery without code"
+    required_artifacts: [intake, requirements, specification, TaskPlan, TaskState, VerificationEvidence]
+    optional_artifacts: [design, ADR, LearningPatch]
+    stages:
+      - {id: requirements, owner: requirements-writer, writer: requirements-writer, review_mode: writer}
+      - {id: requirements-review, owner: requirements-reviewer, review_mode: read-only}
+      - {id: specification, owner: solution-architect, writer: solution-architect, review_mode: writer, uses_skills: [contradiction-resolution]}
+      - {id: plan, owner: task-planner, writer: task-planner, review_mode: writer}
+      - {id: plan-critique, owner: plan-reviewer, review_mode: read-only}
+      - {id: implementation, owner: implementation-integrator, writer: implementation-integrator, review_mode: writer}
+      - {id: verify, owner: final-verifier, review_mode: read-only}
+      - {id: review, owner: code-reviewer, review_mode: read-only, preset: software-product}
+      # memory-capture: опубликовать запись в memory/ (decision/pattern/lesson) ИЛИ явно
+      # отказаться с причиной в TaskState — молчаливый пропуск не является выполнением стадии.
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, concurrency_preflight, requirements, specification, event_contract_consistency, plan_readiness, implementation_verification, code_review, security, architecture_review, deploy_readiness]
+    required_capabilities: [structured_output, file_read, file_write]
+    preferred_execution_mode: orchestrated
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: conditional, when: [protected_paths, medium_risk_release]}
+    archive_criteria: "все blocking gates pass; evidence привязан к tested_revision"
+    resumability: TaskState + tasks
+    learning_output: recommended
+    maps_from: [workflows/feature-development.md, workflows/refactoring.md]
+
+  PRODUCT:
+    id: PRODUCT
+    purpose: Продуктовая задача от проблемы к ценности и валидации.
+    layer: core
+    selection_criteria: {task_type: [new-product-capability, discovery, epic], needs: [problem, users, value]}
+    disqualifying_conditions:
+      - "pure engineering with settled requirements"
+    required_artifacts: [intake, requirements, specification, TaskPlan, VerificationEvidence]
+    optional_artifacts: [design, ADR, product-analytics-plan]
+    stages:
+      # Discovery (Ф2 roadmap): problem statement -> JTBD/personas -> ценность -> гипотезы -> независимое ревью.
+      # Шаблоны: templates/discovery/* (ProblemStatement, JTBD, Personas, Hypotheses, OpportunitySolutionTree).
+      - {id: problem, owner: product-manager, writer: product-manager, review_mode: writer, preset: product-discovery}
+      - {id: users, owner: product-analyst, writer: product-analyst, review_mode: writer, preset: product-discovery}
+      - {id: value, owner: product-manager, writer: product-manager, review_mode: writer, preset: product-discovery}
+      - {id: hypotheses, owner: experiment-designer, writer: experiment-designer, review_mode: writer, preset: product-discovery}
+      - {id: discovery-review, owner: product-reviewer, review_mode: read-only}
+      - {id: requirements, owner: requirements-writer, writer: requirements-writer, review_mode: writer}
+      - {id: specification, owner: solution-architect, writer: solution-architect, review_mode: writer, uses_skills: [contradiction-resolution]}
+      - {id: plan, owner: task-planner, writer: task-planner, review_mode: writer}
+      - {id: plan-critique, owner: plan-reviewer, review_mode: read-only}
+      - {id: implementation, owner: implementation-integrator, writer: implementation-integrator, review_mode: writer}
+      - {id: validation, owner: final-verifier, review_mode: read-only}
+      - {id: stakeholder-handoff, owner: documentation-steward, writer: documentation-steward, review_mode: writer}
+      # memory-capture: опубликовать запись в memory/ (decision/lesson) ИЛИ явно отказаться
+      # с причиной в TaskState — молчаливый пропуск не является выполнением стадии.
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, concurrency_preflight, discovery_completeness, requirements, specification, event_contract_consistency, plan_readiness, implementation_verification, code_review, security, architecture_review, deploy_readiness, stakeholder_readiness]  # v3.27.1 WP2: добавлены code_review, security, architecture_review, deploy_readiness — продуктовая full-stack функция требует полного контура качества
+    required_capabilities: [structured_output, file_read, file_write]
+    preferred_execution_mode: orchestrated
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: true, stage: stakeholder-handoff}
+    archive_criteria: "validation pass; stakeholder handoff принят"
+    resumability: TaskState
+    learning_output: recommended
+    maps_from: []
+
+  RESEARCH:
+    id: RESEARCH
+    purpose: Исследовательский вопрос с проверкой фактов и синтезом.
+    layer: core
+    selection_criteria: {task_type: [research, market-scan, feasibility, external-evidence]}
+    disqualifying_conditions:
+      - "requires code implementation as primary output"
+    required_artifacts: [intake, proposal, VerificationEvidence, verification]
+    optional_artifacts: [LearningPatch]
+    stages:
+      - {id: question, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      - {id: scope, owner: requirements-writer, writer: requirements-writer, review_mode: writer}
+      - {id: source-strategy, owner: context-builder, writer: context-builder, review_mode: writer}
+      - {id: research, owner: context-builder, writer: context-builder, review_mode: writer, uses_skills: [deep-research]}
+      - {id: fact-check, owner: final-verifier, review_mode: read-only}
+      - {id: synthesis, owner: documentation-steward, writer: documentation-steward, review_mode: writer}
+      - {id: recommendations, owner: documentation-steward, writer: documentation-steward, review_mode: writer}
+      - {id: knowledge-update, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, evidence]
+    required_capabilities: [web_access, file_read, file_write]
+    preferred_execution_mode: orchestrated
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: false}
+    archive_criteria: "evidence pass; каждый существенный вывод имеет источник"
+    resumability: TaskState
+    learning_output: recommended
+    maps_from: []
+
+  VISUAL:
+    id: VISUAL
+    purpose: Пользовательская функция с UI — flow, состояния, дизайн-система, доступность.
+    layer: extended
+    selection_criteria: {task_type: [ui-change, new-screen, ux-improvement], touches: user-interface}
+    disqualifying_conditions:
+      - "нет пользовательского интерфейса"
+    required_artifacts: [intake, UXFlow, ScreenStates, DesignReview, TaskState, VerificationEvidence]
+    optional_artifacts: [TrackingPlan, LearningPatch]
+    stages:
+      - {id: intake, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      - {id: ux-flow, owner: ui-ux-designer, writer: ui-ux-designer, review_mode: writer, preset: product-discovery}
+      - {id: states, owner: ui-ux-designer, writer: ui-ux-designer, review_mode: writer}
+      - {id: design-review, owner: ux-reviewer, review_mode: read-only}
+      - {id: design-system-review, owner: design-system-reviewer, review_mode: read-only}
+      - {id: accessibility-review, owner: accessibility-reviewer, review_mode: read-only}
+      - {id: implementation, owner: implementation-integrator, writer: implementation-integrator, review_mode: writer, uses_skills: [frontend-design]}
+      - {id: verify, owner: final-verifier, review_mode: read-only, uses_skills: [e2e-browser-testing]}
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, concurrency_preflight, ux_review, design_system_usage, accessibility_review, visual_regression, implementation_verification]
+    required_capabilities: [file_read, file_write]
+    preferred_execution_mode: native
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: false, escalate_if: [protected_paths]}
+    archive_criteria: "ux_review и design_system_usage pass; состояния Empty/Loading/Error/Success покрыты"
+    resumability: TaskState
+    learning_output: recommended
+    maps_from: [workflows/ui-change.md]
+
+  ANALYTICS:
+    id: ANALYTICS
+    purpose: Аналитика функции — метрики, события, tracking plan, dashboard-спецификация.
+    layer: extended
+    selection_criteria: {task_type: [instrumentation, tracking-plan, dashboard, metrics-definition]}
+    disqualifying_conditions:
+      - "нет измеряемого пользовательского или бизнес-поведения"
+    required_artifacts: [intake, TrackingPlan, EventSchema, DashboardSpec, TaskState, VerificationEvidence]
+    optional_artifacts: [ProductAnalyticsPlan, LearningPatch]
+    stages:
+      - {id: intake, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      - {id: metrics-definition, owner: product-analyst, writer: product-analyst, review_mode: writer, preset: product-discovery}
+      - {id: event-design, owner: product-analyst, writer: product-analyst, review_mode: writer}
+      - {id: dashboard-spec, owner: product-analyst, writer: product-analyst, review_mode: writer}
+      - {id: analytics-review, owner: analytics-reviewer, review_mode: read-only}
+      - {id: implementation, owner: implementation-integrator, writer: implementation-integrator, review_mode: writer}
+      - {id: verify, owner: final-verifier, review_mode: read-only}
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, analytics_design_readiness, event_contract_consistency, implementation_verification]  # v3.27.2 WP3: analytics_readiness → analytics_design_readiness (design до merge, runtime verification после deploy)
+    required_capabilities: [file_read, file_write]
+    preferred_execution_mode: native
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: false}
+    archive_criteria: "analytics_design_readiness pass; analytics_runtime_verification после deploy (события проверены на реальном потоке)"  # v3.27.2 WP3
+    resumability: TaskState
+    learning_output: recommended
+    maps_from: [workflows/analytics-instrumentation.md]
+
+  INSIGHTS:
+    id: INSIGHTS
+    purpose: Непрерывное улучшение — из данных после релиза к инсайтам и гипотезам следующего Discovery.
+    layer: extended
+    selection_criteria: {task_type: [post-release-analysis, product-health, usage-analysis], requires: released-feature-with-analytics}
+    disqualifying_conditions:
+      - "нет данных после релиза (аналитика не инструментирована или период не прошёл)"
+    required_artifacts: [intake, ProductHealthReport, insights, hypotheses, TaskState, VerificationEvidence]
+    optional_artifacts: [Experiment, LearningPatch]
+    stages:
+      - {id: intake, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      # данные собираются из источников tracking plan / monitoring-spec функции
+      - {id: data-collection, owner: product-analyst, writer: product-analyst, review_mode: writer, uses_skills: [product-session-review]}
+      # health-report считает детерминированно tools/product_health.py — не LLM
+      - {id: health-report, owner: product-analyst, writer: product-analyst, review_mode: writer, uses_tools: [product_health]}
+      - {id: insight-synthesis, owner: product-analyst, writer: product-analyst, review_mode: writer, uses_skills: [system-constraint-analysis]}
+      - {id: insight-review, owner: product-reviewer, review_mode: read-only}
+      - {id: hypotheses-for-discovery, owner: experiment-designer, writer: experiment-designer, review_mode: writer, preset: product-discovery}
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, evidence]
+    required_capabilities: [file_read, file_write]
+    preferred_execution_mode: native
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: false}
+    archive_criteria: "evidence pass; каждый инсайт привязан к данным; гипотезы записаны в knowledge graph (insight -> feeds)"
+    resumability: TaskState
+    learning_output: required
+    maps_from: [workflows/insights.md]
+
+  DECISION:
+    id: DECISION
+    purpose: Значимое решение по recommendation-first — человек формулирует позицию, система проверяет мышление, необратимое эскалирует.
+    layer: extended
+    selection_criteria: {task_type: [decision, tech-choice, architecture-decision, tradeoff, go-no-go]}
+    disqualifying_conditions:
+      - "мелкое обратимое решение — церемонии избыточны"
+    required_artifacts: [intake, DecisionEpisode, VerificationEvidence]
+    optional_artifacts: [OneWayDoorBrief, OutcomeReview, LearningPatch]
+    stages:
+      - {id: intake, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      # recommendation-first: человек формулирует рекомендацию ДО вердикта; PM фиксирует эпизод
+      - {id: recommendation, owner: product-manager, writer: product-manager, review_mode: writer, uses_skills: [decision-support]}
+      # writer != judge: разбор рекомендации, пробелы, обратимость, сверка с принципами — read-only
+      - {id: principle-review, owner: product-reviewer, review_mode: read-only, uses_skills: [decision-support]}
+      # one-way door: только бриф на эскалацию, решение за человеком
+      - {id: one-way-door-brief, owner: product-manager, writer: product-manager, review_mode: writer}
+      - {id: decision-record, owner: documentation-steward, writer: documentation-steward, review_mode: writer}
+      - {id: outcome-review, owner: product-analyst, writer: product-analyst, review_mode: writer}
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, decision_quality]
+    required_capabilities: [file_read, file_write]
+    preferred_execution_mode: native
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: true, applies_to: [one-way-door-brief]}
+    archive_criteria: "решение зафиксировано эпизодом; one-way door эскалирован, не принят автономно; принцип откалиброван"
+    resumability: TaskState
+    learning_output: required
+    maps_from: []
+
+  ADOPTION:
+    id: ADOPTION
+    purpose: Довести выпущенную функцию до активации и удержания; оценить фактический эффект против baseline.
+    layer: extended
+    selection_criteria: {task_type: [launch, activation, onboarding, post-launch-review], requires: released-feature-with-analytics}
+    disqualifying_conditions:
+      - "функция не выпущена (подготовка релиза — release_safety в ENGINEERING/PRODUCT)"
+    required_artifacts: [intake, LaunchPlan, AdoptionPlan, FeedbackLoop, PostLaunchReview, TaskState, VerificationEvidence]
+    optional_artifacts: [InAppContent, ExperimentReadout, LearningPatch]
+    stages:
+      - {id: intake, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      # launch-readiness: события tracking plan подтверждены live, dashboard показывает данные, baseline зафиксирован
+      - {id: launch-readiness, owner: adoption-manager, writer: adoption-manager, review_mode: writer, preset: product-adoption}
+      - {id: analytics-review, owner: analytics-reviewer, review_mode: read-only}
+      - {id: adoption-plan, owner: adoption-manager, writer: adoption-manager, review_mode: writer, uses_skills: [product-demo-video]}
+      - {id: user-docs, owner: documentation-steward, writer: documentation-steward, review_mode: writer, uses_skills: [user-documentation]}
+      - {id: docs-review, owner: documentation-reviewer, review_mode: read-only}
+      - {id: feedback-loop, owner: adoption-manager, writer: adoption-manager, review_mode: writer}
+      # post-launch-review: через заданное окно анализа; решение continue/iterate/scale/rollback
+      - {id: post-launch-review, owner: adoption-manager, writer: adoption-manager, review_mode: writer}
+      - {id: review, owner: product-reviewer, review_mode: read-only}
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, analytics_design_readiness, documentation_updated]  # v3.27.2 WP3: analytics_readiness → analytics_design_readiness
+    required_capabilities: [file_read, file_write]
+    preferred_execution_mode: native
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: conditional, when: [rollback_decision]}
+    archive_criteria: "PostLaunchReview выполнен в заданном окне; решение зафиксировано; инсайты переданы в INSIGHTS/knowledge graph"
+    resumability: TaskState
+    learning_output: required
+    maps_from: [workflows/adoption.md]
+
+  AI_FEATURE:
+    id: AI_FEATURE
+    purpose: AI-возможность продукта — качество, скорость и стоимость ИИ-части в целевом сценарии, eval-driven.
+    layer: extended
+    selection_criteria: {task_type: [ai-feature, llm-integration, rag-pipeline, agent-capability, prompt-change, model-migration], requires: llm-component-in-product}
+    disqualifying_conditions:
+      - "в фиче нет LLM/агентного компонента (обычная разработка -> ENGINEERING)"
+    required_artifacts: [intake, AIFeatureSpec, GoldenDataset, AIFeatureEvalPlan, RedTeamReport, TaskState, VerificationEvidence]
+    optional_artifacts: [TrackingPlan, ExperimentReadout, LearningPatch]
+    stages:
+      - {id: intake, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      # target-scenario: целевой сценарий измеримо + model_class через routing + бюджеты качества/latency/стоимости
+      - {id: target-scenario, owner: llm-architect, writer: llm-architect, review_mode: writer, preset: ai-product}
+      # eval-dataset: golden set ДО реализации (eval-driven development)
+      - {id: eval-dataset, owner: ai-feature-engineer, writer: ai-feature-engineer, review_mode: writer}
+      - {id: implementation, owner: ai-feature-engineer, writer: ai-feature-engineer, review_mode: writer}
+      # offline-evals: прогон и вердикт — независимый judge (writer != judge)
+      - {id: offline-evals, owner: ai-evaluator, review_mode: read-only}
+      - {id: red-team, owner: ai-red-teamer, review_mode: read-only}
+      - {id: verify, owner: final-verifier, review_mode: read-only}
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, concurrency_preflight, ai_eval, ai_red_team, event_contract_consistency, implementation_verification, architecture_review, deploy_readiness]
+    required_capabilities: [structured_output, file_read, file_write]
+    preferred_execution_mode: native
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: conditional, when: [guardrail_threshold_change, external_provider_for_confidential_data]}
+    archive_criteria: "ai_eval pass на golden set в рамках бюджетов spec'а; red-team blockers закрыты; смена модели/промпта после этого = regression-прогон"
+    resumability: TaskState
+    learning_output: recommended
+    maps_from: [workflows/ai-feature.md]
+
+  CRITICAL:
+    id: CRITICAL
+    purpose: Критическое/необратимое изменение с максимальной строгостью — high/critical risk, hotfix, security-sensitive. Цель critical-эскалации маршрутизатора.
+    layer: extended
+    selection_criteria: {risk: critical, task_type: [hotfix, security-fix, incident-fix, critical-change]}
+    disqualifying_conditions:
+      - "risk ниже high — обычный workflow по task_type"
+    required_artifacts: [intake, RiskAssessment, TaskPlan, TaskState, VerificationEvidence, SecurityReview]
+    optional_artifacts: [ADR, LearningPatch]
+    stages:
+      - {id: intake, owner: intake-classifier, writer: intake-classifier, review_mode: writer}
+      # risk-assessment: обратимость, радиус поражения, blast-radius; вход для плана и одобрения
+      - {id: risk-assessment, owner: solution-architect, writer: solution-architect, review_mode: writer}
+      - {id: plan, owner: task-planner, writer: task-planner, review_mode: writer}
+      - {id: plan-critique, owner: plan-reviewer, review_mode: read-only}
+      - {id: implementation, owner: implementation-integrator, writer: implementation-integrator, review_mode: writer}
+      - {id: verify, owner: final-verifier, review_mode: read-only}
+      # security и code-review — независимые judge (writer != judge)
+      - {id: security-review, owner: security-reviewer, review_mode: read-only}
+      - {id: code-review, owner: code-reviewer, review_mode: read-only}
+      # human-approval: решение за человеком (one-way door); PM фиксирует бриф и одобрение
+      - {id: human-approval, owner: product-manager, writer: product-manager, review_mode: writer}
+      - {id: memory-capture, owner: repository-memory-curator, writer: repository-memory-curator, review_mode: writer}
+    quality_gates: [intake_completeness, concurrency_preflight, plan_readiness, implementation_verification, security, code_review, architecture_review, deploy_readiness]  # v3.27.1 WP2: добавлены architecture_review, deploy_readiness — критическое изменение требует полного контура качества
+    required_capabilities: [structured_output, file_read, file_write]
+    preferred_execution_mode: orchestrated
+    minimum_execution_mode: sequential
+    approval_policy: {human_approval_required: true, stage: human-approval}
+    archive_criteria: "все blocking gates pass (вкл. security); человек одобрил; evidence привязан к tested_revision"
+    resumability: TaskState + tasks
+    learning_output: required
+    maps_from: [workflows/hotfix.md, workflows/incident-resolution.md]
+
+# Post-MVP (объявлены, контракты позже): DOCUMENT, LEGACY, INCIDENT.

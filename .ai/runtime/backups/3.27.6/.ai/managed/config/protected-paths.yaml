@@ -1,0 +1,8 @@
+version: 1
+protected_paths:
+  - path: production/
+    approval: required
+  - path: migrations/destructive/
+    approval: required
+  - path: security/
+    approval: owner_required

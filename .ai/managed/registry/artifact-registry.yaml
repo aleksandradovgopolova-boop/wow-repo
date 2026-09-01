@@ -1,0 +1,179 @@
+# registry/artifact-registry.yaml — реестр стандартных артефактов Product Operating Layer (PR-4).
+#
+# ЗАЧЕМ РЕЕСТР, А НЕ ПРОЗА. PR-3 требует, чтобы у каждого подключённого репозитория был стандартный
+# Product Operating Layer (`.ai-ops/`), а PR-4 — чтобы состав этого слоя описывался ДАННЫМИ, а не
+# зашивался в код bootstrap/валидатора. Иначе повторилась бы старая болезнь модели контуров:
+# «обязательные документы» жили бы двумя несверяемыми списками (один в installer, другой в
+# валидаторе), и никто не мог бы машинно спросить «какие артефакты обязательны», «где их шаблон»,
+# «какой версии» и «кто их обновляет». По этому файлу работает КОД:
+#   * загрузчик реестра в `ai_ops_kit/planning/` — читает, проверяет инварианты, считает
+#     расхождение реестра с файлами репозитория (шаблоны);
+#   * bootstrap (`product-layer-bootstrap`, PR-3) — раскладывает объявленные здесь артефакты;
+#   * валидация (`product-layer-validation`, PR-5) — состояние Missing/Invalid/Outdated/Valid.
+# Поэтому это реестр, а не документация: расхождение реестра с реальностью КРАСНЕЕТ тестом.
+#
+# ГЛАВНЫЙ ИНВАРИАНТ. Реестр — ЕДИНСТВЕННЫЙ источник истины ФОРМЫ артефакта. Ленты 3–5 регистрируют
+# свои артефакты здесь через PR, а не заводят второй реестр (иначе «две правды об одном артефакте»).
+# ВЕДЕНИЕ артефакта (наполнение ROADMAP/DELIVERY логикой) — забота других лент; здесь только форма.
+#
+# ССЫЛОЧНАЯ ЦЕЛОСТНОСТЬ. `owner_role` и `source_contour` каждого артефакта обязаны существовать в
+# `registry/product-operating-model.yaml` (роли и контуры). Роль/контур, переименованные там без
+# правки здесь, — расхождение реестра с реальностью, и оно обязано краснеть.
+schema_version: 1
+registry_type: artifact-registry
+contract_version: 1
+
+# Корень стандартизированного слоя в ДОЧЕРНЕМ репозитории (PR-3). Все пути артефактов — под ним.
+# Путь артефакта относителен корня репозитория; кит пишет и читает здесь, а не в корне продукта,
+# чтобы managed-слой кита не смешивался с правдой репозитория.
+layer_root: ".ai-ops/"
+
+# ── Уровни автономии AI-действий (PR-19) ────────────────────────────────────────────────────────
+# `suggest`  — предложить, не трогая файл;      `prepare` — подготовить черновик/PR к ревью;
+# `execute`  — выполнить без подтверждения;      `require_approval` — только с явным подтверждением.
+# Значение `autonomy` каждого `ai_actions[]` обязано быть из этого списка (проверяется).
+autonomy_levels: [suggest, prepare, execute, require_approval]
+
+# ── Жизненный цикл состояния артефакта (PR-5) ───────────────────────────────────────────────────
+# ЧЕТЫРЕ СОСТОЯНИЯ, А НЕ ДВА. `is_file()` != «заполнен»: артефакт может лежать на диске и при этом
+# быть пустым (Invalid) или отставшим от кода (Outdated). Порядок — лестница ухудшения; валидация
+# (PR-5) обязана различать все четыре, а не сворачивать «есть/нет».
+# Отдельно от `artifact_states` модели контуров (то — про доверие к реконструкции, семь состояний);
+# здесь — про пригодность конкретного документа слоя, четыре состояния.
+lifecycle_states:
+  - {id: missing,  order: 0, means: "артефакта нет на объявленном пути"}
+  - {id: invalid,  order: 1, means: "артефакт есть, но структура/обязательные поля нарушены"}
+  - {id: outdated, order: 2, means: "артефакт валиден, но отстал: версия шаблона старее или данные устарели"}
+  - {id: valid,    order: 3, means: "артефакт есть, структура полна, версия и данные актуальны"}
+
+# ── Артефакты Product Operating Layer ───────────────────────────────────────────────────────────
+# Поля каждого артефакта (PR-4):
+#   id / title / purpose      — идентификатор, название, назначение;
+#   required                  — обязательность (bool): без обязательного слой неполон;
+#   kind / format             — document|config|directory  /  markdown|yaml|dir;
+#   path                      — путь в репозитории (под layer_root);
+#   template                  — {path, version}: официальный шаблон и его версия (PR-5). Для
+#                               directory отсутствует;
+#   owner_role                — роль-владелец из product-operating-model.yaml (РОЛЬ, не исполнитель);
+#   source_contour            — контур, которому артефакт принадлежит (из той же модели);
+#   structure                 — required_sections (markdown) | required_fields (yaml): что обязано
+#                               присутствовать; проверяет PR-5 (validation), не этот срез;
+#   validation                — какие правила применяются при проверке содержимого;
+#   update                    — правила обновления: mode (auto|ai_assisted|human), regenerate, on;
+#   source                    — источник ДАННЫХ для наполнения (откуда кит берёт содержимое);
+#   ai_actions                — что AI Ops вправе делать с артефактом и с какой автономией (PR-19).
+artifacts:
+  - id: product_passport
+    title: Product Passport
+    purpose: >-
+      Паспорт продукта: единая карточка состояния — что за продукт, для кого, зрелость, здоровье,
+      текущий milestone, прогресс, риски, зависимости. Генерируется из ФАКТИЧЕСКОГО состояния репо.
+    required: true
+    kind: document
+    format: markdown
+    path: ".ai-ops/PRODUCT_PASSPORT.md"
+    template: {path: "templates/product-layer/PRODUCT_PASSPORT.md", version: 1}
+    owner_role: product
+    source_contour: product_strategy
+    structure:
+      required_sections:
+        - Название и описание
+        - Аудитория и проблема
+        - Repository и окружения
+        - Owner и команда
+        - Статус и зрелость
+        - Здоровье (продукт / технологии / delivery)
+        - Версия и последний релиз
+        - Текущий milestone и прогресс
+        - Риски и зависимости
+    validation: [sections_present, non_empty_sections, template_version_current, freshness]
+    update: {mode: ai_assisted, regenerate: true, on: [release, milestone_change, weekly_audit]}
+    source: [repo_state, delivery_plan, product_health, git_history]
+    ai_actions:
+      - {action: generate, autonomy: prepare}       # черновик из состояния репо -> ревью владельца
+      - {action: update,   autonomy: execute}        # актуализация фактов (версия, прогресс)
+      - {action: migrate,  autonomy: require_approval}
+
+  - id: roadmap
+    title: Roadmap
+    purpose: >-
+      Направления и ожидаемые результаты (Now/Next/Later), а не дубль backlog. ФОРМУ создаёт этот
+      слой; ведение (декомпозиция, связь с milestones/backlog) — забота ленты roadmap.
+    required: true
+    kind: document
+    format: markdown
+    path: ".ai-ops/ROADMAP.md"
+    template: {path: "templates/product-layer/ROADMAP.md", version: 1}
+    owner_role: product
+    source_contour: product_strategy
+    structure:
+      required_sections: [Now, Next, Later]
+    validation: [sections_present, template_version_current, roadmap_contract]
+    update: {mode: ai_assisted, regenerate: false, on: [replanning, insight]}
+    source: [planning_plan, strategy]
+    ai_actions:
+      - {action: generate, autonomy: prepare}
+      - {action: update,   autonomy: prepare}        # roadmap — территория стратегии: не execute молча
+      - {action: migrate,  autonomy: require_approval}
+
+  - id: delivery
+    title: Delivery
+    purpose: >-
+      Состояние поставки: как код превращается в релиз и что после релиза живо. Форма — здесь;
+      наполнение delivery-планом и прогнозом — забота ленты delivery.
+    required: true
+    kind: document
+    format: markdown
+    path: ".ai-ops/DELIVERY.md"
+    template: {path: "templates/product-layer/DELIVERY.md", version: 1}
+    owner_role: delivery
+    source_contour: delivery_operations
+    structure:
+      required_sections: [Текущий milestone, Ближайшие релизы, Блокеры, Delivery health]
+    validation: [sections_present, template_version_current, freshness]
+    update: {mode: ai_assisted, regenerate: true, on: [pr_merged, release, weekly_audit]}
+    source: [delivery_plan, ci_state, release_history]
+    ai_actions:
+      - {action: generate, autonomy: prepare}
+      - {action: update,   autonomy: execute}
+      - {action: migrate,  autonomy: require_approval}
+
+  - id: policy
+    title: Policy
+    purpose: >-
+      Политика допустимого поведения AI Ops в этом репозитории (PR-19): что кит вправе делать сам,
+      что готовит к ревью, где обязан остановиться. Исполняемая часть, не проза.
+    required: true
+    kind: config
+    format: yaml
+    path: ".ai-ops/POLICY.yaml"
+    template: {path: "templates/product-layer/POLICY.yaml", version: 2}
+    owner_role: engineer
+    source_contour: engineering_quality_security
+    structure:
+      required_fields: [schema_version, autonomy, protected_paths, approvals]
+    validation: [fields_present, autonomy_values_known, template_version_current]
+    update: {mode: human, regenerate: false, on: []}
+    source: [human, ai_ops_yaml]
+    ai_actions:
+      - {action: generate, autonomy: prepare}        # черновик из .ai-ops.yaml; правила — за человеком
+      - {action: update,   autonomy: require_approval}
+      - {action: migrate,  autonomy: require_approval}
+
+  - id: templates_dir
+    title: Templates directory
+    purpose: >-
+      Каталог официальных шаблонов слоя в дочернем репозитории: копия версий шаблонов, по которым
+      кит определяет Outdated и проводит миграцию. Структурный артефакт, без собственного шаблона.
+    required: true
+    kind: directory
+    format: dir
+    path: ".ai-ops/templates/"
+    owner_role: engineer
+    source_contour: engineering_quality_security
+    validation: [directory_present]
+    update: {mode: auto, regenerate: true, on: [kit_update]}
+    source: [kit_templates]
+    ai_actions:
+      - {action: generate, autonomy: execute}        # раскладка шаблонов — механическая, из кита
+      - {action: update,   autonomy: execute}

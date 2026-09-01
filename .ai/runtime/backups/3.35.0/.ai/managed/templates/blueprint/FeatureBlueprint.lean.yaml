@@ -1,0 +1,55 @@
+# Feature Blueprint — LEAN-профиль (прототип/MVP): discovery, definition, delivery,
+# analytics, retrospective. Скоуп объявлен явно (feature.profile: lean) — это НЕ молчаливый
+# пропуск стадий: ux/architecture/documentation/release/monitoring/adoption не требуются
+# валидатором, но их можно добавить в artifacts точечно, когда появляются.
+# Остальные правила — как во full-профиле (см. FeatureBlueprint.yaml).
+schema_version: 1
+kind: feature-blueprint
+feature:
+  id: <feature-id>
+  name: <человекочитаемое имя>
+  owner: <роль или человек>
+  status: planned
+  current_stage: discovery
+  profile: lean
+links:
+  goal: ''
+  epic: ''
+  stories: []
+  experiments: []
+artifacts:
+  discovery:
+  - path: discovery/problem-statement.md
+    template: templates/discovery/ProblemStatement.md
+    status: planned
+  - path: discovery/hypotheses.md
+    template: templates/discovery/Hypotheses.md
+    status: planned
+  definition:
+  - path: prd/feature.md
+    template: templates/product/Feature.md
+    status: planned
+  - path: prd/user-stories.md
+    template: templates/product/UserStory.md
+    status: planned
+  delivery:
+  - path: delivery/task-plan.md
+    template: templates/task/TaskPlan.md
+    status: planned
+  - path: delivery/test-plan.md
+    template: templates/quality/TestPlan.md
+    status: planned
+  analytics:
+  - path: analytics/tracking-plan.md
+    template: templates/analytics/TrackingPlan.md
+    status: planned
+  - path: analytics/event-schema.md
+    template: templates/analytics/EventSchema.md
+    status: planned
+  - path: analytics/dashboard-spec.md
+    template: templates/analytics/DashboardSpec.md
+    status: planned
+  retrospective:
+  - path: retrospective/retrospective.md
+    template: templates/task/Retrospective.md
+    status: planned

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/model-bench-result.schema.json",
+  "title": "ModelBenchResult",
+  "description": "ModelBenchResult (MBR) — v3.4 model comparison. Замер одной модели/провайдера на одном task-tier: качество (из Bench Lite / живых прогонов) + экономика (из cost_account/run_cost). Вход для model_comparison. Не фабрикуем: MBR фиксирует РЕАЛЬНО измеренное (source обязателен).",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "model", "provider", "task_tier", "quality",
+               "economics", "source"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "ModelBenchResult" },
+    "id": { "type": "string", "pattern": "^MBR-[0-9]{3,}$" },
+    "model": { "type": "string", "minLength": 1 },
+    "provider": { "type": "string", "minLength": 1 },
+    "task_tier": { "type": "string", "enum": ["QUICK", "ENGINEERING", "UI"] },
+    "quality": {
+      "type": "object",
+      "required": ["total", "pass", "false_green", "false_fail", "fix_recovered"],
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "pass": { "type": "integer", "minimum": 0 },
+        "false_green": { "type": "integer", "minimum": 0 },
+        "false_fail": { "type": "integer", "minimum": 0 },
+        "fix_recovered": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "economics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "cost_usd": { "type": ["number", "null"], "minimum": 0 },
+        "latency_s": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "measured_at": { "type": ["string", "null"] },
+    "source": { "type": "string", "minLength": 1,
+      "description": "откуда замер (Bench Lite / живой Phase B / …) — провенанс, не фабрикация" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "ModelBenchResult", "id": "MBR-001",
+      "model": "deepseek-chat", "provider": "openai-compatible", "task_tier": "QUICK",
+      "quality": { "total": 1, "pass": 1, "false_green": 0, "false_fail": 0, "fix_recovered": 0 },
+      "economics": { "tokens": null, "cost_usd": 0.007, "latency_s": null },
+      "measured_at": "2026-07-24", "source": "живой Phase B QUICK (delivered, ready_for_pr=True)"
+    }
+  ]
+}

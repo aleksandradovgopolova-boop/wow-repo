@@ -1,0 +1,106 @@
+# registry/skills-catalog.yaml — каталог ВНЕШНИХ скиллов (v2.12).
+# Не поставляются китом (те — в manifest.skills.shipped, skills/*), а декларируются:
+# источник + категория + лицензия + условие применимости. Ставятся НА УРОВНЕ child
+# по потребности, чтобы не забиасить агностичное ядро под конкретный стек.
+#
+# Зачем: собрать пользу vendor/сторонних скиллов, не вендоря их в ядро. Продакт видит,
+# что существует и где взять, и подключает нужное в свой .claude/skills/.
+#
+# status: declared — китом в бою не верифицированы; лицензии проверять до установки.
+schema_version: 1
+registry_type: skills-catalog
+
+# Стек-специфичные: ставит тот child, чей стек совпадает.
+stack_skills:
+  - id: react-best-practices
+    stack: react
+    source: "github: vercel-labs/agent-skills"
+    purpose: "актуальные гайдлайны React от Vercel (не паттерны 2020)"
+    license: "проверить в репозитории"
+    status: declared
+  - id: web-design-guidelines
+    stack: web
+    source: "github: vercel-labs/agent-skills"
+    purpose: "стандарты веб-дизайна (типографика, отступы, цвет); дополняет наш frontend-design"
+    license: "проверить в репозитории"
+    status: declared
+  - id: postgres-best-practices
+    stack: postgres
+    source: "github: supabase/agent-skills"
+    purpose: "паттерны Postgres от Supabase: таблицы, индексы, миграции"
+    license: "проверить в репозитории"
+    status: declared
+  - id: shadcn-ui
+    stack: react-shadcn
+    source: "github: google-labs-code/skills"
+    purpose: "сборка интерфейсов на shadcn/ui (популярная React-библиотека)"
+    license: "проверить в репозитории"
+    status: declared
+
+# Продуктовые/контентные: продакт подключает по потребности (пожелание пользователя).
+product_skills:
+  - id: visual-explainer
+    category: content
+    source: "github: nicobailon/visual-explainer"
+    purpose: "визуальные объяснялки/диаграммы для документации и коммуникации"
+    license: "проверить в репозитории"
+    status: declared
+  - id: writing-guru
+    category: content
+    source: "github: alenazaharovaux/share -> skills/writing-guru"
+    purpose: "качество текста: редактура, ясность"
+    license: "проверить в репозитории"
+    status: declared
+  - id: revealjs
+    category: content
+    source: "github: ryanbbrown/revealjs-skill"
+    purpose: "презентации reveal.js для демо/стейкхолдеров"
+    license: "проверить в репозитории"
+    status: declared
+  - id: text-editor-ru
+    category: content
+    source: "github: proektnyy-ofis/proektnyy-ofis-hranilishche -> 02_tools/skills/text-editor-ru"
+    purpose: "русский текст: инфостиль, снятие ИИ-следов и канцелярита, типографика; смысл и факты не меняются"
+    license: MIT
+    status: declared
+
+# Учебно-тренировочные референсы (обучение/дообучение своей модели).
+# Кит НЕ обучает модели — он строит продукты на LLM; эти материалы не исполняются
+# китом и не вендорятся. Курируемый шорт-лист на редкий случай «делаем свою модель»
+# (A. Karpathy). Использование — на уровне child/команды, лицензии проверить.
+model_training:
+  - id: nn-zero-to-hero
+    category: learning
+    source: "github: karpathy/nn-zero-to-hero"
+    purpose: "лучший вход: нейросети с нуля до GPT (курс + код). Начинать отсюда"
+    license: MIT
+    status: declared
+  - id: nanoGPT
+    category: learning
+    source: "github: karpathy/nanoGPT"
+    purpose: "минимальная реализация обучения/дообучения GPT — из чего технически состоит модель"
+    license: MIT
+    status: declared
+  - id: nanochat
+    category: learning
+    source: "github: karpathy/nanochat"
+    purpose: "компактный стек «свой ChatGPT»: обучение, токенизация, инференс, чат-интерфейс"
+    license: MIT
+    status: declared
+  - id: LLM101n
+    category: learning
+    source: "github: karpathy/LLM101n"
+    purpose: "образовательная программа: создание своей LLM/AI-системы с нуля"
+    license: "проверить в репозитории"
+    status: declared
+  - id: llm.c
+    category: learning
+    source: "github: karpathy/llm.c"
+    purpose: "обучение GPT-2 на чистом C/CUDA без PyTorch-абстракций — для глубокого понимания"
+    license: MIT
+    status: declared
+
+# Как подключить (child):
+# 1) свериться с governance/information-boundaries.md и лицензией источника;
+# 2) скопировать скилл в <child>/.claude/skills/<id>/ (как это делает installer для shipped);
+# 3) отразить в своём каталоге/README, если нужно командное знание об этом.

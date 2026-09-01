@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "package_version": "3.36.1",
+  "sources": {
+    "registry/workflows.yaml": "36bdf139ef95902355053eac2c882caba1449de51a7f0e859b5b8dde0b312f92",
+    "registry/agents.yaml": "d1ae7f5c0a44f83e432692125fb06adf8e3c867ec2abc50a2ab7d15f129677b4"
+  },
+  "generated": [
+    ".ai/generated/claude-code/commands/ai-adoption.md",
+    ".ai/generated/claude-code/commands/ai-ai_feature.md",
+    ".ai/generated/claude-code/commands/ai-analytics.md",
+    ".ai/generated/claude-code/commands/ai-critical.md",
+    ".ai/generated/claude-code/commands/ai-decision.md",
+    ".ai/generated/claude-code/commands/ai-engineering.md",
+    ".ai/generated/claude-code/commands/ai-insights.md",
+    ".ai/generated/claude-code/commands/ai-ops-init.md",
+    ".ai/generated/claude-code/commands/ai-product.md",
+    ".ai/generated/claude-code/commands/ai-quick.md",
+    ".ai/generated/claude-code/commands/ai-research.md",
+    ".ai/generated/claude-code/commands/ai-run.md",
+    ".ai/generated/claude-code/commands/ai-start-task.md",
+    ".ai/generated/claude-code/commands/ai-visual.md",
+    ".ai/generated/codex/prompts/ai-adoption.md",
+    ".ai/generated/codex/prompts/ai-ai_feature.md",
+    ".ai/generated/codex/prompts/ai-analytics.md",
+    ".ai/generated/codex/prompts/ai-critical.md",
+    ".ai/generated/codex/prompts/ai-decision.md",
+    ".ai/generated/codex/prompts/ai-engineering.md",
+    ".ai/generated/codex/prompts/ai-insights.md",
+    ".ai/generated/codex/prompts/ai-ops-init.md",
+    ".ai/generated/codex/prompts/ai-product.md",
+    ".ai/generated/codex/prompts/ai-quick.md",
+    ".ai/generated/codex/prompts/ai-research.md",
+    ".ai/generated/codex/prompts/ai-run.md",
+    ".ai/generated/codex/prompts/ai-start-task.md",
+    ".ai/generated/codex/prompts/ai-visual.md"
+  ],
+  "note": "Do not edit by hand; regenerate with tools/generate_runtime.py"
+}

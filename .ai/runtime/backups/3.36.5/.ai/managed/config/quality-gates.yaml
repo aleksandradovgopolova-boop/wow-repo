@@ -1,0 +1,6 @@
+version: 1
+gates:
+  analysis: [requirements_complete, scope_defined, affected_components_identified]
+  implementation: [build_passed, lint_passed, tests_passed, dependencies_approved]
+  review: [code_review_passed, risk_reviews_passed, blockers_closed]
+  delivery: [rollback_defined, monitoring_defined, documentation_updated, evidence_attached]

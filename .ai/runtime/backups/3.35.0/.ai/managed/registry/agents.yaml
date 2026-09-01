@@ -1,0 +1,956 @@
+# registry/agents.yaml — structured agent registry (package v0.2.0)
+# Сгенерирован из фактических файлов agents/. Тела агентов НЕ изменялись.
+# layer/target/action/migration_phase — план (см. audit/ai-ops-target-v2/machine/component-classification.yaml).
+schema_version: 1
+registry_type: agents
+contract_version: 1
+generated_note: Bootstrap-реестр из фактических файлов agents/ (тела не менялись). layer/action/target
+  — план миграции (component-classification).
+counts:
+  agents: 51
+agents:
+- schema_version: 1
+  id: context-builder
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/context-builder.md
+  domain: core
+  purpose: Собирает минимальный проверенный context pack для задачи. Снижает риск галлюцинаций, лишнего
+    чтения и изменений не тех компонентов
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: merge
+  migration_phase: 2
+  migration_note: поглощает repository-explorer (Ф2)
+- schema_version: 1
+  id: development-orchestrator
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/development-orchestrator.md
+  domain: core
+  purpose: Координирует выполнение утверждённого плана, распределяет work packages, следит за зависимостями,
+    quality gates и состоянием задачи. Не подменяет аналитика, архитектора или разработчика
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 2
+  migration_note: EXECUTION orchestrator (Ф2)
+- schema_version: 1
+  id: final-verifier
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/final-verifier.md
+  domain: core
+  purpose: Независимо проверяет, что первоначальная цель задачи достигнута, критерии приёмки доказаны,
+    scope не нарушен, а задача действительно готова к завершению
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 2
+  migration_note: QUALITY GATES / evidence (Ф2)
+- schema_version: 1
+  id: implementation-integrator
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/implementation-integrator.md
+  domain: core
+  purpose: Объединяет результаты нескольких исполнителей в согласованное изменение и отвечает за интеграционную
+    целостность
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 2
+  migration_note: integration owner (Ф2)
+- schema_version: 1
+  id: intake-classifier
+  version: 0.1.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/intake-classifier.md
+  domain: core
+  purpose: Единая точка приёма запроса на естественном языке. Превращает свободную формулировку в machine-readable
+    intake и классификацию (тип задачи, размер, риск), затем предлагает workflow. Пользователь не выбирает
+    агентов, команды и workflow вручную — это делает классификатор
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '0.1'
+  target_layer: core
+  target_preset: null
+  action: create
+  migration_phase: 3
+  migration_note: 'NEW: INTAKE/CLASSIFICATION (Ф3)'
+- schema_version: 1
+  id: plan-reviewer
+  version: 0.1.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/plan-reviewer.md
+  domain: core
+  purpose: Независимо и read-only критикует план до начала выполнения (стадия PLAN CRITIQUE). Не изменяет
+    план — возвращает заключение. Writer плана (task-planner) и judge плана (plan-reviewer) разделены
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '0.1'
+  target_layer: core
+  target_preset: null
+  action: create
+  migration_phase: 3
+  migration_note: 'NEW: PLAN CRITIQUE (adapt prompt-reviewer) (Ф3)'
+- schema_version: 1
+  id: repository-explorer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/repository-explorer.md
+  domain: core
+  purpose: Исследует релевантную часть репозитория без изменений и возвращает компактную карту реализации,
+    зависимостей и рисков
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: merge
+  migration_phase: 2
+  migration_note: в context-builder (Ф2)
+- schema_version: 1
+  id: requirements-writer
+  version: 0.1.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/requirements-writer.md
+  domain: core
+  purpose: Единый писатель требований. Формулирует проверяемые требования и acceptance-сценарии на основе
+    проверенного контекста. Отделён от проверяющего (requirements-reviewer) — writer и judge не совмещаются
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '0.1'
+  target_layer: core
+  target_preset: null
+  action: create
+  migration_phase: 3
+  migration_note: 'NEW: writer требований из merge system-analyst+business-analyst (Ф3)'
+- schema_version: 1
+  id: task-planner
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/core/task-planner.md
+  domain: core
+  purpose: Преобразует подтверждённый контекст и требования в исполнимый план с ограниченным scope, зависимостями,
+    проверками и точками согласования
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 2
+  migration_note: +structured contract (Ф2)
+- schema_version: 1
+  id: documentation-steward
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/delivery/documentation-steward.md
+  domain: delivery
+  purpose: Обновляет только релевантные источники истины, устраняет расхождения, помечает устаревшие документы
+    и готовит handoff
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 2
+  migration_note: DELIVERY + doc drift (Ф2)
+- schema_version: 1
+  id: incident-analyst
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/delivery/incident-analyst.md
+  domain: delivery
+  purpose: Восстанавливает хронологию инцидента, отделяет симптомы от причин и формирует проверяемые corrective
+    actions без поиска виноватых
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: INCIDENT workflow (Ф7)
+- schema_version: 1
+  id: observability-engineer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/delivery/observability-engineer.md
+  domain: delivery
+  purpose: Определяет, как после релиза понять, что функция работает, деградирует или требует rollback
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: monitoring def (Ф7)
+- schema_version: 1
+  id: release-manager
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/delivery/release-manager.md
+  domain: delivery
+  purpose: Готовит изменение к выпуску, координирует зависимости, release window, коммуникацию, rollback
+    и post-release validation
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: RELEASE readiness (Ф7)
+- schema_version: 1
+  id: backend-developer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/engineering/backend-developer.md
+  domain: engineering
+  purpose: Реализует серверную логику, API и работу с данными с учётом совместимости, безопасности и эксплуатационных
+    рисков
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: ENGINEERING исполнитель (Ф7)
+- schema_version: 1
+  id: database-engineer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: data-and-integrations
+  file: agents/engineering/database-engineer.md
+  domain: engineering
+  purpose: Проектирует и проверяет изменения схемы, индексов, миграций и backfill с учётом объёма данных,
+    блокировок, совместимости и rollback
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: data-and-integrations
+  action: move-later
+  migration_phase: 7
+  migration_note: изменения БД (Ф7)
+- schema_version: 1
+  id: devops-engineer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/engineering/devops-engineer.md
+  domain: engineering
+  purpose: Отвечает за CI/CD, окружения, инфраструктуру, секреты, deployment strategy и воспроизводимость
+    поставки
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: CI/CD delivery (Ф7)
+- schema_version: 1
+  id: frontend-developer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/engineering/frontend-developer.md
+  domain: engineering
+  purpose: Реализует клиентскую часть строго в утверждённом scope и с переиспользованием дизайн-системы
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: ENGINEERING исполнитель (Ф7)
+- schema_version: 1
+  id: fullstack-developer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/engineering/fullstack-developer.md
+  domain: engineering
+  purpose: Выполняет небольшую сквозную задачу, когда контракты уже определены, архитектура не меняется
+    и количество затрагиваемых компонентов ограничено
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: ENGINEERING исполнитель (Ф7)
+- schema_version: 1
+  id: integration-engineer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: data-and-integrations
+  file: agents/engineering/integration-engineer.md
+  domain: engineering
+  purpose: Проектирует и реализует надёжное взаимодействие с внешними и внутренними системами
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: data-and-integrations
+  action: move-later
+  migration_phase: 7
+  migration_note: интеграции/контракты (Ф7)
+- schema_version: 1
+  id: migration-engineer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: data-and-integrations
+  file: agents/engineering/migration-engineer.md
+  domain: engineering
+  purpose: Планирует безопасный переход между старыми и новыми версиями данных, API или компонентов без
+    остановки критичных процессов
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: data-and-integrations
+  action: move-later
+  migration_phase: 7
+  migration_note: миграции данных (Ф7)
+- schema_version: 1
+  id: solution-architect
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/engineering/solution-architect.md
+  domain: engineering
+  purpose: Проектирует варианты решения, оценивает системные риски и фиксирует архитектурное решение без
+    преждевременной детализации кода
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 2
+  migration_note: SPEC/ARCH + ADR (Ф2)
+- schema_version: 1
+  id: system-analyst
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/engineering/system-analyst.md
+  domain: engineering
+  purpose: Преобразует продуктовые и бизнес-требования в системные требования, контракты, модели данных,
+    последовательности и каталог ошибок
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: merge
+  migration_phase: 3
+  migration_note: -> requirements-writer (Ф3)
+- schema_version: 1
+  id: agent-creator
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: parent-only
+  preset: null
+  file: agents/meta/agent-creator.md
+  domain: meta
+  purpose: Создаёт новую агентную роль только когда существующие роли не закрывают устойчивый класс задач
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: parent-only
+  target_preset: null
+  action: move-later
+  migration_phase: 7
+  migration_note: инструмент авторинга (Ф7)
+- schema_version: 1
+  id: prompt-reviewer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/meta/prompt-reviewer.md
+  domain: meta
+  purpose: Проверяет агентные инструкции на ясность роли, конфликт правил, чрезмерный scope, отсутствие
+    запретов, невалидируемый результат и platform lock-in
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 3
+  migration_note: -> plan-reviewer PLAN CRITIQUE (Ф3)
+- schema_version: 1
+  id: repository-memory-curator
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/meta/repository-memory-curator.md
+  domain: meta
+  purpose: Превращает завершённые задачи и инциденты в долговременные знания репозитория
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 2
+  migration_note: KNOWLEDGE UPDATE / LearningPatch (Ф2)
+- schema_version: 1
+  id: workflow-designer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: parent-only
+  preset: null
+  file: agents/meta/workflow-designer.md
+  domain: meta
+  purpose: Проектирует минимальный workflow для устойчивого типа задач, включая ветвление по риску, gates,
+    approvals и handoff
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: parent-only
+  target_preset: null
+  action: move-later
+  migration_phase: 7
+  migration_note: авторинг workflow (Ф7)
+- schema_version: 1
+  id: business-analyst
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/product/business-analyst.md
+  domain: product
+  purpose: Формализует бизнес-потребность, процессы, роли, правила, исключения и критерии приёмки
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: merge
+  migration_phase: 3
+  migration_note: -> requirements-writer (Ф3)
+- schema_version: 1
+  id: experiment-designer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-discovery
+  file: agents/product/experiment-designer.md
+  domain: product
+  purpose: Проектирует проверку продуктовой гипотезы до масштабной разработки
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: product-discovery
+  action: move-later
+  migration_phase: 7
+  migration_note: PRODUCT validation (Ф7)
+- schema_version: 1
+  id: product-analyst
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-discovery
+  file: agents/product/product-analyst.md
+  domain: product
+  purpose: Определяет метрики, события, сегменты, методику измерения и дизайн оценки эффекта изменения
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: product-discovery
+  action: move-later
+  migration_phase: 7
+  migration_note: PRODUCT/ANALYTICS метрики (Ф7)
+- schema_version: 1
+  id: product-manager
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-discovery
+  file: agents/product/product-manager.md
+  domain: product
+  purpose: Формулирует продуктовую проблему, целевого пользователя, ожидаемый эффект, приоритет и границы
+    решения
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: product-discovery
+  action: move-later
+  migration_phase: 7
+  migration_note: PRODUCT problem/value (Ф7)
+- schema_version: 1
+  id: ui-ux-designer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-discovery
+  file: agents/product/ui-ux-designer.md
+  domain: product
+  purpose: Проектирует пользовательский сценарий и интерфейс на основе существующей дизайн-системы, включая
+    loading, empty, error, success и permission states
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: product-discovery
+  action: move-later
+  migration_phase: 7
+  migration_note: VISUAL/PRODUCT (Ф7)
+- schema_version: 1
+  id: accessibility-reviewer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/accessibility-reviewer.md
+  domain: quality
+  purpose: Проверяет semantic structure, keyboard navigation, focus, labels, errors, contrast, scaling
+    и screen reader flow. Автоматический сканер считается только одной из проверок
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: a11y judge (+VISUAL) (Ф7)
+- schema_version: 1
+  id: code-reviewer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/code-reviewer.md
+  domain: quality
+  purpose: Проводит независимый review diff относительно задачи, утверждённого плана, архитектуры и правил
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: judge кода, gate code_review (Ф7)
+- schema_version: 1
+  id: performance-reviewer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/performance-reviewer.md
+  domain: quality
+  purpose: Оценивает влияние изменения на latency, throughput, memory, payload, database load, frontend
+    rendering и стоимость инфраструктуры
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: risk-based judge (Ф7)
+- schema_version: 1
+  id: regression-analyst
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/regression-analyst.md
+  domain: quality
+  purpose: По задаче и diff определяет область возможной регрессии и минимальный достаточный набор проверок
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: regression protection (Ф7)
+- schema_version: 1
+  id: requirements-reviewer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: core
+  preset: null
+  file: agents/quality/requirements-reviewer.md
+  domain: quality
+  purpose: Критически проверяет требования до разработки
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: core
+  target_preset: null
+  action: adapt
+  migration_phase: 2
+  migration_note: judge требований (Ф2)
+- schema_version: 1
+  id: security-reviewer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/security-reviewer.md
+  domain: quality
+  purpose: Проверяет изменения, затрагивающие authentication, authorization, персональные данные, секреты,
+    внешние интеграции и границы доверия
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: judge безопасности (Ф7)
+- schema_version: 1
+  id: test-engineer
+  version: 2.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/test-engineer.md
+  domain: quality
+  purpose: Проектирует и выполняет независимую проверку реализации по критериям приёмки и regression risk
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '2.0'
+  target_layer: preset
+  target_preset: software-product
+  action: move-later
+  migration_phase: 7
+  migration_note: writer тестов (Ф7)
+- schema_version: 1
+  id: product-reviewer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-discovery
+  file: agents/quality/product-reviewer.md
+  domain: quality
+  purpose: "Независимая проверка продуктовых артефактов Discovery/Definition: проблема, JTBD, гипотезы, метрики успеха, PRD. Гейт discovery_completeness"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: product-discovery
+  action: create
+  migration_phase: 4
+  migration_note: 'NEW: review-агент Ф2 roadmap (v1.4)'
+- schema_version: 1
+  id: ux-reviewer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-discovery
+  file: agents/quality/ux-reviewer.md
+  domain: quality
+  purpose: "Независимая проверка UX: flow, состояния Empty/Loading/Error/Success, эвристики Nielsen (rules/design/ux-heuristics.yaml), copy. Гейт ux_review"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: product-discovery
+  action: create
+  migration_phase: 4
+  migration_note: 'NEW: review-агент Ф2 roadmap (v1.4)'
+- schema_version: 1
+  id: design-system-reviewer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/design-system-reviewer.md
+  domain: quality
+  purpose: "Проверка соответствия дизайн-системе: существующие компоненты и токены, новые — только обоснованно (rules/design/design-system-checklist.yaml). Гейт design_system_usage"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: software-product
+  action: create
+  migration_phase: 4
+  migration_note: 'NEW: review-агент Ф2 roadmap (v1.4)'
+- schema_version: 1
+  id: analytics-reviewer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-discovery
+  file: agents/quality/analytics-reviewer.md
+  domain: quality
+  purpose: "Независимая проверка аналитики: tracking plan, event schema, воронки, PII, dashboard-спецификация. Гейт analytics_readiness"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: product-discovery
+  action: create
+  migration_phase: 4
+  migration_note: 'NEW: review-агент Ф2 roadmap (v1.4)'
+- schema_version: 1
+  id: documentation-reviewer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/documentation-reviewer.md
+  domain: quality
+  purpose: Независимая проверка, что документация обновлена вместе с изменением и пригодна читателю. Поддерживает гейт documentation_updated
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: software-product
+  action: create
+  migration_phase: 4
+  migration_note: 'NEW: review-агент Ф2 roadmap (v1.4)'
+- schema_version: 1
+  id: observability-reviewer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/observability-reviewer.md
+  domain: quality
+  purpose: "Независимая проверка наблюдаемости: логи, метрики, алерты с runbook, SLO, трейсинг. Гейт observability_readiness"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: software-product
+  action: create
+  migration_phase: 4
+  migration_note: 'NEW: review-агент Ф2 roadmap (v1.4)'
+- schema_version: 1
+  id: architecture-reviewer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: software-product
+  file: agents/quality/architecture-reviewer.md
+  domain: quality
+  purpose: "Независимая проверка архитектурных решений: ADR, совместимость API, модель данных, интеграции и режимы отказа"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: software-product
+  action: create
+  migration_phase: 4
+  migration_note: 'NEW: review-агент Ф2 roadmap (v1.4)'
+- schema_version: 1
+  id: ai-evaluator
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: ai-product
+  file: agents/quality/ai-evaluator.md
+  domain: quality
+  purpose: "Оценка AI-фич продукта против success criteria: eval-наборы, LLM-as-judge с валидацией, guardrails, regression при смене модели/промпта. Гейт ai_eval"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: ai-product
+  action: create
+  migration_phase: 5
+  migration_note: 'NEW: research-pack integration (v2.1); v2.4: переезд в preset ai-product'
+- schema_version: 1
+  id: adoption-manager
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-adoption
+  file: agents/product/adoption-manager.md
+  domain: product
+  purpose: "Стадия adoption: активация (aha), онбординг, retention, петля обратной связи, Post-Launch Review; инсайты возвращаются в discovery. Owner workflow ADOPTION"
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: product-adoption
+  action: create
+  migration_phase: 5
+  migration_note: 'NEW: research-pack integration (v2.1)'
+- schema_version: 1
+  id: user-researcher
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: product-discovery
+  file: agents/product/user-researcher.md
+  domain: product
+  purpose: "Непрерывный discovery: story-based интервью, JTBD, Opportunity Solution Tree с product outcome в корне, проверка рискованных предположений (RAT)"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: product-discovery
+  action: create
+  migration_phase: 5
+  migration_note: 'NEW: research-pack integration (v2.1)'
+- schema_version: 1
+  id: llm-architect
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: ai-product
+  file: agents/engineering/llm-architect.md
+  domain: engineering
+  purpose: "Архитектура AI-части продукта под целевой сценарий: model_class через routing, контекстная стратегия, бюджеты качества/latency/стоимости, деградация. Владелец target-scenario в AI_FEATURE"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: ai-product
+  action: create
+  migration_phase: 6
+  migration_note: 'NEW: AI Product Pack (v2.4)'
+- schema_version: 1
+  id: ai-feature-engineer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: ai-product
+  file: agents/engineering/ai-feature-engineer.md
+  domain: engineering
+  purpose: "Строит AI-часть eval-driven: golden set до реализации, промпты/RAG/tool use как код, итерации меряются прогоном на наборе против бюджетов spec'а"
+  review_mode: writer
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: ai-product
+  action: create
+  migration_phase: 6
+  migration_note: 'NEW: AI Product Pack (v2.4)'
+- schema_version: 1
+  id: ai-red-teamer
+  version: 1.0.0
+  contract_version: 1
+  entity_type: agent
+  layer: preset
+  preset: ai-product
+  file: agents/quality/ai-red-teamer.md
+  domain: quality
+  purpose: "Адверсариальная проверка AI-фичи по rules/ai/red-team-checklist.yaml (OWASP LLM Top 10): инъекции, jailbreak, утечки PII/промпта, границы агентности. Гейт ai_red_team"
+  review_mode: read-only
+  vendor_neutral: true
+  source_version: '1.0'
+  target_layer: preset
+  target_preset: ai-product
+  action: create
+  migration_phase: 6
+  migration_note: 'NEW: AI Product Pack (v2.4)'

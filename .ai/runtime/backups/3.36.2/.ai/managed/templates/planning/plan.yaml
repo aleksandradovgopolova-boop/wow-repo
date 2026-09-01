@@ -1,0 +1,44 @@
+# planning/plan.yaml — delivery plan репозитория: что нужно сделать и в каком порядке.
+#
+# Уровень МЕЖДУ направлением (`ROADMAP.md`) и прогоном. По этому файлу `ai-ops next` отвечает на
+# четыре вопроса: где мы, что идёт сейчас, что блокирует и чем, какую работу взять следующей.
+#
+# ЭТО ЗАГОТОВКА. Пока стоит `template: true`, кит НЕ считает содержимое планом продукта и не
+# советует работу отсюда: иначе он выдавал бы свой пример за состояние вашего проекта. Замените
+# пример своей работой и снимите строку `template: true`.
+#
+# ТРИ ПРАВИЛА (проверяет `validate_product_model.py`):
+#  1. Статус объявляйте только тот, которого код не знает: todo / in_progress / done / dropped.
+#     `ready`, `blocked`, `waiting` кит СЧИТАЕТ сам — из зависимостей, гейтов и активной работы.
+#  2. Называйте РОЛЬ, а не исполнителя: поля runtime/model/provider/assignee/agent запрещены —
+#     иначе смена Claude Code на Codex переписывала бы план продукта.
+#  3. id — slug нижнего регистра ([a-z0-9._-]): такой же, как требует движок для `--feature`.
+#
+# Словари ролей, типов работы и контуров — `registry/product-operating-model.yaml`.
+schema_version: 1
+kind: delivery-plan
+template: true            # СНИМИТЕ эту строку, когда впишете свою работу
+
+goals:
+  - id: goal-id-1         # тот же id, что в ROADMAP.md
+    status: active        # active | paused | done
+    outcome:              # проверяемый результат: ключ — утверждение, значение — достигнут ли
+      user_can_do_the_thing: false
+
+work:
+  - id: arch-01
+    title: Спроектировать то, без чего остальное не начать
+    type: architecture    # словарь work_types модели
+    goal: goal-id-1
+    status: todo          # объявляемый факт
+    owner_role: architect # РОЛЬ, не исполнитель
+    depends_on: []
+    write_scope: [context/system/]   # области записи; без них параллельность недоказуема
+    value: high           # high | medium | low
+    affects: {system_architecture: true}   # какие контуры продукта работа изменяет
+
+  # Дальше — по образцу выше. Полезные необязательные поля:
+  #   depends_on: [arch-01]              — статус `blocked` НЕ пишите, он выведется отсюда
+  #   human_decision: "нужно решение владельца про источник данных"
+  #   capabilities: [structured_output]
+  #   estimate_tokens: 120000            — нет оценки -> unknown, НЕ ноль

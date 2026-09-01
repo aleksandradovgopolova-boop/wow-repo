@@ -1,0 +1,19 @@
+# rules/documentation/user-docs.yaml — гейты пользовательской документации (v2.13).
+# Машиночитаемый чек-лист к скиллу skills/user-documentation/SKILL.md.
+# Diátaxis + скриншоты из реального UI. Находки ссылаются на id. Opt-in: UI-фичи.
+schema_version: 1
+kind: documentation-checklist
+id: user-docs
+used_by: [documentation-steward, documentation-reviewer]
+skill: skills/user-documentation/SKILL.md
+adapted_from: "Diátaxis; захват — skills/e2e-browser-testing"
+items:
+  - {id: diataxis-type, check: "Тип документа определён по Diátaxis (tutorial/how-to/reference/explanation) и не смешан в одном файле", severity_default: major}
+  - {id: screenshots-from-real-ui, check: "Скриншоты сняты из реального интерфейса (Playwright), не нарисованы и не устаревшие", severity_default: critical}
+  - {id: screenshots-on-matrix, check: "Скриншоты сделаны на нужных классах Device matrix, не только desktop", severity_default: major}
+  - {id: screenshots-refreshable, check: "Скриншоты привязаны к шагам сценария и переснимаются при изменении UI (не расходятся с продуктом)", severity_default: major}
+  - {id: alt-text, check: "У каждого изображения осмысленный alt-текст (доступность и поиск)", severity_default: minor}
+  - {id: path-to-value, check: "Документируется реальный путь к ценности, а не тур по кнопкам", severity_default: major}
+  - {id: states-covered, check: "Показаны состояния Empty/Loading/Error/Success и восстановление после ошибки", severity_default: major}
+  - {id: user-language, check: "Язык пользователя, без внутреннего жаргона (сверка с context/team/Glossary.md)", severity_default: minor}
+  - {id: no-invented-ui, check: "Не описан интерфейс, которого нет; нет данных из запретных категорий governance", severity_default: critical}

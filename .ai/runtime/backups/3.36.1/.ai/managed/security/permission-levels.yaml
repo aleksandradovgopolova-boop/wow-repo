@@ -1,0 +1,59 @@
+# security/permission-levels.yaml — 6 уровней разрешений (package v0.3.0)
+# Расширяет config/tool-permissions.yaml (2 режима read-only/read-write остаются рабочими).
+# Каждый уровень включает права предыдущих (кумулятивно) + требования human approval.
+schema_version: 1
+registry_type: permission-levels
+
+# Порядок по возрастанию полномочий.
+order: [read-only, controlled-write, execution, network, privileged, destructive]
+
+levels:
+  read-only:
+    allows: [filesystem_read, search, tests_read]
+    denies: [filesystem_write, production_access, external_write]
+    human_approval: false
+    note: "judge-роли (review_mode read-only) работают на этом уровне."
+
+  controlled-write:
+    inherits: read-only
+    allows: [filesystem_write_in_scope, local_tests]
+    denies: [production_access, secret_export, out_of_scope_write]
+    human_approval: false
+    note: writer-роли пишут только в свой write_scope.
+
+  execution:
+    inherits: controlled-write
+    allows: [local_shell, build, lint, test_run]
+    denies: [destructive_commands, production_exec]
+    human_approval: false
+    note: запуск сборки/линта/тестов локально.
+
+  network:
+    inherits: execution
+    allows: [outbound_http_allowlisted, provider_api_calls, mcp_tools]
+    denies: [external_data_egress_if_confidential]
+    human_approval: {required_when: [external_data_egress_if_confidential]}
+    note: сетевые вызовы; при confidentiality=confidential egress наружу требует approval.
+
+  privileged:
+    inherits: network
+    allows: [secret_reference_use, protected_path_write]
+    denies: [secret_value_export]
+    human_approval: {required_when: [protected_path_write, secret_boundary_change]}
+    note: доступ к защищённым путям и использование секретов по ссылке (не значению).
+
+  destructive:
+    inherits: privileged
+    allows: [irreversible_ops, production_write, data_deletion, force_push]
+    human_approval: {required: true}
+    note: необратимые/боевые операции — всегда human approval (принцип 11).
+
+# Секреты: только имена env-переменных и secret-reference; значения в репозитории запрещены.
+secrets_policy:
+  in_repo: forbidden
+  allowed_forms: [env_var_name, secret_reference, approved_secret_storage_type]
+
+# Соответствие legacy-режимам config/tool-permissions.yaml
+legacy_mapping:
+  read-only: read-only
+  read-write: controlled-write   # + execution по контексту

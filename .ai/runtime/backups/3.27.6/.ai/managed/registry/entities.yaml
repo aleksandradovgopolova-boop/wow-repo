@@ -1,0 +1,47 @@
+# registry/entities.yaml — словарь Knowledge Graph (Ф4 roadmap, v2.0).
+# Определяет ТИПЫ сущностей и допустимые СВЯЗИ между ними. Сам граф проекта живёт
+# в child-репозитории: knowledge/graph.yaml (schemas/knowledge-graph.schema.json);
+# ссылочную целостность проверяет validation/validate_knowledge_graph.py.
+# Feature Blueprint — узел типа feature (атрибут blueprint -> features/<id>/blueprint.yaml).
+schema_version: 1
+registry_type: entities
+
+entity_types:
+  goal:          {description: "Бизнес/продуктовая цель"}
+  initiative:    {description: "Инициатива, реализующая цель"}
+  epic:          {description: "Крупный кусок ценности внутри инициативы"}
+  feature:       {description: "Функция; узел связывается с Feature Blueprint", attributes: [blueprint]}
+  story:         {description: "User story внутри функции"}
+  design:        {description: "UX/дизайн-артефакт"}
+  api:           {description: "API-контракт"}
+  analytics:     {description: "Tracking plan / event schema функции"}
+  dashboard:     {description: "Dashboard-спецификация"}
+  documentation: {description: "Пользовательская/операционная документация"}
+  release:       {description: "Релиз, доставивший изменение"}
+  metric:        {description: "Метрика (продуктовая или эксплуатационная)"}
+  incident:      {description: "Инцидент эксплуатации"}
+  experiment:    {description: "Эксперимент, проверяющий гипотезу"}
+  insight:       {description: "Вывод из данных/инцидентов/экспериментов; вход следующего Discovery"}
+
+# Допустимые связи: from -> to (валидатор отклоняет рёбра вне этого списка).
+relations:
+  - {type: contains,     from: goal,       to: initiative}
+  - {type: contains,     from: initiative, to: epic}
+  - {type: contains,     from: epic,       to: feature}
+  - {type: contains,     from: feature,    to: story}
+  - {type: specified-by, from: feature,    to: design}
+  - {type: specified-by, from: feature,    to: api}
+  - {type: measured-by,  from: feature,    to: analytics}
+  - {type: measured-by,  from: feature,    to: metric}
+  - {type: visualized-in, from: analytics, to: dashboard}
+  - {type: documented-in, from: feature,   to: documentation}
+  - {type: delivered-by, from: feature,    to: release}
+  - {type: observed-by,  from: release,    to: metric}
+  - {type: caused,       from: release,    to: incident}
+  - {type: affects,      from: incident,   to: feature}
+  - {type: validates,    from: experiment, to: feature}
+  - {type: derived-from, from: insight,    to: metric}
+  - {type: derived-from, from: insight,    to: incident}
+  - {type: derived-from, from: insight,    to: experiment}
+  - {type: feeds,        from: insight,    to: goal}
+  - {type: feeds,        from: insight,    to: feature}

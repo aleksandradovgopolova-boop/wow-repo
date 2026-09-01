@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/decision-package.schema.json",
+  "title": "DecisionPackage",
+  "description": "research.decision-package — выходной контракт research-модуля: компактный пакет для принятия решения, а не отчёт. Потребляется человеком или workflow DECISION (через intake, без импорта DecisionEpisode). В child лежит в .research/decisions/DP-*.yaml. Инвариант writer≠judge: high confidence требует стороннего read-only ревью (см. if/then).",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "research.decision-package" },
+    "id": { "type": "string", "pattern": "^DP-\\d{3,}$" },
+    "request_id": { "type": "string", "pattern": "^RR-\\d{3,}$" },
+    "decision": {
+      "type": "object",
+      "properties": {
+        "question": { "type": "string", "minLength": 10 }
+      },
+      "required": ["question"],
+      "additionalProperties": false
+    },
+    "decision_brief": {
+      "type": "string",
+      "minLength": 50,
+      "description": "5-7 строк человеческим языком для решателя: что рекомендуем / что это стоит / топ-риски / следующий шаг. Не заменяет rationale (тот — для проверки), а даёт однооконное чтение. Optional в v0.2, required конвенцией для новых DP."
+    },
+    "cost_of_recommendation": {
+      "type": "object",
+      "description": "Стоимость принятия рекомендации — системное слепое пятно writer'ов (judge ловил дважды в DP-106). Optional в v0.2, required конвенцией для новых DP.",
+      "properties": {
+        "one_time": { "type": "string", "description": "Разовые затраты: деньги, часы внедрения." },
+        "recurring": { "type": "string", "description": "Постоянные: подписки, аренда, эксплуатация (человеко-часы/мес)." },
+        "owner_required": { "type": "string", "description": "Чьё время/роль нужны, чтобы рекомендация жила." },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "recommendation": {
+      "type": "object",
+      "properties": {
+        "preferred_option": { "type": "string" },
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+        "confidence_rationale": { "type": "string", "minLength": 10 }
+      },
+      "required": ["preferred_option", "confidence", "confidence_rationale"],
+      "additionalProperties": false
+    },
+    "rationale": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 10 },
+      "minItems": 1,
+      "description": "Каждый пункт обоснования должен опираться на evidence_ids, не на общее впечатление."
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "option": { "type": "string" },
+          "appropriate_when": { "type": "string" }
+        },
+        "required": ["option", "appropriate_when"],
+        "additionalProperties": false
+      }
+    },
+    "constraints_addressed": {
+      "type": "object",
+      "description": "Явная строка по каждому constraint запроса: соблюдён/частично/unknown и чем (пункт 2 writer-preflight). Ключи — имена constraints из ResearchRequest. Optional в v0.2, required конвенцией для новых DP.",
+      "additionalProperties": { "type": "string", "minLength": 10 }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 10 },
+      "description": "Допущения, на которых стоит рекомендация (не факты и не риски). Каждое — кандидат на проверку в proposed_validation."
+    },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "unknowns": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Честные пробелы знания. Пустой список при confidence=low/medium — подозрительно."
+    },
+    "proposed_validation": {
+      "type": "object",
+      "description": "Как дёшево проверить рекомендацию до необратимых шагов.",
+      "properties": {
+        "experiment": { "type": "string" }
+      },
+      "required": ["experiment"],
+      "additionalProperties": false
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^EV-\\d{3,}$" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "author": { "type": "string", "description": "Агент/человек, собравший пакет (writer)." },
+    "review": {
+      "type": ["object", "null"],
+      "description": "Стороннее read-only ревью. Обязательно при confidence=high (writer≠judge).",
+      "properties": {
+        "reviewed_by": { "type": "string" },
+        "verdict": { "type": "string", "enum": ["approved", "needs_work", "rejected"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["reviewed_by", "verdict"],
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "reviewed", "accepted", "superseded"]
+    },
+    "outcome": {
+      "type": ["object", "null"],
+      "description": "Заполняется постфактум: какое решение принято и что показал результат — замыкает контур в research memory.",
+      "properties": {
+        "decision_taken": { "type": "string" },
+        "result": { "type": "string" },
+        "recorded_at": { "type": "string", "format": "date" }
+      },
+      "required": ["decision_taken"],
+      "additionalProperties": false
+    },
+    "created_at": { "type": "string", "format": "date" }
+  },
+  "required": ["schema_version", "kind", "id", "request_id", "decision", "recommendation", "rationale", "unknowns", "proposed_validation", "evidence_ids", "author", "status"],
+  "additionalProperties": false,
+  "if": {
+    "properties": { "recommendation": { "properties": { "confidence": { "const": "high" } } } }
+  },
+  "then": {
+    "properties": { "review": { "type": "object" } },
+    "required": ["review"]
+  },
+  "x-no-secrets": "Только выводы и идентификаторы evidence; без учётных данных.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "research.decision-package",
+      "id": "DP-001",
+      "request_id": "RR-001",
+      "decision": { "question": "Какую модель использовать для генерации Personal Cosmic Book?" },
+      "recommendation": {
+        "preferred_option": "deepseek",
+        "confidence": "medium",
+        "confidence_rationale": "Два первичных источника по стоимости и контексту; качество длинного русского текста не измерено собственным экспериментом."
+      },
+      "rationale": ["Стоимость генерации книги на порядок ниже при сопоставимом контексте (EV-001, EV-002)."],
+      "alternatives": [{ "option": "kimi", "appropriate_when": "Если собственный eval покажет заметно лучшее качество длинной русской прозы." }],
+      "risks": ["Цены API volatile: пересмотреть при истечении freshness EV-002."],
+      "unknowns": ["Качество художественного русского текста на 50K+ токенов не сравнивалось напрямую."],
+      "proposed_validation": { "experiment": "Сгенерировать 20 одинаковых глав обеими моделями, слепое ревью качества." },
+      "evidence_ids": ["EV-001", "EV-002"],
+      "author": "documentation-steward",
+      "review": null,
+      "status": "draft",
+      "outcome": null,
+      "created_at": "2026-07-22"
+    }
+  ]
+}

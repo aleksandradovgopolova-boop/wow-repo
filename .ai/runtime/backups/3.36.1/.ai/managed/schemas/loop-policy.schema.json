@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/loop-policy.schema.json",
+  "title": "LoopPolicy",
+  "description": "LoopPolicy — v3.3.2 Operational Architecture Backbone. КОНТРАКТ управляемого цикла (governed loop): чем запускается, чем ограничен, чем успешен, чем останавливается, как меряется прогресс и что происходит при остановке без успеха. Типы циклов РЕГИСТРИРУЮТСЯ, отдельные движки НЕ строятся; существующий fix-loop (v3.1.1, tools/ai_ops_run.py) — первая реализация этого общего контракта. Инвариант (готовит v3.4): никакой loop без бюджета — budgets обязаны нести хотя бы одну границу.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "loop_type", "trigger", "budgets",
+               "success_conditions", "stop_conditions", "progress_measure", "on_stop", "escalation"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "LoopPolicy" },
+    "id": { "type": "string", "pattern": "^LP-[0-9]{3,}$" },
+    "loop_type": { "type": "string", "enum": ["implementation", "review_fix", "ui_storybook",
+      "research", "product_learning", "safe_improvement"] },
+    "trigger": { "type": "string", "minLength": 1 },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "хотя бы одна граница должна быть задана (не-null) — unbounded loop запрещён",
+      "properties": {
+        "max_iterations": { "type": ["integer", "null"], "minimum": 1 },
+        "max_tokens": { "type": ["integer", "null"], "minimum": 1 },
+        "max_cost_usd": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "success_conditions": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "stop_conditions": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "progress_measure": { "type": "string", "minLength": 1,
+      "description": "как меряется прогресс (для детекта no-progress)" },
+    "on_stop": { "type": "string", "minLength": 1,
+      "description": "поведение при остановке без успеха (fail-closed)" },
+    "escalation": { "type": "string", "minLength": 1,
+      "description": "путь human handoff при исчерпании/зацикливании" },
+    "realized_by": { "type": ["string", "null"],
+      "description": "существующая реализация контракта, если есть (напр. fix-loop)" }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "LoopPolicy",
+      "id": "LP-001",
+      "loop_type": "review_fix",
+      "trigger": "гейт заблокирован конкретными blockers ревьюера/проверки",
+      "budgets": { "max_iterations": 1, "max_tokens": null, "max_cost_usd": null },
+      "success_conditions": ["все блокирующие гейты закрыты", "ready_for_pr=true"],
+      "stop_conditions": ["исчерпан бюджет итераций", "блок не модель-фиксируем (human/base/lifecycle)"],
+      "progress_measure": "число незакрытых блокирующих гейтов уменьшается между итерациями",
+      "on_stop": "fail-closed: не-ready остаётся не-ready, ничего не форсируется в green",
+      "escalation": "human review при исчерпании бюджета без закрытия гейтов",
+      "realized_by": "tools/ai_ops_run.py fix-loop (v3.1.1)"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# rules/design/accessibility-checklist.yaml — машиночитаемый a11y-чек-лист (Ф2 roadmap, v1.4).
+# Основа: WCAG 2.2 уровень AA (подмножество, проверяемое на артефактах и в ручном ревью).
+# Используется accessibility-reviewer'ом; дополняет прозаический rules/quality/AccessibilityBaseline.md.
+schema_version: 1
+kind: design-checklist
+id: accessibility-checklist
+used_by: [accessibility-reviewer]
+wcag_level: AA
+items:
+  - {id: contrast-text, wcag: "1.4.3", check: "Контраст текста >= 4.5:1 (крупный >= 3:1)", severity_default: critical}
+  - {id: contrast-ui, wcag: "1.4.11", check: "Контраст нетекстовых элементов UI и состояний >= 3:1", severity_default: major}
+  - {id: keyboard, wcag: "2.1.1", check: "Вся функциональность доступна с клавиатуры, нет ловушек фокуса", severity_default: critical}
+  - {id: focus-visible, wcag: "2.4.7", check: "Фокус всегда видим; порядок фокуса следует смыслу", severity_default: critical}
+  - {id: labels, wcag: "1.3.1", check: "Поля и контролы имеют программно связанные подписи (label/aria)", severity_default: critical}
+  - {id: errors-described, wcag: "3.3.1", check: "Ошибки ввода описаны текстом и связаны с полем, не только цветом", severity_default: major}
+  - {id: color-not-only, wcag: "1.4.1", check: "Цвет — не единственный носитель информации", severity_default: major}
+  - {id: text-resize, wcag: "1.4.4", check: "Текст масштабируется до 200% без потери функциональности", severity_default: major}
+  - {id: target-size, wcag: "2.5.8", check: "Размер интерактивных целей >= 24x24 CSS px (мобильные — 44)", severity_default: major}
+  - {id: alt-media, wcag: "1.1.1", check: "Нетекстовый контент имеет текстовую альтернативу", severity_default: major}
+  - {id: screen-reader-flow, wcag: "4.1.2", check: "Имя/роль/значение элементов доступны screen reader; динамические изменения анонсируются", severity_default: critical}
+  - {id: motion, wcag: "2.3.3", check: "Анимации отключаемы (prefers-reduced-motion); нет мигания >3 раз/с", severity_default: minor}

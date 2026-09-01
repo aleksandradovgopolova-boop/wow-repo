@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "repository-profile",
+  "description": "Детерминированный профиль репозитория (v2.41, Project Detector, P0#5 аудита). Определяется из манифестов/файлов (не из догадок): стек, менеджер пакетов, команды build/lint/typecheck/test, фронт/бэк-фреймворки, CI, monorepo. Кормит stack-aware evidence collectors и repo-onboarding. status: draft — источник истины подтверждает человек (writer!=judge). В child: .ai/project/RepositoryProfile.yaml.",
+  "type": "object",
+  "required": ["schema_version", "kind", "stacks", "status"],
+  "properties": {
+    "schema_version": {"type": "integer"},
+    "kind": {"const": "repository-profile"},
+    "status": {"enum": ["draft", "confirmed"], "description": "draft -> подтверждает человек"},
+    "monorepo": {"type": "boolean"},
+    "stacks": {
+      "type": "array",
+      "description": "обнаруженные стеки (в monorepo может быть несколько)",
+      "items": {
+        "type": "object",
+        "required": ["language"],
+        "properties": {
+          "language": {"type": "string", "description": "node|python|go|java|rust|..."},
+          "package_manager": {"type": "string"},
+          "frameworks": {"type": "array", "items": {"type": "string"}},
+          "root": {"type": "string", "description": "путь пакета (для monorepo)"},
+          "commands": {
+            "type": "object",
+            "properties": {
+              "build": {"type": ["string", "null"]},
+              "lint": {"type": ["string", "null"]},
+              "typecheck": {"type": ["string", "null"]},
+              "test": {"type": ["string", "null"]}
+            }
+          },
+          "evidence_source": {"type": "array", "items": {"type": "string"},
+            "description": "из каких файлов выведено (package.json, pyproject.toml, …)"}
+        }
+      }
+    },
+    "ci": {"type": "array", "items": {"type": "string"}},
+    "undetermined": {"type": "array", "items": {"type": "string"},
+      "description": "что не удалось определить — честно, не выдумано"}
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "run-plan",
+  "description": "План исполнения задачи (v2.32, Execution Engine Фаза 1). Одна сущность: base_workflow (основной характер) + tracks (обязательные области качества, выведенные из затронутых зон) + агрегированный набор гейтов + бюджет. Заменяет модель «один workflow»: пользователь не обязан помнить про UX/аналитику/документацию/rollback — они выводятся из сигналов. В child: features/<id>/run-plan.yaml.",
+  "type": "object",
+  "required": ["schema_version", "kind", "workitem_id", "base_workflow", "required_tracks", "gates"],
+  "properties": {
+    "schema_version": {"type": "integer"},
+    "kind": {"const": "run-plan"},
+    "workitem_id": {"type": "string"},
+    "task_hash": {"type": "string"},
+    "base_workflow": {"type": "string", "description": "основной маршрут из ai_route"},
+    "required_tracks": {"type": "array", "items": {"$ref": "#/$defs/track"}},
+    "conditional_tracks": {"type": "array", "items": {"$ref": "#/$defs/track"}},
+    "skipped_tracks": {"type": "array", "items": {"$ref": "#/$defs/track"},
+      "description": "явно пропущенные с причиной (explainable skips) — не тихо"},
+    "gates": {"type": "array", "items": {"type": "string"},
+      "description": "агрегированный набор gate id: base_workflow.quality_gates ∪ гейты треков"},
+    "route_reasons": {"type": "array", "items": {"type": "string"}},
+    "execution_budget": {
+      "type": "object",
+      "properties": {
+        "max_cost": {"type": ["number", "null"]},
+        "max_duration": {"type": ["string", "null"]},
+        "max_model_calls": {"type": ["integer", "null"]}
+      }
+    }
+  },
+  "$defs": {
+    "track": {
+      "type": "object",
+      "required": ["track", "reason"],
+      "properties": {
+        "track": {"type": "string"},
+        "reason": {"type": "string"},
+        "gates": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

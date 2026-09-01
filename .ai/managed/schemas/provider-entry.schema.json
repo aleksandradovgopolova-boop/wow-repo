@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/provider-entry.schema.json",
+  "title": "ProviderEntry",
+  "description": "One provider record in providers.yaml. Credentials are referenced by env name only.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string" },
+    "display_name": { "type": "string" },
+    "kind": { "type": "string", "enum": ["hosted-api", "local", "hosted-or-local", "custom"] },
+    "first_class": { "type": "boolean" },
+    "protocols": { "type": "array", "items": { "type": "string" } },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "method": { "type": "string" },
+        "env": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z0-9_]+$" } },
+        "secret_ref": { "type": "string" },
+        "scopes_supported": { "type": "array", "items": { "type": "string" } },
+        "token_ttl_minutes": { "type": "number" }
+      },
+      "required": ["method"],
+      "additionalProperties": true,
+      "not": { "required": ["value"] }
+    },
+    "base_url_env": { "type": "string" },
+    "confidentiality_class": { "type": "string" },
+    "data_residency": {},
+    "cost_class": { "type": "string" },
+    "capabilities": { "type": "object", "additionalProperties": true },
+    "recommended_use_cases": { "type": "array", "items": { "type": "string" } },
+    "known_limitations": { "type": "array", "items": { "type": "string" } },
+    "last_documented_at": { "type": ["string", "null"], "format": "date" }
+  },
+  "required": ["schema_version", "id", "kind", "auth", "capabilities"],
+  "additionalProperties": true,
+  "x-no-secrets": "auth.env holds VARIABLE NAMES only; a literal secret value fails validation.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "id": "gigachat",
+      "display_name": "GigaChat (Sber)",
+      "kind": "hosted-api",
+      "first_class": true,
+      "protocols": ["rest"],
+      "auth": { "method": "oauth_authorization_key", "env": ["GIGACHAT_AUTH_KEY", "GIGACHAT_SCOPE"], "secret_ref": "<secret-reference>", "token_ttl_minutes": 30 },
+      "base_url_env": "GIGACHAT_BASE_URL",
+      "confidentiality_class": "ru-cloud",
+      "cost_class": "medium",
+      "capabilities": { "structured_output": { "status": "documented", "value": true } },
+      "last_documented_at": "2026-07-08"
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/research-evidence.schema.json",
+  "title": "ResearchEvidence",
+  "description": "research.evidence — единица проверяемого знания с provenance. Не путать с gate-evidence (артефакты quality gates): это данные исследования. В child лежит в .research/evidence/EV-*.yaml и накапливается между прогонами (research memory).",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "research.evidence" },
+    "id": { "type": "string", "pattern": "^EV-\\d{3,}$" },
+    "request_id": { "type": "string", "pattern": "^RR-\\d{3,}$" },
+    "statement": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Одно проверяемое утверждение. Не пересказ источника, а факт, на который будет ссылаться рекомендация."
+    },
+    "evidence_type": {
+      "type": "string",
+      "enum": ["documented_fact", "measured_result", "expert_opinion", "vendor_claim", "user_report", "inference"]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["official_documentation", "research_paper", "source_repository", "benchmark", "vendor_page", "news", "blog", "forum", "interview", "internal_data", "other"]
+        },
+        "published_at": { "type": ["string", "null"], "format": "date" },
+        "is_primary": { "type": "boolean" }
+      },
+      "required": ["title", "type", "is_primary"],
+      "additionalProperties": false
+    },
+    "citation": {
+      "type": "object",
+      "properties": {
+        "locator": { "type": "string", "description": "Где именно в источнике: раздел, страница, anchor, строка таблицы." },
+        "quote": { "type": "string", "minLength": 10, "description": "Verbatim-цитата из источника, подтверждающая statement (механика quote-grounding, DP-104). Optional в v0.2, required с v0.3; для новых EV обязательна конвенцией промпта. Проверяется механически: verify_quotes.py (re-fetch + substring/difflib)." }
+      },
+      "required": ["locator"],
+      "additionalProperties": false
+    },
+    "captured_at": { "type": "string", "format": "date" },
+    "captured_by": { "type": "string", "description": "Агент или человек, извлёкший evidence." },
+    "freshness": {
+      "type": "object",
+      "description": "Когда утверждение может устареть. Для volatile-фактов (цены, лимиты API, версии моделей) expires_at обязателен по source_policy.",
+      "properties": {
+        "volatile": { "type": "boolean" },
+        "expires_at": { "type": ["string", "null"], "format": "date" }
+      },
+      "required": ["volatile"],
+      "additionalProperties": false
+    },
+    "reliability": {
+      "type": "object",
+      "description": "Ординальная оценка с письменным обоснованием — не выдуманное число.",
+      "properties": {
+        "level": { "type": "string", "enum": ["low", "medium", "high"] },
+        "rationale": { "type": "string", "minLength": 10 }
+      },
+      "required": ["level", "rationale"],
+      "additionalProperties": false
+    },
+    "derived_from": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^EV-\\d{3,}$" },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Для выводного знания: из каких evidence оно получено. Обязательно при evidence_type=inference (см. if/then)."
+    },
+    "conflicts_with": {
+      "type": "array",
+      "description": "Зафиксированные противоречия: другой evidence (evidence_id) или внешнее утверждение (claim+source). Противоречие — данные, а не примечание в тексте statement.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidence_id": { "type": "string", "pattern": "^EV-\\d{3,}$" },
+          "claim": { "type": "string", "minLength": 5 },
+          "source": { "type": "string", "description": "Название/URL источника противоречащего утверждения." },
+          "status": { "type": "string", "enum": ["unresolved", "resolved", "dismissed"] },
+          "note": { "type": "string" }
+        },
+        "required": ["claim", "status"],
+        "additionalProperties": false
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "stale", "superseded", "retracted"]
+    },
+    "superseded_by": { "type": ["string", "null"], "pattern": "^EV-\\d{3,}$" }
+  },
+  "required": ["schema_version", "kind", "id", "request_id", "statement", "evidence_type", "source", "citation", "captured_at", "captured_by", "freshness", "reliability", "status"],
+  "additionalProperties": false,
+  "if": {
+    "properties": { "evidence_type": { "const": "inference" } }
+  },
+  "then": {
+    "required": ["derived_from"]
+  },
+  "x-no-secrets": "URL источников публичные; internal_data — по идентификатору, не содержимым.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "research.evidence",
+      "id": "EV-001",
+      "request_id": "RR-001",
+      "statement": "DeepSeek API поддерживает контекст 128K токенов в модели deepseek-chat.",
+      "evidence_type": "documented_fact",
+      "source": {
+        "title": "DeepSeek API Docs — Models",
+        "url": "https://api-docs.deepseek.com/quick_start/pricing",
+        "type": "official_documentation",
+        "published_at": null,
+        "is_primary": true
+      },
+      "citation": { "locator": "таблица Models, строка deepseek-chat, колонка Context" },
+      "captured_at": "2026-07-22",
+      "captured_by": "context-builder",
+      "freshness": { "volatile": true, "expires_at": "2026-10-22" },
+      "reliability": { "level": "high", "rationale": "Первичный источник: официальная документация вендора, проверена на дату capture." },
+      "status": "active",
+      "superseded_by": null
+    }
+  ]
+}

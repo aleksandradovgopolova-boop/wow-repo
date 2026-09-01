@@ -1,0 +1,268 @@
+# models.yaml — Model capabilities & model classes (AI Ops Platform V2)
+# Model class — абстракция, на которую ссылается routing policy. Конкретные модели
+# НЕ зашиваются в workflow (принцип 17.decl). Реальные ID разрешаются через class -> model.
+# Конвенция pinned_revision (DP-106): для моделей с весами из внешних хабов (HF)
+# при верификации в бою фиксируется commit hash ревизии — воспроизводимость и защита
+# от ретроактивной смены лицензии/весов.
+schema_version: 1
+registry_type: models
+
+# Абстрактные классы для routing (workflow ссылается только на класс).
+model_classes:
+  high-reasoning:
+    purpose: Архитектура, неоднозначные требования, безопасность, сложный debugging
+    min_capabilities: [tool_calling, large_context]
+  balanced:
+    purpose: Реализация, дизайн тестов, code review, документация
+    min_capabilities: [tool_calling]
+  fast:
+    purpose: Поиск по репозиторию, форматирование, lint, механический рефакторинг
+    min_capabilities: []
+  enterprise-russian:
+    purpose: Русскоязычные и конфиденциальные корпоративные задачи
+    min_capabilities: [russian_language]
+    confidentiality_class: ru-cloud-or-on-prem
+  embeddings:
+    purpose: Векторизация для поиска/памяти
+    min_capabilities: [embeddings]
+
+models:
+  # --- Anthropic ---
+  - id: claude-opus-4-8
+    provider: anthropic
+    classes: [high-reasoning]
+    context_window: {status: documented, value: 200000}
+    capabilities: {tool_calling: true, structured_output: true, vision: true, streaming: true}
+    cost_class: high
+    last_documented_at: "2026-07-08"
+  - id: claude-sonnet-class
+    provider: anthropic
+    classes: [balanced]
+    context_window: {status: documented, value: 200000}
+    capabilities: {tool_calling: true, structured_output: true, vision: true, streaming: true}
+    cost_class: medium
+    last_documented_at: "2026-07-08"
+  - id: claude-haiku-class
+    provider: anthropic
+    classes: [fast]
+    capabilities: {tool_calling: true, structured_output: true, streaming: true}
+    cost_class: low
+    last_documented_at: "2026-07-08"
+
+  # --- OpenAI ---
+  - id: openai-reasoning-class
+    provider: openai
+    classes: [high-reasoning, balanced]
+    capabilities: {tool_calling: true, structured_output: true, vision: true, streaming: true}
+    cost_class: medium
+    last_documented_at: "2026-07-08"
+  - id: openai-embeddings-class
+    provider: openai
+    classes: [embeddings]
+    capabilities: {embeddings: true}
+    cost_class: low
+    last_documented_at: "2026-07-08"
+
+  # --- GigaChat (first-class) ---
+  - id: GigaChat-2-Max
+    provider: gigachat
+    classes: [enterprise-russian, high-reasoning]
+    context_window: {status: inferred, value: 128000, verification_required: true}
+    capabilities:
+      tool_calling: {status: documented, value: true}
+      structured_output: {status: documented, value: true, limitations: Beta}
+      vision: {status: documented, value: true}
+      streaming: {status: documented, value: true}
+      russian_language: {status: documented, value: true}
+    cost_class: medium
+    confidentiality_class: ru-cloud
+    last_documented_at: "2026-07-08"
+    verification_required: true
+  - id: GigaChat-2-Pro
+    provider: gigachat
+    classes: [enterprise-russian, balanced]
+    capabilities:
+      tool_calling: {status: documented, value: true}
+      structured_output: {status: documented, value: true, limitations: Beta}
+      vision: {status: documented, value: true}
+      russian_language: {status: documented, value: true}
+    cost_class: low
+    confidentiality_class: ru-cloud
+    last_documented_at: "2026-07-08"
+    verification_required: true
+  - id: GigaChat-2
+    provider: gigachat
+    classes: [enterprise-russian, fast]
+    capabilities:
+      tool_calling: {status: documented, value: true}
+      russian_language: {status: documented, value: true}
+    cost_class: low
+    confidentiality_class: ru-cloud
+    last_documented_at: "2026-07-08"
+    verification_required: true
+  - id: GigaChat-Embeddings
+    provider: gigachat
+    classes: [embeddings]
+    capabilities:
+      embeddings: {status: documented, value: true, limitations: "dimension не подтверждён"}
+    confidentiality_class: ru-cloud
+    last_documented_at: "2026-07-08"
+    verification_required: true
+
+  # --- Local / fallback ---
+  - id: t-lite-it-2.1-local
+    provider: local
+    classes: [enterprise-russian, fast]
+    capabilities:
+      russian_language: {status: declared, value: true}
+      tool_calling: {status: declared, value: model-dependent}
+    confidentiality_class: on-premise
+    cost_class: low
+    pinned_revision: null   # заполняется commit hash при установке/верификации (DP-106)
+    verification_required: true
+    note: "t-tech/T-lite-it-2.1 с HF Hub (Apache-2.0, 8B, 1x24GB GPU); кандидат DP-106 для русскоязычного приватного контура; declared — в бою китом не верифицирован."
+    last_documented_at: "2026-07-23"
+  - id: local-generic
+    provider: local
+    classes: [balanced, fast, enterprise-russian]
+    capabilities:
+      tool_calling: {status: degraded, value: model-dependent}
+      structured_output: {status: degraded, value: model-dependent}
+      embeddings: {status: degraded, value: model-dependent}
+    confidentiality_class: on-premise
+    note: Реальные возможности определяются загруженной моделью и self-test.
+    last_documented_at: "2026-07-08"
+  # Конкретные модели Kimi (moonshot), реально использованные в живой квалификации v3.6.8.
+  # structured_output ЧЕСТНО unstable: строгий SecurityVerdict нестабилен (см. model-qualification).
+  - id: kimi-k2.7-code-highspeed
+    provider: kimi
+    revision: kimi-k2.7-code-highspeed
+    gateway: api.moonshot.ai
+    deployment_mode: external
+    confidentiality_class: external-cloud
+    classes: [balanced, fast]
+    context_window: {status: documented, value: 256000}
+    capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
+    cost_class: medium
+    note: "live-qual N6: implementation conditional (6/6 верно, вкл. Decimal Money), но дороже всех ($1.90/$8.00 /1M, 2026-07-28 -> ~$0.47/изменение)"
+    last_documented_at: "2026-07-28"
+  - id: kimi-k2.6
+    provider: kimi
+    revision: kimi-k2.6
+    gateway: api.moonshot.ai
+    deployment_mode: external
+    confidentiality_class: external-cloud
+    classes: [balanced]
+    capabilities: {tool_calling: {status: declared, value: true}, structured_output: {status: unstable, value: partial}, streaming: {status: declared, value: true}}
+    cost_class: low
+    verification_required: true   # доступна у эндпоинта; НЕ квалифицирована (Bench v2)
+    note: "реальная ревизия эндпоинта; предыдущее поколение — кандидат в сравнение по цене/качеству"
+    last_documented_at: "2026-07-28"
+  - id: kimi-k2.7-code
+    provider: kimi
+    revision: kimi-k2.7-code
+    classes: [balanced]
+    context_window: {status: documented, value: 256000}
+    capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
+    cost_class: low
+    note: "live v3.6.8: тщательнее highspeed, но медленнее -> провайдер-timeout на тяжёлых вызовах"
+    last_documented_at: "2026-07-27"
+  - id: kimi-k3
+    provider: kimi
+    revision: kimi-k3
+    classes: [high-reasoning, balanced]
+    context_window: {status: documented, value: 256000}
+    capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
+    cost_class: medium
+    note: "live v3.6.8: reasoning-флагман, медленный (нужен поднятый timeout); implementation зелёный вживую"
+    last_documented_at: "2026-07-27"
+
+  # --- DeepSeek (openai-compatible через api.deepseek.com) ---
+  # PORTFOLIO TRUTH (v3.7.10): эндпоинт СЕЙЧАС рекламирует ТОЛЬКО deepseek-v4-flash/deepseek-v4-pro.
+  # 'deepseek-chat' ещё принимается (вероятно алиас на V4) — оставлен как measured-запись N6, но ревизия
+  # под вопросом (переподтвердить в Bench v2). Цена V4 опубликована ТОЛЬКО картинкой -> pending.
+  - id: deepseek-chat
+    provider: deepseek
+    revision: deepseek-chat
+    gateway: api.deepseek.com
+    deployment_mode: external
+    processing_region: {status: unknown, verification_required: true}
+    confidentiality_class: external-cloud
+    classes: [balanced, fast]
+    context_window: {status: documented, value: 64000}
+    capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
+    cost_class: low
+    note: "live-qual N6: implementation conditional (4/6 верно, 0 false-green). LEGACY-алиас: эндпоинт теперь отдаёт V4 -> ревизия под вопросом; цена V4 image-only -> tokens-fallback до тарифа владельца"
+    last_documented_at: "2026-07-28"
+  - id: deepseek-v4-flash
+    provider: deepseek
+    revision: deepseek-v4-flash
+    gateway: api.deepseek.com
+    deployment_mode: external
+    confidentiality_class: external-cloud
+    classes: [balanced, fast]
+    capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
+    cost_class: low
+    note: "implementation conditional (N6 via deepseek-chat alias, 4/6 верно, 0 false-green). Цена $0.14/$0.28 /1M cache-miss -> ~$0.0115/изменение = САМЫЙ дешёвый по ДЕНЬГАМ -> router preferred implementation"
+    last_documented_at: "2026-07-28"
+  - id: deepseek-v4-pro
+    provider: deepseek
+    revision: deepseek-v4-pro
+    gateway: api.deepseek.com
+    deployment_mode: external
+    confidentiality_class: external-cloud
+    classes: [high-reasoning, balanced]
+    capabilities: {tool_calling: {status: declared, value: true}, structured_output: {status: unstable, value: partial}, streaming: {status: declared, value: true}}
+    cost_class: medium
+    verification_required: true   # доступна у эндпоинта; НЕ квалифицирована (Bench v2)
+    note: "реальная ревизия эндпоинта (2026-07); сильный кандидат — long-horizon implementation / возможный judge (проверить adversarial)"
+    last_documented_at: "2026-07-28"
+
+  # --- Qwen (Alibaba DashScope INTL, openai-compatible через dashscope-intl .../compatible-mode/v1) ---
+  - id: qwen3-coder-plus
+    provider: qwen
+    revision: qwen3-coder-plus
+    gateway: dashscope-intl.aliyuncs.com
+    deployment_mode: external
+    processing_region: {status: documented, value: "International (Singapore)"}
+    confidentiality_class: external-cloud
+    classes: [balanced, high-reasoning]
+    context_window: {status: documented, value: 128000}
+    capabilities: {tool_calling: true, structured_output: {status: unstable, value: partial}, streaming: true}
+    cost_class: medium
+    note: "live-qual N6: implementation conditional (5/6 верно, 0 false-green). Цена INTL $1.00/$5.00 /1M (2026-07-28)"
+    last_documented_at: "2026-07-28"
+  - id: qwen3-coder-next
+    provider: qwen
+    revision: qwen3-coder-next
+    gateway: dashscope-intl.aliyuncs.com
+    deployment_mode: external
+    processing_region: {status: documented, value: "International (Singapore)"}
+    confidentiality_class: external-cloud
+    classes: [balanced, fast]
+    capabilities: {tool_calling: {status: declared, value: true}, structured_output: {status: unstable, value: partial}, streaming: {status: declared, value: true}}
+    cost_class: low
+    verification_required: true   # доступна у эндпоинта; НЕ квалифицирована (Bench v2). Цена $0.30/$1.50 /1M
+    note: "реальная ревизия эндпоинта; дешевле coder-plus втрое — сильный кандидат в quick/standard implementation"
+    last_documented_at: "2026-07-28"
+  - id: qwen3-coder-flash
+    provider: qwen
+    revision: qwen3-coder-flash
+    gateway: dashscope-intl.aliyuncs.com
+    deployment_mode: external
+    processing_region: {status: documented, value: "International (Singapore)"}
+    confidentiality_class: external-cloud
+    classes: [fast, balanced]
+    capabilities: {tool_calling: {status: declared, value: true}, structured_output: {status: unstable, value: partial}, streaming: {status: declared, value: true}}
+    cost_class: low
+    verification_required: true   # доступна у эндпоинта; НЕ квалифицирована. Цена $0.30/$1.50 /1M
+    note: "реальная ревизия эндпоинта; самый дешёвый кодовый Qwen — кандидат в массовые quick-задачи"
+    last_documented_at: "2026-07-28"
+
+# Правила: routing policy ссылается на model_classes; разрешение class->model
+# делает adapter на основании доступности провайдера и capability self-test.
+resolution_policy:
+  bind_by: model_class
+  hardcode_model_in_workflow: forbidden
+  resolve_at: routing_time
+  respect: [provider_availability, confidentiality_class, verified_capabilities]

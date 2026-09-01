@@ -1,0 +1,254 @@
+schema_version: 1
+kind: BootstrapQualificationPlan
+plan_id: BQP-001
+phase: v3.8
+title: Product Bootstrap & Readiness Qualification
+
+# ДАННЫЕ, не живой прогон. 3.8 меняет характер работы: до сих пор строили и квалифицировали ФАБРИКУ
+# (3.7.x закрыт: router money-mode, hybrid fed_to_model, governed fan-in, security fail-closed + strict
+# judge). Теперь фабрика должна ПРОИЗВЕСТИ целый продуктовый контур от намерения до измерения.
+# ПРИНЦИП: НЕ создавать новую подсистему — собрать ОДИН исполнимый qualification plan ПОВЕРХ уже
+# построенных контрактов. Живые прогоны исполняются против этого плана под провайдер-ключи + Node/React
+# тулчейн (см. blocked_by). Автосудьи security/integration ещё нет -> человек (см. models).
+
+# Строится НАД существующими контрактами (не новые сущности):
+builds_over:
+  - {name: WorkItem, ref: schemas/workitem.schema.json}
+  - {name: FeatureBlueprint, ref: schemas/feature-blueprint.schema.json}
+  - {name: RunPlan, ref: schemas/run-plan.schema.json}
+  - {name: WorkGraph, ref: schemas/work-graph.schema.json}
+  - {name: ContextHybrid, ref: tools/context_hybrid.py}
+  - {name: DeliveryIntentReceipt, ref: tools/pr_open.py}
+  - {name: PostReleaseReadout, ref: schemas/post-release-readout.schema.json}
+  - {name: FeatureLearning, ref: schemas/feature-learning.schema.json}
+
+# Два reference-child: greenfield докажет «строим с нуля», ИИ-Среда — «работаем в реальной неоднородной
+# системе с накопленным контекстом и настоящими швами».
+reference_children:
+  - id: greenfield-reference
+    kind: greenfield
+    stack: mixed        # backend + frontend + data
+    purpose: "построить небольшой, но полноценный продукт с нуля (architecture -> feature -> release)"
+  - id: ai-sreda
+    kind: real-brownfield
+    stack: mixed
+    purpose: "реальный сложный репозиторий (накопленный контекст, настоящие швы) — работа в неоднородной системе"
+
+# Правило вертикальной функции: сквозь слои, а не набор отдельно-зелёных слоёв.
+vertical_feature_rule: >
+  Функция обязана пройти от пользовательского действия в интерфейсе через API и данные до результата,
+  а не быть набором отдельно зелёных слоёв. Проверяется scenario_evidence (named_user_scenario +
+  scenario_test, v3.7.7) и surface_wiring_consistency (core<->wrapper<->client, v3.7.8).
+
+# Модели: провайдер-нейтрально, по деньгам; строгий судья security/integration — ЧЕЛОВЕК до Bench v2.
+models:
+  implementation_preferred: deepseek-v4-flash
+  implementation_fallback: qwen3-coder-plus
+  security_integration_judge: human   # автосудья — только после Bench v2 (false_green=0 + достаточный N)
+
+# ── АРХИТЕКТУРНАЯ РАМКА (owner-review 2026-07-30): «строим правильно ЧТО, но рискуем неправильно СКОЛЬКО».
+# AI Ops — независимый УПРАВЛЯЮЩИЙ слой НАД моделями и runtime, НЕ ещё один coding-agent. Research
+# подтверждает направление (DP-108: полной цепочки exec->gates->independent review->evidence-на-SHA->
+# durable lifecycle->delivery-транзакция->eval->governance в OSS не найдено), НО окно дифференциации
+# ограничено (жанр рождается с нескольких сторон), а слабый фланг — простота ядра/DX (DP-103: '30-сек
+# setup' конкурента vs installer кита). Отсюда три кольца с ЖЁСТКОЙ границей зависимостей.
+architecture_rings:
+  kernel:                # ОБЯЗАТЕЛЬНОЕ ядро — маленькое, понятное, быстрое
+    flow: [Task, Context, Execution, Evidence, Decision, Delivery]
+    includes: [single_entry, model_runtime_routing, isolated_execution, budget,
+               deterministic_checks, exact_sha, resume, delivery]
+  governance:            # подключается ПО РИСКУ, не на каждой задаче
+    includes: [security, data_residency, human_approvals, strict_reviewers,
+               package_scopes, supply_chain, audit]
+    rule: "простая внутренняя правка -> минимальные проверки -> verified commit;
+           security-sensitive -> полная политика -> human approval -> audit trail"
+  intelligence:          # НЕ в критическом пути; можно ПОЛНОСТЬЮ отключить и всё равно доставить
+    includes: [research, product_learning, product_health, regression_analytics,
+               cost_analytics, architecture_evolution]
+  invariant: >
+    Kernel НЕ зависит от Research/Product-Learning/аналитики; эти контуры зависят от Kernel и ЧИТАЮТ его
+    события. Никакое изменение продукта не должно требовать заполнения исследовательской/продуктовой
+    онтологии. Product learning НЕ обязателен после каждой инженерной правки.
+  runtime_adapter_rule: >
+    AI Ops управляет runtime через АДАПТЕР, но не заменяет его. Исполнитель сегодня Claude Code, завтра
+    Codex/OpenHands(SDK — легитимный adapter-кандидат, DP-108)/mini-SWE-agent/Qwen/простая модель с bash.
+    Workflow, approvals и evidence от смены runtime НЕ переписываются. Свой сложный tool-loop не наращиваем,
+    если внешний runtime уже делает это надёжно.
+
+# ЗАМОРОЗКА ВОЗМОЖНОСТЕЙ до 3.8 stable: НЕ добавлять новых концептуальных возможностей. Не расширять (не
+# удаляя существующее): новые виды gate без ДОКАЗАННОГО класса повторяющихся дефектов; новые schema ради
+# каждого наблюдения; новые агенты под узкие роли; отдельные workflow там, где хватает профиля/флага; мета-
+# артефакты, описывающие мета-артефакты; собственный tool-loop при надёжном внешнем runtime; обязательный
+# product-learning после каждой правки. Правило третьего изменения для рефакторинга (см. AGENTS.md lean-цикл).
+capability_freeze:
+  until: v3.8-stable
+  allowed: "только live qualification 7 шагов (ниже) + измерение усилия владельца"
+  stop_expanding: [gate_kinds_without_proven_defect_class, schema_per_observation, narrow_role_agents,
+                   redundant_workflows, meta_artifacts_describing_meta_artifacts, custom_tool_loop_when_runtime_reliable,
+                   mandatory_product_learning_per_change]
+
+research_basis:
+  - {ref: .research/decisions/DP-108.yaml, says: "control plane + адаптеры подтверждён; OpenHands SDK — adapter-кандидат; окно дифференциации ограничено"}
+  - {ref: .research/decisions/DP-103.yaml, says: "дифференциация в СТАТУСЕ инвариантов vs opt-in; DX/setup — слабый фланг кита"}
+  - {ref: .research/decisions/DP-109.yaml, says: "внешние проекты (ECC) — карьер/адаптер, агентов не импортировать"}
+
+# Стадии greenfield-bootstrap (первый прогон — ПОСЛЕДОВАТЕЛЬНО, не доказывать всё сразу).
+bootstrap_stages:
+  - {id: repository_profile,  produces: RepositoryProfile}
+  - {id: problem_jtbd,        produces: "Problem Statement + JTBD",        workflow: PRODUCT}
+  - {id: architecture_adr,    produces: "системная архитектура + ADR",     uses: [decisions/adr]}
+  - {id: data_schema,         produces: "схема данных"}
+  - {id: backend,             produces: "backend-каркас"}
+  - {id: frontend_storybook,  produces: "frontend-каркас + Storybook",     uses: [tools/storybook_adapter.py]}
+  - {id: ci,                  produces: "CI"}
+  - {id: observability,       produces: "logs/metrics/error handling"}
+  - {id: vertical_feature,    produces: "первая вертикальная функция (сквозная)"}
+  - {id: delivery_pr,         produces: "один draft PR / release candidate", uses: [tools/pr_open.py]}
+
+# Обязательные live readiness-сценарии (минимум на 2, лучше 3 репо: Python / TS-Node / смешанный).
+readiness_scenarios:
+  - {id: single,                  proves: "базовый сквозной путь"}
+  - {id: sequential,              proves: "зависимости и handoff"}
+  - {id: concurrent_parallel,     proves: "отдельные исполнители и fan-in (настоящий concurrency)"}
+  - {id: resume,                  proves: "продолжение без потери решений"}
+  - {id: fix_loop,                proves: "устранение реального blocker"}
+  - {id: provider_fallback,       proves: "нет vendor lock-in (падение preferred -> fallback)"}
+  - {id: human_security_approval, proves: "корректный pending_human + закрытие человеком (ApprovalRecord)"}
+  - {id: base_moved,              proves: "безопасный отказ и свежий прогон"}
+  - {id: release,                 proves: "DeliveryIntent -> Receipt"}
+  - {id: post_release_readout,    proves: "измерение результата"}
+  - {id: product_learning,        proves: "вывод и следующее решение"}
+
+# Критерии выпуска 3.8 stable.
+exit_criteria:
+  - greenfield_zero_to_feature          # продукт с нуля прошёл путь до первой вертикальной функции
+  - feature_released_or_ready           # функция выпущена или доказанно готова к выпуску
+  - fullstack_integrated                # backend/frontend/data/CI/observability интегрированы
+  - single_sequential_parallel_proven   # single + sequential + НАСТОЯЩИЙ concurrent parallel доказаны
+  - stack_aware_integration             # integration checks по стеку (не только pytest)
+  - resume_and_fixloop_on_real_task     # resume и fix-loop на реальной задаче
+  - no_checkout_damage                  # ни один пакет не повредил основной checkout
+  - zero_false_green
+  - evidence_exact_sha_bound            # все доказательства привязаны к exact SHA
+  - external_delivery_intent_and_receipt
+  - cost_per_verified_change            # стоимость на успешный проверенный результат
+  - post_release_readout_created
+  - result_to_feature_learning          # результат -> FeatureLearning + следующее решение
+  - owner_effort_measured               # (owner-review 2026-07-30) недостающее доказательство ЦЕННОСТИ:
+                                        # усилие продакт-владельца зафиксировано на живых прогонах (см. ниже)
+
+# УСИЛИЕ ВЛАДЕЛЬЦА ПРОДУКТА (owner-review): продукт доказан не тем, что БЕЗОПАСЕН для машины, а тем, что
+# делает разработку ПРОЩЕ для владельца-непрограммиста. Если кит требует от владельца разбирать git identity,
+# SHA-binding, clone fan-in — он ещё не выполняет свою работу. Измеряем на 7 шагах live-qual (baseline сейчас,
+# тренд к 3.8 stable). Пороги НЕ фиксируем как блокер (не над-гейтим) — числа информируют решение go/simplify.
+owner_effort_metrics:
+  metrics:
+    - owner_minutes_per_verified_change
+    - clarification_rounds
+    # owner-review: manual_actions РАЗДЕЛЕНЫ — security-решение это ЗАПЛАНИРОВАННАЯ функция человека,
+    # а ручная починка git identity/SHA — ДЕФЕКТ UX; складывать в одно число нельзя.
+    - expected_human_decisions                      # плановые (security approval, выбор репо) — норма
+    - technical_recovery_actions                    # ручной git/SHA/восстановление — ДЕФЕКТ (цель: 0)
+    - time_to_verified_pr
+    - time_spent_explaining_blockers
+    - percentage_of_tasks_completed_without_technical_intervention
+  measured_2026_07_30:                              # сессия live-квалификации (OEM-001)
+    runs_tracked: 6
+    expected_human_decisions: 2                     # 1 security #5 + 1 выбор brownfield-репо
+    technical_recovery_actions: 0                   # git/SHA/clone/token/deps/отладка багов — на агенте
+    time_spent_explaining_blockers: "~0"
+    percentage_without_technical_intervention: "100%"
+    per_quick_verified_delivery_usd: "~0.003-0.005"
+    note: "СИЛЬНЫЙ сигнал ценности: продакт-владелец, 0 технических действий восстановления"
+  decision_after_3_8: >
+    Решение не по красоте архитектуры, а по результатам: ускорил ли кит проверенное изменение и снизил ли
+    участие владельца -> продолжаем; качество выросло, но каждое изменение дольше -> упрощаем обязательный
+    путь; большая часть ценности от нескольких механизмов -> остальное в optional; внешний coding-agent
+    исполняет лучше -> подключаем адаптером, не переписываем.
+
+# СТОЯЩИЕ ВНЕШНИЕ ГРАНИЦЫ (объявлены явно; это ЦЕЛЕВОЙ операционный конверт продукта, НЕ дефекты и НЕ
+# незавершённость 3.8). 3.8 stable выпущен ИМЕННО с этими границами — они и есть честная модель работы.
+blocked_by:
+  - "человек на strict security #5 — ЦЕЛЕВАЯ граница (qualified auto-close судьи нет и не требуется; deepseek advisory). Человек обязателен на: security-policy, authn/authz, секреты/ключевая инфра, изоляция внутр. данных, необратимые миграции, critical-профиль"
+  - "живые прогоны требуют провайдер-ключей + тулчейна стека (нормальная эксплуатационная предпосылка)"
+  - "автономный green СЛОЖНОГО full-stack ДЕШЁВЫМ writer'ом — за границей портфеля (нужен сильный writer/человек); МЕХАНИКА full-stack ДОКАЗАНА сильным writer'ом (claude -p) -> draft PR"
+
+# Будущие возможности (НЕ обязательные exit-критерии 3.8 — чтобы не расширять цель задним числом и не
+# отодвигать финиш). Пересматриваются по результатам после 3.8, не по красоте.
+future_opportunities:
+  autonomous_security_judging:
+    status: not_qualified
+    current_safe_fallback: human_approval
+    evidence: "held-out v2/v3 (prompt) + каскад v3.8.4 (security_review_cascade, held-out N=80) — оба НЕ qualified"
+    revisit_when: [stronger_model_available, materially_new_judge_architecture]
+  autonomous_fullstack_with_cheap_writer:
+    status: not_reached
+    current_path: "сильный writer (локальный claude -p) + дешёвый independent reviewer (deepseek) + human #5 — ДОКАЗАН live"
+    revisit_when: [cheap_writer_stronger_than_kimi]
+  delivery_follows_repo_transfer_redirects:
+    status: known_gap
+    note: "доставка не следует GitHub 301-redirect перенесённого репо -> outcome_unknown (честный fail-closed); PR дозавершается прямым API"
+
+# ФИКСАЦИЯ ФАЗЫ 3.8 (2026-07-31, evidence-backed) — РЕЛИЗ 3.8.0 stable.
+phase_status:
+  release: "3.8.0 stable (2026-07-31)"
+  readiness: "14/14 exit_criteria доказаны live (см. BootstrapReadinessReport + full-stack draft PR)"
+  proven_live: [no_checkout_damage, zero_false_green, evidence_exact_sha_bound, stack_aware_integration,
+                cost_per_verified_change, feature_released_or_ready, external_delivery_intent_and_receipt,
+                post_release_readout_created, result_to_feature_learning, owner_effort_measured,
+                single_sequential_parallel_proven, resume_and_fixloop_on_real_task,
+                greenfield_zero_to_feature, fullstack_integrated]
+  remaining: []
+  standing_boundary: "human #5 на strict security + сильный writer на сложном full-stack — ЦЕЛЕВЫЕ границы портфеля (не дефекты)"
+  runtime_frozen_until_stable: true    # capability_freeze соблюдён до релиза
+  bugs_fixed_live: 11                  # reevaluate(3)/scope#2/git-identity/escalation-fallback/build-artifact/resume + validate_plan_artifact/spec_depth-baseline/base_ok-reevaluate
+  key_finding: "портфель по РОЛЯМ; сильный writer = локальный claude -p (sonnet НЕ нужен); дешёвый auto-close security-судья недостижим -> human #5 = целевая граница"
+
+# Последовательность фазы (данные, для наблюдаемости):
+phase_sequence: [v3.8.0-contract, v3.8.1-greenfield, v3.8.2-stack-aware-integration, v3.8.3-true-parallel, v3.8.4-readiness]
+
+# Состояние фаз с ДОКАЗАТЕЛЬСТВОМ (не только список блокеров). Обновляется по мере квалификации.
+# status: passed | failed_safe | component_ready | not_started
+phase_progress:
+  v3.8.0:
+    status: passed
+    evidence: "BQP-001 Bootstrap Qualification Contract поверх существующих контрактов + validate_bootstrap_qualification (7 selftest); commit 329ae5d, CI green"
+  v3.8.1:
+    status: passed
+    evidence: >
+      QUICK-фичи доставлены АВТОНОМНО green до verified PR: PR #2 (s4-health) + PR #3 (s5-version),
+      DeliveryReceipt sha_verified=True, репитабельно ~$0.003-0.005 (PRR-002 + FL-004 валидны). ENGINEERING
+      product-feature green дешёвым writer'ом одним проходом НЕ достигнут (deepseek/kimi дефектны — кит ловит,
+      0 false-green); СИЛЬНЫМ writer'ом (claude -p) full-stack ENGINEERING собран green (см. v3.8.4). Граница
+      портфеля, не кита: дешёвый green сложной фичи -> future_opportunities.
+  v3.8.2:
+    status: passed
+    evidence: "stack-aware fan-in ДОКАЗАН LIVE на реальном TS/React brownfield (ИИ-Среда, 207 файлов): build/typecheck/vitest реально прогнаны на integration-SHA (не pytest); поймал typecheck-регрессию deepseek (0 false-green). commit a473e1f + live."
+  v3.8.3:
+    status: passed
+    live_qualified: true
+    evidence: >
+      GREEN concurrent fan-in ДОКАЗАН LIVE автономно (s3c): 2 disjoint-scope пакета конкурентно, оба
+      pass+scope_ok, integration_sha, aggregate all_pass conflicts=0, main checkout нетронут+чист,
+      DeliveryPlan.ready. rc2 Parallel Trust Wiring (592f172/441bd26) + rc3 Dynamic Model Trust (554c92d:
+      JIT provider key/KLP-preflight на fallback/escalation + model_attempts trace + writer quality-escalation)
+      + 3 фикса живыми прогонами (#2 scope b73a80d, git-identity rc2c, build-артефакты). CI green.
+  judge_qualification:
+    status: completed_not_qualified          # завершено (не partial): дешёвый auto-close судья недостижим
+    evidence: >
+      Bench v2 (held-out 80: 52 деф×13 классов + 28 чист/near-miss): deepseek false_green=0, recall=1.0, НО
+      specificity=0.68<0.90 -> ADVISORY. Каскад v3.8.4 (security_review_cascade, СВЕЖИЙ held-out N=80): тоже
+      НЕ qualified (1 unsafe-pass = mislabel AWS-example-ключей + confounded specificity). ВЫВОД (завершено):
+      дешёвый auto-close security-судья недостижим ни prompt-тюнингом, ни каскадом на доступном портфеле ->
+      human #5 = ЦЕЛЕВАЯ граница. auto-close -> future_opportunities.autonomous_security_judging. Доказан
+      ТЕЗИС ПОРТФЕЛЯ РОЛЕЙ (deepseek слаб-writer/силён-судья). Каскад-инфраструктура остаётся (green, CI-wired).
+  v3.8.4:
+    status: passed
+    live_qualified: true
+    evidence: >
+      FULL-STACK GREEN ДОКАЗАН live: сильный writer (локальный claude -p, БЕЗ ключа) + независимый дешёвый
+      ревьюер (deepseek, writer≠judge) + человек #5 -> full-stack health-эндпоинт на ИИ-Среде (server/health-core
+      + api/health + client + test + спека, всё в write_scope): build✓/typecheck✓/scenario-test✓/code_review✓/
+      baseline no_regressions✓ -> #5 закрыт человеком (ApprovalRecord binds_to committed_sha) -> reevaluate-only
+      -> ready_for_pr=True -> draft PR (base@sha ← feature@sha, 1 commit). Дешёвые (deepseek→kimi→qwen) — не тянут.
+      3 delivery-path багфикса живьём (validate_plan_artifact/spec_depth-baseline/base_ok-reevaluate, commit f4ca3fd).

@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "reviewer-result",
+  "description": "Структурный результат ревьюера (v2.33, Execution Engine Фаза 1) — ИСТОЧНИК ИСТИНЫ для гейта вместо regex по markdown. Человеческий текст генерится поверх этой структуры, а не наоборот. Reviewer кладёт рядом со стадией: <run_dir>/stage-<id>.reviewer.json; gate_executor.collect_evidence читает его первым.",
+  "type": "object",
+  "required": ["schema_version", "kind", "gate", "status", "checks"],
+  "properties": {
+    "schema_version": {"type": "integer"},
+    "kind": {"const": "reviewer-result"},
+    "gate": {"type": "string", "description": "id гейта из quality/gates.yaml"},
+    "reviewer": {"type": "string", "description": "agent id ревьюера"},
+    "reviewed_revision": {"type": "string", "description": "git sha проверенной ревизии"},
+    "status": {"enum": ["pass", "warn", "fail"]},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": {"type": "string"},
+          "status": {"enum": ["pass", "warn", "fail"]},
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "file": {"type": "string"},
+              "lines": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "blockers": {"type": "array", "items": {"type": "string"},
+      "description": "при status=fail — конкретные блокеры (что именно не так)"}
+  }
+}

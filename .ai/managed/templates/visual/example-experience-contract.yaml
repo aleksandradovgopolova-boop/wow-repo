@@ -1,0 +1,93 @@
+# Example Experience Contract
+id: active-work-screen
+title: Active Work Screen
+user_goal: See what AI agents are working on right now
+context: Team lead checking progress of parallel AI sessions
+roles:
+  - name: team_lead
+    permissions: [view_all, assign_work]
+    views: [all_sessions]
+  - name: developer
+    permissions: [view_own]
+    views: [own_sessions]
+flow:
+  - step: 1
+    action: Open dashboard
+    screen: active-work
+    state: loading
+  - step: 2
+    action: View active sessions
+    screen: active-work
+    state: loaded
+  - step: 3
+    action: Click on session
+    screen: session-detail
+    state: default
+screens:
+  - id: active-work
+    name: Active Work
+    components: [SessionCard, StatusBadge, ProgressBar]
+    states: [loading, loaded, empty, error]
+  - id: session-detail
+    name: Session Detail
+    components: [SessionHeader, TaskList, LogViewer]
+    states: [default, completed, failed]
+states:
+  - name: loading
+    condition: Data is being fetched
+    visual: Skeleton screens
+  - name: loaded
+    condition: Data successfully loaded
+    visual: Session cards with live updates
+  - name: empty
+    condition: No active sessions
+    visual: Empty state illustration
+  - name: error
+    condition: Failed to load data
+    visual: Error message with retry button
+microcopy:
+  empty_state: "No active sessions. Start a new task to see progress here."
+  error_state: "Couldn't load sessions. Check your connection and try again."
+  last_updated: "Last updated: {timestamp}"
+responsive:
+  - name: mobile
+    min_width: 320
+    layout: single_column
+  - name: tablet
+    min_width: 768
+    layout: two_column
+  - name: desktop
+    min_width: 1024
+    layout: three_column
+accessibility:
+  - wcag_level: AA
+  - features: [keyboard_navigation, screen_reader_support, high_contrast]
+components:
+  - SessionCard
+  - StatusBadge
+  - ProgressBar
+  - SessionHeader
+  - TaskList
+  - LogViewer
+tokens:
+  colors:
+    primary: "#0066CC"
+    success: "#00AA00"
+    warning: "#FFAA00"
+    error: "#CC0000"
+  spacing:
+    small: 8px
+    medium: 16px
+    large: 24px
+analytics:
+  - event: session_viewed
+    trigger: User opens session detail
+    data: [session_id, duration]
+  - event: work_assigned
+    trigger: User assigns new work
+    data: [session_id, task_type]
+open_questions:
+  - "Should we show real-time logs or periodic updates?"
+  - "What's the maximum number of sessions to display?"
+tradeoffs:
+  - "Real-time updates vs. performance: chose polling every 5s instead of WebSocket for simplicity"

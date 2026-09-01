@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/integration-trace.schema.json",
+  "title": "IntegrationTrace",
+  "description": "IntegrationTrace — v3.5 Observability. Трейс fan-in многопакетной работы (привязан к WorkGraph/IntegrationPlan). Меряет parallel-vs-sequential (speedup, coordination overhead) и ПОДТВЕРЖДАЕТ инвариант v3.3.2: package-SHA не доказывают всю работу — при completed=true обязателен НОВЫЙ integration_sha (≠ любого package_sha) + повтор агрегатных проверок; конфликт fan-in = block (completed=false). Само параллельное исполнение — v3.6; здесь только наблюдаемость контракта.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "work_graph", "integration_plan", "execution_mode",
+               "packages", "wall_seconds_actual", "sequential_baseline_seconds", "integration"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "IntegrationTrace" },
+    "id": { "type": "string", "pattern": "^IT-[0-9]{3,}$" },
+    "work_graph": { "type": "string", "pattern": "^WG-[0-9]{3,}$" },
+    "integration_plan": { "type": "string", "pattern": "^IP-[0-9]{3,}$" },
+    "execution_mode": { "type": "string", "enum": ["single", "sequential", "parallel", "hybrid"] },
+    "packages": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "package_sha", "wall_seconds"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "package_sha": { "type": "string", "minLength": 1 },
+          "wall_seconds": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "wall_seconds_actual": { "type": "number", "minimum": 0,
+      "description": "фактическое общее время fan-in (не может быть меньше самого долгого пакета)" },
+    "sequential_baseline_seconds": { "type": "number", "minimum": 0,
+      "description": "сумма времён пакетов = сколько стоило бы последовательно" },
+    "integration": {
+      "type": "object",
+      "required": ["completed", "new_sha", "aggregate_checks_rerun", "fan_in_conflicts"],
+      "additionalProperties": false,
+      "properties": {
+        "completed": { "type": "boolean" },
+        "integration_sha": { "type": ["string", "null"] },
+        "new_sha": { "type": "boolean" },
+        "aggregate_checks_rerun": { "type": "boolean" },
+        "fan_in_conflicts": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "IntegrationTrace", "id": "IT-001",
+      "work_graph": "WG-001", "integration_plan": "IP-001", "execution_mode": "hybrid",
+      "packages": [
+        { "id": "api", "package_sha": "aaaaaaa", "wall_seconds": 100 },
+        { "id": "ui", "package_sha": "bbbbbbb", "wall_seconds": 120 },
+        { "id": "wiring", "package_sha": "ccccccc", "wall_seconds": 60 }
+      ],
+      "wall_seconds_actual": 190,
+      "sequential_baseline_seconds": 280,
+      "integration": {
+        "completed": true, "integration_sha": "ddddddd", "new_sha": true,
+        "aggregate_checks_rerun": true, "fan_in_conflicts": 0
+      }
+    }
+  ]
+}

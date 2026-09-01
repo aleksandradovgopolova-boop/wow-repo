@@ -1,0 +1,42 @@
+   Compiling calcfixture v0.0.0 (/tmp/tmp.fBF6ULl4xg)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/calcfixture-6ac13cbb671e2a04)
+
+running 2 tests
+test tests::test_sub ... ok
+test tests::test_add ... FAILED
+
+failures:
+
+---- tests::test_add stdout ----
+
+thread 'tests::test_add' (18371) panicked at src/lib.rs:7:21:
+assertion `left == right` failed
+  left: 5
+ right: 999
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panicking.rs:80:14
+   2: core::panicking::assert_failed_inner
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panicking.rs:439:17
+   3: core::panicking::assert_failed
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panicking.rs:394:5
+   4: calcfixture::tests::test_add
+             at ./src/lib.rs:7:21
+   5: calcfixture::tests::test_add::{{closure}}
+             at ./src/lib.rs:7:18
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/ops/function.rs:250:5
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    tests::test_add
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `--lib`

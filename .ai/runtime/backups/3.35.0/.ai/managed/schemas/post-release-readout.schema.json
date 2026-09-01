@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/post-release-readout.schema.json",
+  "title": "PostReleaseReadout",
+  "description": "PostReleaseReadout (PRR) — v3.5 Observability. Замыкает петлю доставили→измерили→узнали: связывает DeliveryReceipt (v3.0.17) с downstream CI, Product Health и evolution_triggers (v3.2.4), и фиксирует явное решение (healthy_continue/watch/rollback/investigate). Читаем только ВЕРИФИЦИРОВАННУЮ доставку (sha_verified). Инвариант: healthy_continue требует зелёного downstream + не-critical health + отсутствия promise_broken; rollback обоснован негативным сигналом.",
+  "type": "object",
+  "required": ["schema_version", "kind", "id", "delivery_receipt", "downstream_ci",
+               "product_health", "evolution", "readout_decision"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "PostReleaseReadout" },
+    "id": { "type": "string", "pattern": "^PRR-[0-9]{3,}$" },
+    "delivery_receipt": {
+      "type": "object",
+      "required": ["ref", "sha_verified"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": { "type": "string", "minLength": 1, "description": "PR url / DeliveryReceipt id" },
+        "sha_verified": { "type": "boolean" }
+      }
+    },
+    "downstream_ci": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["pass", "fail", "pending", "not_run"] },
+        "ref": { "type": ["string", "null"] }
+      }
+    },
+    "product_health": {
+      "type": "object",
+      "required": ["band"],
+      "additionalProperties": false,
+      "properties": {
+        "band": { "type": "string", "enum": ["healthy", "warning", "critical", "not_measured"] },
+        "score": { "type": ["number", "null"] }
+      }
+    },
+    "evolution": {
+      "type": "object",
+      "required": ["promise_broken", "cost_realized"],
+      "additionalProperties": false,
+      "properties": {
+        "promise_broken": { "type": "integer", "minimum": 0 },
+        "cost_realized": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "readout_decision": { "type": "string",
+      "enum": ["healthy_continue", "watch", "rollback", "investigate"] },
+    "learning": { "type": ["string", "null"], "pattern": "^FL-[0-9]{3,}$",
+      "description": "порождённый FeatureLearning (слабая ссылка) либо null" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "PostReleaseReadout", "id": "PRR-001",
+      "delivery_receipt": { "ref": "aleksandradovgopolova-boop/ai-ops-dogfood-pricing#1",
+        "sha_verified": true },
+      "downstream_ci": { "status": "not_run", "ref": null },
+      "product_health": { "band": "not_measured", "score": null },
+      "evolution": { "promise_broken": 0, "cost_realized": 0 },
+      "readout_decision": "watch",
+      "learning": null
+    }
+  ]
+}

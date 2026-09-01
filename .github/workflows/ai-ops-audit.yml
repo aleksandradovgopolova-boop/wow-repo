@@ -1,0 +1,59 @@
+# ai-ops-audit.yml — ПЕРИОДИЧЕСКИЙ продуктовый аудит дочки (артефакты / tech / delivery / backlog /
+# риски) одним машиночитаемым снимком. Устанавливается `ai-ops init` в .github/workflows/ (или
+# скопируйте вручную). Раз в неделю (и по кнопке) запускает `ai-ops audit product` и печатает отчёт
+# в summary прогона.
+#
+# ЗАЧЕМ РАСПИСАНИЕ. `ai-ops audit product` можно позвать руками, но «по требованию» и «периодически» —
+# разные вещи: продукт дрейфует между запросами, и без расписания аудит случается тогда, когда о нём
+# вспомнили, а не тогда, когда он нужен. Этот workflow и есть периодическая половина (исход
+# `continuous_audit_runs_periodically`).
+#
+# READ-ONLY: аудит ничего не меняет, не коммитит и не открывает PR — это снимок состояния. Поэтому и
+# прав у джобы только `contents: read`. Вердикт НЕ роняет джобу (аудит информирует, а не гейтит):
+# YELLOW/UNKNOWN — нормальные состояния снимка, а не повод красить прогон.
+#
+# Опт-аут: удалить этот файл. Инструменты кита не в дочке — берутся из parent (как в ai-ops-update).
+name: ai-ops-audit
+on:
+  schedule:
+    - cron: "23 7 * * 1"      # еженедельно, понедельник 07:23 UTC — аудит не ежедневная нужда
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  audit:
+    # Раннер — переменной, не зашит (как в ai-ops-update): в организации со своими раннерами
+    # `ubuntu-latest` просто висит в очереди. Задайте vars.CI_RUNNER_LINUX — и аудит поедет на ней.
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+      - name: Проверить python и pyyaml (свой раннер)
+        if: ${{ vars.CI_RUNNER_LINUX }}
+        run: |
+          python3 -c 'import sys, yaml' \
+            || { echo "на раннере '${{ vars.CI_RUNNER_LINUX }}' нет python3 с pyyaml — поставьте их (PEP 668: в системный python кит не ставит)"; exit 1; }
+      - name: Взять кит из parent (инструменты аудита не едут в дочку)
+        run: |
+          PARENT=$(python3 -c "import yaml; s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source']; print(s[4:] if s.startswith('git+') else s)")
+          CHANNEL=$(python3 -c "import yaml; print(yaml.safe_load(open('.ai-ops.yaml'))['parent'].get('update_channel','stable'))")
+          git clone --filter=blob:none "$PARENT" "$RUNNER_TEMP/ai-ops-kit"
+          # Ревизию под объявленный канал выбирает сам кит (как в ai-ops-update), а не эта строка.
+          if REF=$(python3 "$RUNNER_TEMP/ai-ops-kit/installer/ai_ops.py" resolve-ref --channel "$CHANNEL" --repo "$RUNNER_TEMP/ai-ops-kit"); then
+            [ -n "$REF" ] && git -C "$RUNNER_TEMP/ai-ops-kit" checkout -q "$REF"
+            echo "канал '$CHANNEL' -> ${REF:-ветка по умолчанию}"
+          fi
+      - name: Запустить ai-ops audit product
+        run: |
+          python3 "$RUNNER_TEMP/ai-ops-kit/installer/ai_ops.py" audit product | tee "$RUNNER_TEMP/audit.txt"
+          {
+            echo "## AI Ops · периодический продуктовый аудит"
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/audit.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

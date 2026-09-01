@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/runtime-entry.schema.json",
+  "title": "RuntimeEntry",
+  "description": "One runtime record in runtimes.yaml. Runtime is distinct from provider/model.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string" },
+    "display_name": { "type": "string" },
+    "kind": { "type": "string", "enum": ["cli-agent", "ide-agent", "orchestrator", "api-executor", "ci"] },
+    "mvp_adapter": { "type": "boolean" },
+    "default_provider": { "type": "string" },
+    "execution_modes": { "type": "array", "items": { "type": "string", "enum": ["native", "orchestrated", "sequential", "manual-assisted"] } },
+    "preferred_mode": { "type": "string" },
+    "minimum_mode": { "type": "string" },
+    "capabilities": { "type": "object", "additionalProperties": true },
+    "agent_packaging": { "type": "string" },
+    "skill_loading": { "type": "string" },
+    "command_loading": { "type": "string" },
+    "machine_readable_gate_result": { "type": "string", "enum": ["supported", "unsupported"] },
+    "actions_requiring_human_approval": { "type": "array", "items": { "type": "string" } },
+    "last_documented_at": { "type": ["string", "null"], "format": "date" }
+  },
+  "required": ["schema_version", "id", "kind", "execution_modes", "capabilities"],
+  "additionalProperties": true,
+  "x-extensibility": "Adding a runtime never changes core; it is a new row consumed by the runtime adapter layer.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "id": "generic-orchestrator",
+      "display_name": "Generic orchestrator",
+      "kind": "orchestrator",
+      "mvp_adapter": true,
+      "default_provider": "any",
+      "execution_modes": ["orchestrated", "sequential"],
+      "preferred_mode": "orchestrated",
+      "minimum_mode": "sequential",
+      "capabilities": { "native_subagents": { "status": "unsupported", "value": false } },
+      "machine_readable_gate_result": "supported",
+      "last_documented_at": "2026-07-08"
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/gate-result-v2.schema.json",
+  "title": "GateResultV2",
+  "description": "GateResult v2 (v3.1.8) — расширение gate-result.schema.json (v1) для калиброванного UI-enforcement. Добавляет status ∈ {not_applicable, abstain} и явные applicability/enforcement/evidence_mode (согласованы с gate_policy.GatePolicyDecision). v1 НЕ трогается (это отдельный файл): старые потребители читают v1; адаптер tools/gate_result_v2.py даёт v2->v1 (not_applicable -> опустить; abstain -> warn = консервативный fail-closed fallback). not_applicable = гейт не применялся (напр. UI-гейт при ui_impact=none); abstain = ревьюер воздержался / субъективное сомнение, которое калибровка НЕ считает блоком (в отличие от warn на blocking-гейте в v1).",
+  "type": "object",
+  "required": ["schema_version", "gate", "status", "blocking", "applicability", "enforcement",
+               "owner", "review_mode"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 2 },
+    "gate": { "type": "string" },
+    "status": { "type": "string", "enum": ["pass", "warn", "fail", "not_applicable", "abstain"] },
+    "blocking": { "type": "boolean" },
+    "applicability": { "type": "string", "enum": ["applicable", "not_applicable"] },
+    "enforcement": { "type": "string", "enum": ["advisory", "blocking"] },
+    "evidence_mode": { "type": "string", "enum": ["deterministic", "ai_review", "hybrid", "human"] },
+    "human_signoff": { "type": "boolean" },
+    "scope": { "type": "array", "items": { "type": "string" } },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
+          "detail": { "type": "string" }
+        },
+        "required": ["id", "status"],
+        "additionalProperties": false
+      }
+    },
+    "blockers": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "calibration_reason": { "type": ["string", "null"],
+      "description": "почему enforcement отличается от исходного blocking (трассировка калибровки)" },
+    "affected_files": { "type": "array", "items": { "type": "string" } },
+    "tested_revision": { "type": ["string", "null"] },
+    "owner": { "type": "string" },
+    "review_mode": { "type": "string", "enum": ["read-only", "writer"] },
+    "created_at": { "type": ["string", "null"], "format": "date-time" },
+    "expires_at": { "type": ["string", "null"], "format": "date-time" },
+    "override": {
+      "type": ["object", "null"],
+      "properties": {
+        "by": { "type": "string" },
+        "reason": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["by", "reason"],
+      "additionalProperties": false
+    },
+    "reviewer_outcome": {
+      "type": ["string", "null"],
+      "enum": ["pass", "warn", "fail", "abstain", null],
+      "description": "v3.6.7: СЫРОЙ вердикт ревьюера, ОТДЕЛЁННЫЙ от enforcement. Ревьюер может воздержаться (abstain) по блокирующему гейту — это не 'advisory', это 'решение не принято'. enforcement/resolution/delivery_allowed выводятся отдельно, чтобы v2-потребитель не принял advisory за разрешение продолжать." },
+    "resolution": {
+      "type": "string",
+      "enum": ["resolved", "pending_human"],
+      "description": "v3.6.7: принято ли решение по гейту. pending_human = ревьюер воздержался по блокирующему гейту после ретраев -> нужен человек, доставка запрещена." },
+    "delivery_allowed": {
+      "type": "boolean",
+      "description": "v3.6.7: разрешает ли ЭТОТ гейт доставку. false для fail и для blocking-abstain(pending_human). Итоговое решение о доставке — AND по всем гейтам." },
+    "human_handoff": {
+      "type": "boolean",
+      "description": "v3.6.7: требуется эскалация человеку (перенесён из runtime-meta в сам результат, чтобы сигнал не терялся)." }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "abstain" },
+          "enforcement": { "const": "blocking" }
+        },
+        "required": ["status", "enforcement"]
+      },
+      "then": {
+        "properties": {
+          "resolution": { "const": "pending_human" },
+          "delivery_allowed": { "const": false },
+          "human_handoff": { "const": true }
+        },
+        "required": ["resolution", "delivery_allowed", "human_handoff"]
+      }
+    }
+  ],
+  "examples": [
+    {
+      "schema_version": 2,
+      "gate": "visual_regression",
+      "status": "abstain",
+      "blocking": true,
+      "applicability": "applicable",
+      "enforcement": "advisory",
+      "evidence_mode": "deterministic",
+      "human_signoff": false,
+      "checks": [],
+      "blockers": [],
+      "warnings": ["reviewer WARN, но internal low-risk -> advisory (калибровка v3.1.8)"],
+      "evidence": ["independent reviewer verdict @ abc1234"],
+      "calibration_reason": "internal low-risk: гейт visual_regression advisory -> субъективный warn не блокирует",
+      "tested_revision": "abc1234",
+      "owner": "design-reviewer",
+      "review_mode": "read-only",
+      "created_at": null,
+      "expires_at": null,
+      "override": null
+    },
+    {
+      "schema_version": 2,
+      "gate": "accessibility_review",
+      "status": "abstain",
+      "blocking": true,
+      "applicability": "applicable",
+      "enforcement": "blocking",
+      "evidence_mode": "hybrid",
+      "human_signoff": false,
+      "reviewer_outcome": "abstain",
+      "resolution": "pending_human",
+      "delivery_allowed": false,
+      "human_handoff": true,
+      "checks": [],
+      "blockers": ["ревьюер воздержался по блокирующему accessibility_review после ретрая -> нужен человек"],
+      "warnings": [],
+      "evidence": ["independent reviewer abstain x2 @ abc1234"],
+      "calibration_reason": "повторный abstain по блокирующему гейту -> pending_human (НЕ advisory): решение не принято, доставка запрещена",
+      "tested_revision": "abc1234",
+      "owner": "accessibility-reviewer",
+      "review_mode": "read-only",
+      "created_at": null,
+      "expires_at": null,
+      "override": null
+    }
+  ]
+}

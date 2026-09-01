@@ -1,0 +1,80 @@
+# ai-ops-update.yml — автообновление AI Ops Kit в child-репозитории.
+# Устанавливается командой `ai-ops init` в .github/workflows/ (или скопируйте вручную).
+# Раз в день сверяет installed_version из .ai-ops.yaml с VERSION родительского пакета;
+# при расхождении запускает `ai-ops update` и открывает PR с diff'ом и отчётом.
+# Обновление НЕ применяется в обход PR; drift managed-слоя блокирует обновление штатно.
+#
+# Флаг parent.auto_update в .ai-ops.yaml уважается. ПО УМОЛЧАНИЮ ВКЛ (v3.0.5): ежедневный запуск сам
+# открывает update-PR, если ключ отсутствует ИЛИ auto_update: true. Чтобы ОТКЛЮЧИТЬ ежедневные PR —
+# поставьте auto_update: false (опт-аут). Ручной запуск (workflow_dispatch) работает всегда.
+#
+# Примечание: PR, созданный GITHUB_TOKEN, не запускает CI автоматически (ограничение GitHub).
+# Если нужен прогон CI на таком PR — закройте/откройте его или используйте PAT/GitHub App.
+name: ai-ops-update
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+      - name: Сравнить версии parent-пакета
+        id: ver
+        run: |
+          PARENT=$(python3 -c "import yaml; s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source']; print(s[4:] if s.startswith('git+') else s)")
+          INSTALLED=$(python3 -c "import yaml; print(yaml.safe_load(open('.ai-ops.yaml'))['parent']['installed_version'])")
+          AUTO=$(python3 -c "import yaml; print(str(yaml.safe_load(open('.ai-ops.yaml'))['parent'].get('auto_update', True)).lower())")
+          git clone --depth 1 "$PARENT" /tmp/ai-ops-kit
+          AVAILABLE=$(tr -d '[:space:]' < /tmp/ai-ops-kit/VERSION)
+          echo "installed=$INSTALLED available=$AVAILABLE auto_update=$AUTO event=${{ github.event_name }}"
+          echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
+          echo "available=$AVAILABLE" >> "$GITHUB_OUTPUT"
+          echo "auto_update=$AUTO" >> "$GITHUB_OUTPUT"
+          echo "needs_update=$([ "$INSTALLED" != "$AVAILABLE" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          # разрешаем открывать PR только при auto_update: true ИЛИ ручном запуске
+          echo "proceed=$([ \"$INSTALLED\" != \"$AVAILABLE\" ] && { [ \"$AUTO\" = true ] || [ \"${{ github.event_name }}\" = workflow_dispatch ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Пропуск (auto_update:false, запуск по расписанию)
+        if: steps.ver.outputs.needs_update == 'true' && steps.ver.outputs.proceed != 'true'
+        run: echo "Доступно обновление $INSTALLED -> $AVAILABLE, но parent.auto_update=false (опт-аут) и запуск по расписанию — PR не открывается. Запустите workflow вручную (Run workflow) или включите auto_update."
+      - name: Запустить ai-ops update
+        if: steps.ver.outputs.proceed == 'true'
+        run: python3 /tmp/ai-ops-kit/installer/ai_ops.py update
+      - name: Открыть PR с обновлением
+        if: steps.ver.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TO: ${{ steps.ver.outputs.available }}
+          FROM: ${{ steps.ver.outputs.installed }}
+        run: |
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "изменений нет — PR не нужен"; exit 0
+          fi
+          BRANCH="ai-ops/update-v$TO"
+          git config user.name "ai-ops-updater"
+          git config user.email "ai-ops-updater@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -A
+          git commit -m "chore: ai-ops update $FROM -> $TO"
+          git push -f -u origin "$BRANCH"
+          gh pr list --head "$BRANCH" --json number --jq length | grep -q '^0$' || exit 0
+          REPORT=".ai/runtime/last-update-report.json"
+          [ -f "$REPORT" ] || REPORT=""
+          {
+            echo "Автообновление AI Ops Kit: **$FROM → $TO**."
+            echo
+            echo "Локальные слои (\`.ai/project/\`, \`.ai/custom/\`) не тронуты."
+            if [ -n "$REPORT" ]; then
+              echo; echo '<details><summary>update-report</summary>'; echo
+              echo '```json'; cat "$REPORT"; echo '```'; echo '</details>'
+            fi
+          } > /tmp/pr-body.md
+          gh pr create --title "chore: ai-ops update $FROM -> $TO" \
+            --body-file /tmp/pr-body.md --base "${GITHUB_REF_NAME:-main}"

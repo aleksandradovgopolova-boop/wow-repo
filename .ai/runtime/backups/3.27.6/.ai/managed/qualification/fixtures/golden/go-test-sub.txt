@@ -1,0 +1,5 @@
+--- FAIL: TestSub (0.00s)
+    calc_test.go:15: Sub(5,2) = 3; want 999
+FAIL
+FAIL	calcfixture	0.002s
+FAIL

@@ -1,0 +1,25 @@
+# rules/quality/deploy-readiness.yaml — чек-лист готовности поставки (v3.20.0, EngOps срез 2).
+# Дополняет гейт deploy_readiness. Гейт применяется ТОЛЬКО при сигналах изменения поставки
+# (required_when: deployment_change / new_service / infrastructure_change), иначе честный skip.
+# Вердикт ДЕТЕРМИНИРОВАННЫЙ: лестницу absent/configured/runnable/verified считает
+# tools/deploy_readiness.py на текущем SHA. Кит НЕ деплоит — он не даёт врать о готовности.
+# Проверки ниже — то, что лестница и карта окружений обязаны подтвердить фактами репозитория.
+schema_version: 1
+kind: quality-checklist
+id: deploy-readiness
+used_by: [devops-engineer]
+baseline_input: "ai-ops engops deploy (tools/deploy_readiness.py + tools/environment_map.py) на проверяемом SHA"
+checks:
+  - {id: deploy-path-exists, check: "Исполняемый путь поставки существует и виден в репозитории (CI-job с environment и шагами, deploy-скрипт или deploy_command) — иначе поставка заявлена, а произвести её нечем", severity_default: critical}
+  - {id: rollback-declared, check: "Откат объявлен (rollback-скрипт/npm-скрипт/deploy.rollback в конфиге): поставку, которую нельзя отменить, нельзя считать готовой", severity_default: critical}
+  - {id: environments-declared, check: "Все окружения, обнаруженные в репозитории, объявлены в engineering_operating_model.environments — поставка не идёт туда, где нет владельца и правил доступа (detected_not_declared)", severity_default: critical}
+  - {id: no-phantom-environments, check: "Объявленные окружения имеют признаки в репозитории (declared_not_detected — документация о продукте, которого нет)", severity_default: minor}
+  - {id: production-approvers, check: "У production-окружений объявлены approvers: кто вправе туда деплоить, известно заранее, а не выясняется в инциденте", severity_default: major}
+  - {id: secrets-by-reference, check: "Секреты окружений — только ИМЕНА и ссылки (env:/secret:); ни одного литерального значения в репозитории или в конфиге (значения ищет tools/security_scan.py)", severity_default: critical}
+  - {id: deploy-evidence, check: "Для verified — есть evidence фактических поставок (.ai/runtime/deploy/*.json); записи без исполняемого пути означают невоспроизводимый деплой вне репозитория", severity_default: major}
+  - {id: migration-order, check: "Если изменение содержит миграции данных: порядок раскатки и совместимость со старой версией описаны, откат миграции возможен", severity_default: critical}
+  - {id: env-parity, check: "Различия между окружениями объявлены осознанно (не «в staging работало»): переменные и их имена совпадают там, где должны", severity_default: minor}
+verdict:
+  pass_when: "deploy_maturity ∈ {runnable, verified} И нет critical-находок (нет detected_not_declared, откат объявлен, секреты только по ссылке)"
+  block_when: "deploy_maturity ∈ {absent, configured} при активном сигнале деплоя, ЛИБО есть неразрешённый critical (окружение без объявления, отсутствующий откат, литеральный секрет)"
+honest_skip: "нет сигналов деплоя и изменений файлов поставки -> гейт неприменим (scope=not_applicable), а не тихий pass"

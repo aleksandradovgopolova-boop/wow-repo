@@ -1,0 +1,22 @@
+# rules/design/ux-heuristics.yaml — машиночитаемый UX-чек-лист (Ф2 roadmap, v1.4).
+# Основа: 10 эвристик Nielsen + обязательные состояния экранов (Design by Default).
+# Используется ux-reviewer'ом: каждая находка ревью ссылается на id пункта.
+schema_version: 1
+kind: design-checklist
+id: ux-heuristics
+used_by: [ux-reviewer]
+gate: ux_review
+items:
+  - {id: h1-system-status, check: "Пользователь всегда видит статус системы (прогресс, подтверждения, результат действия)", severity_default: major}
+  - {id: h2-real-world-match, check: "Язык и понятия — из мира пользователя, не из внутренней модели системы", severity_default: major}
+  - {id: h3-user-control, check: "Есть отмена/выход из нежелательного состояния; деструктивные действия обратимы или подтверждаются", severity_default: critical}
+  - {id: h4-consistency, check: "Паттерны консистентны внутри продукта и с платформенными конвенциями", severity_default: major}
+  - {id: h5-error-prevention, check: "Ошибки предотвращаются до совершения (валидация, ограничения, безопасные дефолты)", severity_default: critical}
+  - {id: h6-recognition, check: "Распознавание вместо припоминания: опции и контекст видимы, не требуют держать в памяти", severity_default: major}
+  - {id: h7-efficiency, check: "Есть ускорители для опытных (шорткаты, дефолты, недавнее) без усложнения для новичков", severity_default: minor}
+  - {id: h8-minimalism, check: "Нет информации, не нужной для решения задачи на этом шаге", severity_default: minor}
+  - {id: h9-error-recovery, check: "Сообщения об ошибках на языке пользователя: что случилось и какое действие доступно", severity_default: critical}
+  - {id: h10-help, check: "Помощь доступна в контексте, где она нужна (не только в отдельном разделе)", severity_default: minor}
+  - {id: states-coverage, check: "Каждый экран имеет состояния Empty / Loading / Error (с recovery) / Success", severity_default: critical}
+  - {id: responsive, check: "Адаптивность по матрице устройств из DesignSystem — детальный чек-лист rules/design/responsive-baseline.yaml", severity_default: critical, details: rules/design/responsive-baseline.yaml}
+  - {id: copy-actionable, check: "Copy проверен: тон, ясность, CTA осмысленны, ошибки содержат действие", severity_default: major}

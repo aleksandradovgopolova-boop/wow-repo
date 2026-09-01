@@ -1,0 +1,50 @@
+# Example Watch Contract for Nightly Review
+id: nightly-product-health
+name: Nightly Product Health Watch
+description: Monitor key product metrics and file changes overnight
+schedule: "0 6 * * *"  # Every day at 6:00 AM
+
+watchers:
+  - type: file
+    path: planning/plan.yaml
+    description: Check if plan was updated
+    severity: B
+  - type: file
+    path: .ai/project/report-history/
+    description: New run reports added
+    severity: B
+  - type: metric
+    metric: open_prs
+    description: Number of open pull requests
+    severity: A
+  - type: metric
+    metric: stale_branches
+    description: Branches older than 7 days without activity
+    severity: C
+  - type: event
+    event: failed_ci
+    description: CI failures in last 24h
+    severity: A
+
+thresholds:
+  open_prs:
+    warning: 5
+    critical: 10
+  stale_branches:
+    warning: 3
+    critical: 10
+
+action_classes:
+  A: autofix  # Automatic fix in worktree, collect in draft PR
+  B: advisory  # Include in morning brief, no auto-action
+  C: ignore    # Log but don't report
+
+escalation:
+  channel: team-chat
+  recipients:
+    - team-lead
+    - on-call-engineer
+
+retention:
+  days: 30
+  max_entries: 100

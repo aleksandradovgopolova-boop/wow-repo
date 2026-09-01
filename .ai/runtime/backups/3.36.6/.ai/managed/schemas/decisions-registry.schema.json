@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "decisions-registry",
+  "type": "object",
+  "required": ["schema_version", "kind", "principles", "episodes"],
+  "properties": {
+    "schema_version": {"type": "integer"},
+    "kind": {"const": "decisions-registry"},
+    "principles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "principle", "scope", "status", "confidence", "recurrence_count", "review_date", "derived_from"],
+        "properties": {
+          "id": {"type": "string"},
+          "principle": {"type": "string"},
+          "scope": {"type": "array", "items": {"type": "string"}},
+          "status": {"enum": ["proposed", "ratified", "retired"]},
+          "confidence": {"enum": ["low", "medium", "high"]},
+          "recurrence_count": {"type": "integer", "minimum": 0},
+          "counterexamples": {"type": "array"},
+          "review_date": {"type": "string"},
+          "supersedes": {"type": ["string", "null"]},
+          "retired_reason": {"type": ["string", "null"]},
+          "derived_from": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "episodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "question", "decision", "reason", "reversibility", "date"],
+        "properties": {
+          "id": {"type": "string"},
+          "question": {"type": "string"},
+          "decision": {"type": "string"},
+          "reason": {"type": "string"},
+          "context": {"type": "string"},
+          "reversibility": {"enum": ["two-way", "one-way"]},
+          "date": {"type": "string"},
+          "source": {"type": "string"}
+        }
+      }
+    },
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["decision", "outcome"],
+        "properties": {
+          "decision": {"type": "string"},
+          "outcome": {"type": "string"},
+          "reviewed_at": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,444 @@
+# registry/product-operating-model.yaml — модель продуктового репозитория (v3.35.0)
+#
+# ЗАЧЕМ РЕЕСТР, А НЕ ПРОЗА. Прежде «обязательные области» существовали двумя списками, которые
+# никто не сверял: 14 документов в `context/` и 13 пунктов в `rules/meta/repo-onboarding.yaml`.
+# Ни один из них не был машиночитаемой моделью: нельзя было спросить «какой контур отвечает за
+# API-контракты», «где его источник истины» и «изменился ли он в этом diff». По этому файлу
+# работает КОД — `ai_ops_kit/planning/contours.py` (детект), `next_work.py` (роли), doctor
+# (пробелы), гейт `contour_consistency` (связность). Поэтому он реестр.
+#
+# ГЛАВНЫЙ ИНВАРИАНТ МОДЕЛИ. У каждого контура свой источник истины; WorkItem связывает те контуры,
+# которые изменяет. Нельзя закрыть работу, обновив React-компонент, если изменилась модель данных.
+# Обратное тоже верно и важнее: НЕ требуется обновлять восемь документов на каждую задачу —
+# незатронутый контур фиксируется как `not_changed`, и это законный ответ.
+#
+# ТРИ СОСТОЯНИЯ, И ТРЕТЬЕ НЕ РАВНО ВТОРОМУ:
+#   changed      — сигнальный путь контура попал в diff (или объявлен человеком);
+#   not_changed  — сигнальные пути в репозитории ЕСТЬ, и ни один не попал в diff;
+#   unknown      — сигнальных путей у контура в ЭТОМ репозитории нет. Кит не умеет его видеть и
+#                  говорит об этом прямо. `unknown` НИКОГДА не сворачивается в `not_changed`:
+#                  «не менялось» — утверждение, «не умею видеть» — признание, и подменять второе
+#                  первым значит зеленить непроверенное.
+schema_version: 1
+registry_type: product-operating-model
+contract_version: 1
+
+# Замкнутый цикл контуров. Порядок — не оформление: `next_work` объясняет блокировку словами
+# «выше по цепочке», а onboarding спрашивает контуры в этом порядке.
+cycle:
+  - product_strategy
+  - research_decisions
+  - planning_execution
+  - system_architecture
+  - data_contracts
+  - engineering_quality_security
+  - delivery_operations
+  - analytics_learning
+cycle_closes_to: product_strategy   # insights возвращаются в стратегию и меняют ROADMAP
+cycle_note: >
+  Цикл замкнут: analytics_learning порождает insight, insight меняет приоритет в
+  product_strategy, изменённый приоритет меняет ROADMAP, ROADMAP меняет plan.yaml. Разрыв в любом
+  месте превращает модель в документацию — репозиторий описывает продукт, но не управляет им.
+
+# ── Состояние артефакта контура ───────────────────────────────────────────────────────────────
+# СЕМЬ СОСТОЯНИЙ ВМЕСТО present/absent. Разница между «увидел», «вывел», «спросил у человека» и
+# «не знаю» — это и есть доверие. Кит не имеет права написать «архитектура такая-то», потому что
+# посмотрел на имена папок: он обязан сказать «это inferred, подтверждение владельца желательно».
+artifact_states:
+  verified:       {means: "подтверждено фактом репозитория (файл/манифест/миграция/CI)", trust: high,  human_needed: false}
+  user_confirmed: {means: "человек подтвердил явно — сильнее любого вывода кита",        trust: high,  human_needed: false}
+  inferred:       {means: "выведено из кода/структуры; правдоподобно, но не доказано",   trust: medium, human_needed: true}
+  partial:        {means: "часть восстановлена, часть неизвестна",                       trust: medium, human_needed: true}
+  stale:          {means: "артефакт есть, но устарел относительно кода (freshness)",     trust: low,   human_needed: true}
+  missing:        {means: "артефакта нет, и его отсутствие установлено",                 trust: low,   human_needed: true}
+  unknown:        {means: "определить состояние нечем — признание, а не утверждение",     trust: none,  human_needed: true}
+artifact_states_never: >
+  `inferred` НИКОГДА не публикуется как `verified`, `unknown` НИКОГДА не сворачивается в `missing`.
+  Первое подменяет догадку фактом, второе — незнание утверждением. Оба превращают baseline в
+  выдумку, которой следующая сессия поверит как правде.
+
+# ── Классификация репозитория ─────────────────────────────────────────────────────────────────
+# От состояния продукта КАРДИНАЛЬНО меняется onboarding: у существующего продукта реальность
+# РЕКОНСТРУИРУЮТ (спрашивать «какая у вас архитектура», когда 70% ответа лежит в коде, —
+# неуважение к времени владельца), у нового — ПРОЕКТИРУЮТ с нуля.
+# Пороги объявлены здесь, а не зашиты в код: их придётся править по данным живых прогонов.
+classification:
+  classes:
+    NEW_PRODUCT:
+      means: "репозиторий пуст или содержит только начальный scaffold"
+      onboarding: product_bootstrap
+    EARLY_PRODUCT:
+      means: "код есть, продуктовой и архитектурной истории почти нет"
+      onboarding: reconstruct_then_bootstrap
+    EXISTING_PRODUCT:
+      means: "работающая система: история разработки, CI, данные, релизы"
+      onboarding: reconstruct_first
+    UNKNOWN:
+      means: "данных недостаточно, чтобы определить состояние"
+      onboarding: ask_before_acting
+  thresholds:
+    new_max_source_files: 10        # больше — это уже не scaffold
+    new_max_commits: 5
+    early_max_commits: 50
+    existing_min_commits: 50
+  # Имена — РОВНО те, что производит `repo_audit.discover()` и читает `classify()`. Прежде треть
+  # списка (`ci_present`, `tests_present`, `migrations_present`) не существовала ни в одном отчёте,
+  # а часть остальных собиралась, но в классификации не участвовала: реестр перечислял сигналы,
+  # которых нет. Список описывает то, что ДЕЙСТВИТЕЛЬНО решает класс.
+  signals: [tree_readable, source_files, test_files, commits, ci, migrations, release_history]
+  collected_but_not_classifying: [containers, dependency_manifests, product_docs,
+                                  architecture_docs, decisions, env_configs, api_schemas]
+  collected_but_not_classifying_note: >
+    Собираются в discover() и попадают в reconstruct()/audit(), но класс репозитория по ним не
+    определяется. Названы отдельно, чтобы «сигнал класса» и «наблюдение о репозитории» не читались
+    как одно и то же.
+  rule: >
+    UNKNOWN, если ни один сигнал не читается (нет доступа к дереву или к истории) — это не
+    «пустой репозиторий». Пустой репозиторий читается и даёт нули; нечитаемый не даёт ничего, и
+    разница между ними определяет, начинать ли bootstrap или сначала спросить.
+
+# ── Пороги достройки (Gap Plan) ───────────────────────────────────────────────────────────────
+# Онбординг PROGRESSIVE. «Сначала заполните 14 документов, потом работайте» убивает продукт,
+# которому три года; поэтому пробелы разложены по срочности, а не свалены в один список.
+gap_tiers:
+  - id: required_now
+    means: "без этого нельзя осмысленно планировать: направление и продуктовый контекст"
+    blocks_work: true
+  - id: required_before_next_change
+    means: "станет обязательным, когда работа тронет соответствующий контур (см. affects)"
+    blocks_work: false
+  - id: can_reconstruct
+    means: "кит восстановит сам из репозитория; человеку останется подтвердить"
+    blocks_work: false
+  - id: opportunistic
+    means: "улучшается по ходу, текущую работу не блокирует"
+    blocks_work: false
+
+# ── Контуры ───────────────────────────────────────────────────────────────────────────────────
+# Поля каждого контура:
+#   question         — класс вопросов, на который контур обязан отвечать (для человека и агента);
+#   source_of_truth  — где живёт правда контура. `required: true` — отсутствие является пробелом
+#                      модели (doctor сообщает, onboarding заполняет черновик);
+#   change_signals   — пути, изменение которых ОЗНАЧАЕТ, что контур затронут. Стек-зависимы;
+#                      репозиторий доопределяет своими в `.ai-ops.yaml -> product_operating_model`;
+#                      ТАМ ЖЕ репозиторий вправе объявить свой `source_of_truth`: кит знает типовые
+#                      места, но где лежит правда ЭТОГО продукта, знает только владелец. Обкатка на
+#                      ii-sreda показала цену пробела: ADR лежат в `docs/architecture/decisions/`,
+#                      сигнал их ловил верно, а объявленного китом `decisions/registry.yaml` в
+#                      репозитории нет — и находка «истина не обновлена» срабатывала ВЕЧНО на
+#                      контуре, который поддерживается как надо (12 находок из 41);
+#   owner_role       — роль-владелец из `roles` ниже. РОЛЬ, не исполнитель и не вендор.
+#
+# v3.35.2 (тир 3): СПОРИТЬ С КИТОМ ТОЖЕ МОЖНО. Прежде репозиторий умел только ДОПОЛНЯТЬ сигналы, а
+# снять чужой — нет: кит объявляет `**/entities/**` сигналом модели данных, но в проекте на
+# Feature-Sliced Design `entities` — слой ИНТЕРФЕЙСА, и это дало 6 ложных находок из 9 (обкатка
+# niti). Убрать сигнал можно было только правкой самого кита, то есть нельзя. Теперь в
+# `.ai-ops.yaml -> product_operating_model.contours.<id>` доступны:
+#   change_signals_remove   — снять конкретный сигнал кита (точное совпадение паттерна);
+#   change_signals_replace  — объявить свой список единственным (догадки кита выключены целиком).
+# И там же `paths.plan` / `paths.roadmap`: монорепозиторий, где продукт живёт в `apps/web/`, прежде
+# не мог описать себя вовсе — кит требовал артефакты строго в корне.
+contours:
+  - id: product_strategy
+    title: Product & Strategy
+    question: "Что мы строим? Для кого? Зачем? Что важнее сейчас?"
+    holds: [цели и outcomes, ключевые пользовательские сценарии, ограничения, гипотезы, приоритеты]
+    owner_role: product
+    source_of_truth:
+      - {path: context/product/ProductOverview.md, required: true}
+      - {path: context/product/ProductStatus.md, required: true}
+      - {path: context/product/UsersAndRoles.md, required: false}
+      - {path: ROADMAP.md, required: true, note: "направление продукта; четыре горизонта"}
+    change_signals: ["context/product/**", "ROADMAP.md"]
+    # Что кит вправе восстановить сам, а что знает только человек. `none` — не слабость движка, а
+    # признание: цели продукта и его пользователи из кода достоверно НЕ выводятся.
+    reconstruction: {ability: none, from: [README, docs], note: "из репозитория выводится максимум догадка"}
+    gap_tier: required_now
+    questions:
+      - {id: primary_user, ask: "Кто основной пользователь продукта?", proposal_from: [README, docs]}
+      - {id: main_problem, ask: "Какую главную проблему продукт должен решать?", proposal_from: [README]}
+      - {id: key_scenarios, ask: "Какие 2–3 пользовательских сценария сейчас самые важные?", proposal_from: []}
+      - {id: main_goal_now, ask: "Какая главная цель продукта сейчас?", proposal_from: []}
+      - {id: next_outcome, ask: "Что должно стать следующим крупным результатом для пользователя?", proposal_from: []}
+
+  - id: research_decisions
+    title: Research & Decisions
+    question: "Что мы знаем, в чём не уверены и почему приняли именно такое решение?"
+    holds: [ResearchRequest, Evidence, Decision, исследования пользователей и рынка, ADR,
+            assumptions, открытые вопросы]
+    owner_role: researcher
+    source_of_truth:
+      - {path: decisions/registry.yaml, required: true, note: "значимые решения; эпизоды ADR"}
+      - {path: research/, required: false}
+    change_signals: ["decisions/**", "research/**", "docs/adr/**", "**/ADR-*.md"]
+    reconstruction: {ability: partial, from: [docs/adr, git history, PR descriptions],
+                     note: "историю решений полностью не восстановить — восстанавливается то, что записано"}
+    gap_tier: opportunistic
+    questions:
+      - {id: known_assumptions, ask: "Какие важные допущения продукта пока не проверены?", proposal_from: []}
+
+  - id: planning_execution
+    title: Planning & Execution
+    question: "Что брать следующим? Что можно выполнять одновременно? Кто должен это делать? Что заблокировано?"
+    holds: [delivery plan, зависимости, статусы, роли исполнителей, active work, RunPlan,
+            checkpoints, next best work]
+    owner_role: product
+    source_of_truth:
+      - {path: planning/plan.yaml, required: true, note: "kind: delivery-plan; машиночитаемая работа"}
+      - {path: .ai/runtime/active-work.yaml, required: false, note: "оперативное состояние; ведёт кит, не человек"}
+    change_signals: ["planning/**"]
+    reconstruction: {ability: partial, from: [issues, TODO, git branches],
+                     note: "работу можно предложить, приоритет знает только владелец"}
+    gap_tier: required_now
+    questions: []
+    holds_no_meaning: true
+    holds_no_meaning_note: >
+      Контур НЕ хранит смысл задачи — он соединяет остальные. Зачем работа нужна, лежит в
+      product_strategy; почему выбран подход — в research_decisions; как устроено — в
+      system_architecture. Здесь только: что, в каком порядке, кем, в каком состоянии. Поэтому
+      элемент плана обязан ссылаться на цель (`goal`) и заявлять затронутые контуры (`affects`),
+      а не пересказывать их содержимое.
+
+  - id: system_architecture
+    title: System & Architecture
+    question: "Из чего состоит система и как её части связаны?"
+    holds: [компоненты, сервисы, зависимости, deployment topology, integrations, failure boundaries]
+    owner_role: architect
+    source_of_truth:
+      - {path: context/system/SystemOverview.md, required: true}
+      - {path: context/system/RepositoryMap.md, required: true}
+      - {path: context/system/IntegrationMap.md, required: false}
+    change_signals: ["context/system/**", "**/docker-compose*.y*ml", "**/Dockerfile*",
+                     "**/*.tf", "infra/**", "deploy/**"]
+    reconstruction: {ability: full, from: [структура каталогов, манифесты зависимостей, docker,
+                                          CI, точки входа],
+                     note: "восстанавливается как inferred; статус verified даёт подтверждение владельца"}
+    gap_tier: can_reconstruct
+    questions: []
+
+  - id: data_contracts
+    title: Data & Contracts
+    question: "Какие сущности существуют? Где источник истины? Какие данные куда текут?"
+    holds: [domain entities, logical/physical schema, ownership данных, API contracts, events,
+            webhooks, integration schemas, compatibility rules]
+    owner_role: data-engineer
+    source_of_truth:
+      - {path: context/system/DataMap.md, required: true}
+      - {path: schemas/, required: false, note: "контракты как файлы, а не как описание"}
+    change_signals: ["context/system/DataMap.md", "schemas/**", "**/migrations/**",
+                     # `**/entities/**` УБРАН по обкатке niti (Next.js, 186 коммитов): дал 6 находок
+                     # из 9, и все ложные. В Feature-Sliced Design `src/entities/` — слой ИНТЕРФЕЙСА
+                     # (внутри ui/, lib/, index.ts), а не модель данных; конвенция распространённая.
+                     # Оставлены однозначные: их имя означает контракт данных, а не слой приложения.
+                     "**/models/**", "**/models.py", "**/openapi*.y*ml",
+                     "**/*.proto", "**/*.graphql", "**/prisma/schema.prisma"]
+    reconstruction: {ability: full, from: [migrations, ORM-модели, openapi/proto/graphql, схемы БД],
+                     note: "самый восстановимый контур: миграции и схемы — факт, а не мнение"}
+    gap_tier: can_reconstruct
+    questions:
+      - {id: sensitive_data, ask: "Есть ли данные, которые нельзя отправлять внешним AI-провайдерам?",
+         proposal_from: [схемы, имена полей]}
+
+  - id: engineering_quality_security
+    title: Engineering, Quality & Security
+    question: "Что можно делать, как это проверять и где система обязана остановиться?"
+    holds: [development contract, тестовая стратегия, Definition of Done, quality gates,
+            protected paths, permissions, secrets, PII, data classification, human approvals,
+            security policies]
+    owner_role: engineer
+    source_of_truth:
+      - {path: context/team/DevelopmentProcess.md, required: true}
+      - {path: .ai-ops.yaml, required: true, note: "protected_paths, approvals, границы — исполняемая часть контракта"}
+      - {path: security/, required: false}
+    # ОБКАТКА (ii-sreda, 44 продуктовых коммита): паттерн `**/*.test.*` дал 28 находок из 41 —
+    # больше половины всего шума гейта из одного сигнала. Тестовые файлы УБРАНЫ из сигналов
+    # осознанно: источник истины этого контура — ПРАВИЛА (DevelopmentProcess.md, .ai-ops.yaml), а
+    # тесты — их продукт. Написание теста нормальная работа, оно не меняет тестовую стратегию;
+    # требовать обновления правил на каждый тест — та бюрократия, которую модель запрещает прямо.
+    # `quality/**` и `security/**` оставлены: там лежат сами правила и политики, а не их применение.
+    change_signals: ["context/team/**", ".ai-ops.yaml", "security/**", "quality/**"]
+    reconstruction: {ability: partial, from: [CI, линтеры, тесты, pre-commit],
+                     note: "правила проверки видны; границы «чего AI делать нельзя» знает только человек"}
+    gap_tier: required_now
+    questions:
+      - {id: forbidden_without_approval,
+         ask: "Есть ли действия, которые AI никогда не должен выполнять без подтверждения?", proposal_from: []}
+      - {id: protected_paths, ask: "Какие пути нельзя менять без ревью владельца?",
+         proposal_from: [CODEOWNERS]}
+
+  - id: delivery_operations
+    title: Delivery & Operations
+    question: "Как код превращается в релиз и как понять, что после релиза всё живо?"
+    holds: [environments, CI/CD, preview/staging/prod, migrations, feature flags, rollout,
+            rollback, release state, observability, logs, health checks, alerts, incidents, runbooks]
+    owner_role: delivery
+    source_of_truth:
+      - {path: CHANGELOG.md, required: false}
+      - {path: .github/workflows/, required: false}
+      - {path: docs/runbooks/, required: false}
+    change_signals: [".github/workflows/**", "CHANGELOG.md", "docs/runbooks/**",
+                     "**/Procfile", "**/fly.toml", "**/vercel.json", "**/*.service"]
+    reconstruction: {ability: partial, from: [CI/CD, docker, environment configs, release history],
+                     note: "конвейер виден; какое окружение считается production — решение владельца"}
+    gap_tier: required_before_next_change
+    questions:
+      - {id: production_env, ask: "Какой environment считается production?", proposal_from: [CI, deploy configs]}
+      - {id: pr_autonomy, ask: "Может ли AI самостоятельно создавать PR или только готовить изменения локально?",
+         proposal_from: []}
+
+  - id: analytics_learning
+    title: Analytics & Learning
+    question: "Что произошло после выпуска? Стало ли лучше? Что мы узнали и как это меняет следующий план?"
+    holds: [metric catalog, events, funnels, dashboards, experiments, Product Health,
+            post-release readout, insights, новые гипотезы]
+    owner_role: analytics
+    source_of_truth:
+      - {path: context/product/MetricCatalog.md, required: true}
+      - {path: context/product/ProductMetrics.md, required: false}
+      - {path: product/product-health.yaml, required: false, note: "вход `ai-ops health`"}
+    change_signals: ["context/product/MetricCatalog.md", "context/product/ProductMetrics.md",
+                     "product/product-health.yaml", "analytics/**", "**/tracking*.y*ml"]
+    reconstruction: {ability: partial, from: [вызовы трекинга в коде, дашборды, схемы событий],
+                     note: "события видны; что считается успехом продукта — знает владелец"}
+    gap_tier: required_before_next_change
+    questions:
+      - {id: success_metric, ask: "По какой метрике будет видно, что следующий результат удался?",
+         proposal_from: []}
+
+# ── Роли работы ───────────────────────────────────────────────────────────────────────────────
+# РОЛЬ — НЕ ИСПОЛНИТЕЛЬ. План продукта называет роль; какой runtime/модель ей соответствует
+# СЕЙЧАС, решает роутер в момент запуска по сложности, риску, capability, стоимости и доступности
+# (`engine/ai_route.py`, `providers/model_router.py`). Поэтому смена Claude Code на Codex или Qwen
+# не переписывает план продукта — и поэтому вендорское имя в `planning/plan.yaml` ЗАПРЕЩЕНО
+# проверкой (`validate_product_model`), а не соглашением.
+#
+# `agents` — существующие id из `registry/agents.yaml` (ссылочная целостность проверяется:
+# роль, ссылающаяся на несуществующего агента, — ошибка реестра, а не опечатка).
+roles:
+  product:       {contour: product_strategy,              agents: [product-manager, business-analyst, product-reviewer]}
+  researcher:    {contour: research_decisions,             agents: [user-researcher, experiment-designer, system-analyst]}
+  architect:     {contour: system_architecture,            agents: [solution-architect, llm-architect, architecture-reviewer]}
+  data-engineer: {contour: data_contracts,                 agents: [database-engineer, migration-engineer, integration-engineer]}
+  engineer:      {contour: engineering_quality_security,   agents: [backend-developer, fullstack-developer, implementation-integrator]}
+  frontend:      {contour: engineering_quality_security,   agents: [frontend-developer, ui-ux-designer]}
+  qa:            {contour: engineering_quality_security,   agents: [test-engineer, regression-analyst]}
+  security:      {contour: engineering_quality_security,   agents: [security-reviewer, ai-red-teamer]}
+  reviewer:      {contour: engineering_quality_security,   agents: [code-reviewer, performance-reviewer, requirements-reviewer]}
+  docs:          {contour: engineering_quality_security,   agents: [documentation-steward, documentation-reviewer]}
+  delivery:      {contour: delivery_operations,            agents: [release-manager, devops-engineer, observability-engineer]}
+  analytics:     {contour: analytics_learning,             agents: [product-analyst, analytics-reviewer]}
+
+# ── Типы работы ───────────────────────────────────────────────────────────────────────────────
+# `type` элемента плана. `contour` — контур, который работа этого типа изменяет ПО ОПРЕДЕЛЕНИЮ
+# (используется как подсказка `affects`, а не как замена детекту).
+# `unblocks_downstream: true` — тип, который по природе разблокирует работу ниже по цепочке;
+# ранжирование next-work поднимает такие элементы, потому что они снимают ожидание с других.
+work_types:
+  research:     {contour: research_decisions,           unblocks_downstream: true}
+  product:      {contour: product_strategy,             unblocks_downstream: true}
+  architecture: {contour: system_architecture,          unblocks_downstream: true}
+  data:         {contour: data_contracts,               unblocks_downstream: true}
+  contract:     {contour: data_contracts,               unblocks_downstream: true}
+  engineering:  {contour: engineering_quality_security, unblocks_downstream: false}
+  visual:       {contour: engineering_quality_security, unblocks_downstream: false}
+  quality:      {contour: engineering_quality_security, unblocks_downstream: false}
+  security:     {contour: engineering_quality_security, unblocks_downstream: true}
+  review:       {contour: engineering_quality_security, unblocks_downstream: false}
+  docs:         {contour: engineering_quality_security, unblocks_downstream: false}
+  delivery:     {contour: delivery_operations,          unblocks_downstream: false}
+  operations:   {contour: delivery_operations,          unblocks_downstream: false}
+  analytics:    {contour: analytics_learning,           unblocks_downstream: false}
+
+# ── Статусы элемента плана ────────────────────────────────────────────────────────────────────
+# ОБЪЯВЛЯЕМЫЕ — факты, которых код не знает. ВЫВОДИМЫЕ — считаются из графа зависимостей, статуса
+# WorkItem'а (гейты) и реестра активных работ. Объявленный выводимый статус не является ошибкой
+# файла, но является РАСХОЖДЕНИЕМ: он говорит то, что обязан решать граф, и это видно в выводе.
+statuses:
+  declarable: [todo, in_progress, done, dropped]
+  derived:    [ready, blocked, waiting]
+  derivation:
+    ready:   "все depends_on в done; нет незакрытого human_decision; нет конфликта write_scope с активной работой"
+    waiting: "хотя бы одна depends_on в in_progress (работа идёт, ждать её, а не чинить)"
+    blocked: "хотя бы одна depends_on НЕ в done и НЕ идёт, либо незакрытое human_decision, либо конфликт write_scope"
+  precedence: "факт из WorkItem/гейтов > объявленный факт человека > вывод из графа"
+
+# ── Отбор следующей работы ────────────────────────────────────────────────────────────────────
+# `next work` — НЕ верхняя карточка бэклога. Кандидат обязан пройти все условия допуска; каждое
+# невыполненное условие даёт ИМЕНОВАННУЮ причину (кандидат не исчезает молча).
+next_work:
+  admission:
+    - {id: deps_done,          check: "все depends_on в done"}
+    - {id: no_human_decision,  check: "нет незакрытого решения человека (`human_decision`)"}
+    - {id: capabilities_ready, check: "требуемые capability резолвятся в registry/capability-index.yaml"}
+    - {id: within_budget,      check: "оценка укладывается в объявленный бюджет; нет оценки -> unknown, НЕ блок"}
+    - {id: no_write_conflict,  check: "write_scope не пересекается с активной работой (active-work.yaml)"}
+  ranking:
+    # Детерминированно и объяснимо: у выбора обязана быть причина словами, а не «score 0.73».
+    - {id: unblocks_downstream, weight: 4, note: "сколько элементов ждёт этот (транзитивно) — снятие ожидания дороже всего"}
+    - {id: goal_priority,       weight: 3, note: "позиция цели в `goals` плана; цель вне ROADMAP -> вниз"}
+    - {id: product_value,       weight: 2, note: "объявленная ценность элемента (high/medium/low)"}
+    - {id: risk_reduction,      weight: 1, note: "research/architecture/security с потомками снимают риск раньше траты"}
+  tie_break: id      # равный счёт -> порядок по id, чтобы один и тот же план давал один ответ
+  parallel:
+    rule: "непересекающиеся write_scope И отсутствие зависимости между элементами"
+    note: >
+      То же правило, что у ParallelSafetyDecision внутри задачи (`validate_work_graph.py`), только
+      на уровне продукта. Совпадение не случайно: безопасность параллельности не зависит от
+      масштаба — пересечение области записи опасно и для двух пакетов, и для двух WorkItem'ов.
+
+# ── Связность контуров ────────────────────────────────────────────────────────────────────────
+# Что именно проверяет гейт `contour_consistency`.
+consistency:
+  gate: contour_consistency
+  enforcement: advisory
+  enforcement_note: >
+    Advisory осознанно: правило движения по roadmap — гейт становится blocking только после
+    обкатки на child-репозиториях. Перевод в blocking — отдельный срез по данным живых прогонов.
+  # ГЛАВНАЯ НАХОДКА ОПИРАЕТСЯ НА ФАКТ, А НЕ НА ЗАПОЛНЕННОСТЬ ПОЛЯ. Мутационное ревью показало цену
+  # обратного: пока находка требовала заявления в `affects`, на документированном пути (`run`
+  # создаёт id из хеша задачи, элемента плана с таким id нет) поле было пустым ВСЕГДА — и гейт
+  # структурно не мог дать не-`pass` ни на каком diff. Вопрос гейта не «верно ли автор заполнил
+  # поле», а «поспело ли описание продукта за кодом», и это проверяется без всякого заявления.
+  findings:
+    - id: source_of_truth_behind
+      severity: major
+      means: "сигнальные пути контура тронуты, а его источник истины не обновлён"
+      why: "код ушёл вперёд описания — ровно случай, ради которого модель нужна; проверяется ФАКТОМ"
+    - id: undeclared_change
+      severity: info
+      means: "контур затронут, но не заявлен в `affects`"
+      why: "учёт заявления полезен, но незаполненное поле не делает работу несогласованной"
+    - id: declared_not_changed
+      severity: info
+      means: "`affects` заявляет контур изменённым, но ни один его сигнальный путь не тронут"
+      why: "заявление шире изменения — учёт, а не провал"
+    - id: unknown_contour
+      severity: info
+      means: "у контура в этом репозитории нет сигнальных путей — состояние не определяется"
+      why: "признание вместо утверждения; доопределяется в `.ai-ops.yaml`, а не выдумывается китом"
+    - id: unknown_contour_declared
+      severity: major
+      means: "в `affects` (или в объявлении репозитория) назван контур, которого в модели нет"
+      why: >
+        Опечатка создаёт ЛОЖНУЮ уверенность, а не просто пропуск: `data_contract` вместо
+        `data_contracts` выглядит как заполненное поле, сверка идёт по известным контурам, лишний
+        ключ игнорируется — и автор считает, что связь объявлена. Поэтому major, а не info.
+  # ПРАВИЛО, НАЙДЕННОЕ ОБКАТКОЙ НА niti. Источник истины не должен СОВПАДАТЬ с сигналом изменения.
+  # Объявив `supabase/migrations/` истиной контура данных, замер получил 0 находок на 186 коммитах —
+  # и это был ложный ноль: любое изменение схемы трогает миграции, то есть «свою истину», и контур
+  # стал самоудовлетворяющимся. Гейт не мог сработать НИКОГДА. Истина — ОПИСАНИЕ (openapi, DataMap),
+  # сигнал — сам код и схемы. После сужения тот же замер дал 1 настоящую находку: миграция сменила
+  # схему, openapi не синхронизирован.
+  # Оговорка: у контуров, у которых нет отдельного описания (product_strategy — его правда и есть
+  # его документы), совпадение законно. Там ценность гейта в `undeclared_change`, а не в
+  # `declared_not_updated`, и это разные находки.
+  source_of_truth_is_not_the_signal: >
+    Объявляя `source_of_truth` в `.ai-ops.yaml`, не называйте истиной то, что и так меняется вместе
+    с кодом: описание контракта — истина, схема и миграции — сигнал. Иначе контур перестаёт быть
+    проверяемым, оставаясь зелёным.
+  never:
+    - "источник истины не совпадает с сигналом изменения (иначе контур самоудовлетворяющийся)"
+    - "главная находка не зависит от заполненности `affects` — иначе гейт беззуб на обычном пути"
+    - "unknown не сворачивается в not_changed"
+    - "not_changed не требует обновления документов (бюрократия «восемь документов на задачу» запрещена)"
+    - "контур без сигнальных путей не считается зелёным"

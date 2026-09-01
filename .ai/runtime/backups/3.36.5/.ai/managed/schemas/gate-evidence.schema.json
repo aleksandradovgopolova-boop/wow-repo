@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/gate-evidence.schema.json",
+  "title": "GateEvidence",
+  "description": "Вход gate_executor: gate_id -> доказательство исхода гейта. Заполняется прогонами валидаторов или вердиктами reviewer-стадий (--collect-evidence). Executor запрещает pass, чей required_evidence не подтверждён (provided/passing-checks).",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "properties": {
+      "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
+      "provided": { "type": "array", "items": { "type": "string" }, "description": "ключи required_evidence, подтверждённые для этого гейта" },
+      "checks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
+            "detail": { "type": "string" }
+          },
+          "required": ["id", "status"],
+          "additionalProperties": false
+        }
+      },
+      "evidence": { "type": "array", "items": { "type": "string" } },
+      "warnings": { "type": "array", "items": { "type": "string" } },
+      "blockers": { "type": "array", "items": { "type": "string" } },
+      "override": {
+        "type": "object",
+        "properties": {
+          "by": { "type": "string" },
+          "reason": { "type": "string" },
+          "at": { "type": "string" }
+        },
+        "required": ["by", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "required": ["status"],
+    "additionalProperties": false
+  }
+}

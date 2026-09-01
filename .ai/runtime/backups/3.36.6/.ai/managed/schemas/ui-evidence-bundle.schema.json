@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/ui-evidence-bundle.schema.json",
+  "title": "UIEvidenceBundle",
+  "description": "Машиночитаемое UI-evidence, собранное из ЛОКАЛЬНЫХ артефактов child-репо (Storybook static build + story index/manifests + interaction/a11y/visual/design-system результаты). Источник для ДЕТЕРМИНИРОВАННОГО закрытия части UI-гейтов (см. templates/quality/StorybookPolicy.md). БЕЗ внешнего SaaS/MCP: истина — manifests и test-artifacts. В v3.1.7 bundle только собирается и валидируется (shadow); enforcement — v3.1.8. Каждая секция несёт явный status (в т.ч. not_run/absent), чтобы 'нет артефакта' НЕ выдавалось за 'чисто'.",
+  "type": "object",
+  "required": ["schema_version", "kind", "commit_sha", "storybook", "state_coverage",
+               "interaction_tests", "accessibility", "visual_regression", "design_system"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "UIEvidenceBundle" },
+    "commit_sha": { "type": ["string", "null"], "description": "ревизия, к которой относится evidence" },
+    "generated_from": { "type": "array", "items": { "type": "string" },
+      "description": "provenance: локальные пути артефактов, из которых собран bundle" },
+    "affected_components": { "type": "array", "items": { "type": "string" } },
+    "affected_stories": { "type": "array", "items": { "type": "string" } },
+    "component_catalog": { "type": "array", "items": { "type": "string" },
+      "description": "v3.2.3: нормализованные имена ВСЕХ компонентов Storybook (каталог дизайн-системы) — для проверки component-reuse: новый компонент, чьё имя уже в каталоге, = дублирование (дефект)" },
+    "storybook": {
+      "type": "object",
+      "required": ["detected", "build_status"],
+      "additionalProperties": false,
+      "properties": {
+        "detected": { "type": "boolean" },
+        "build_status": { "enum": ["pass", "fail", "absent"] },
+        "version": { "type": ["string", "null"] },
+        "story_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "state_coverage": {
+      "type": "object",
+      "required": ["required", "states", "missing", "complete"],
+      "additionalProperties": false,
+      "description": "Покрытие UI-состояний историями (агрегат по затронутым компонентам). states: имя->покрыто; missing = required, не покрытые; complete = missing пуст.",
+      "properties": {
+        "required": { "type": "array", "items": { "type": "string" } },
+        "states": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "missing": { "type": "array", "items": { "type": "string" } },
+        "complete": { "type": "boolean" }
+      }
+    },
+    "interaction_tests": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["pass", "fail", "not_run"] },
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "accessibility": {
+      "type": "object",
+      "required": ["status", "blocking_violations"],
+      "additionalProperties": false,
+      "description": "Автоматический a11y (axe-класс). blocking_violations — critical/serious. Семантическая часть ревью остаётся за ревьюером (hybrid).",
+      "properties": {
+        "status": { "enum": ["pass", "fail", "not_run"] },
+        "blocking_violations": { "type": "integer", "minimum": 0 },
+        "total_violations": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "visual_regression": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["pass", "fail", "not_run"] },
+        "changed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "design_system": {
+      "type": "object",
+      "required": ["status", "reused_components", "new_components", "new_components_justified"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["pass", "fail", "not_run"] },
+        "reused_components": { "type": "array", "items": { "type": "string" } },
+        "new_components": { "type": "array", "items": { "type": "string" } },
+        "new_components_justified": { "type": "boolean" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "UIEvidenceBundle",
+      "commit_sha": "abc1234",
+      "generated_from": ["storybook-static/index.json", ".ai/ui-evidence/a11y.json"],
+      "affected_components": ["Components/MetricCard"],
+      "affected_stories": ["components-metriccard--default", "components-metriccard--loading",
+                           "components-metriccard--error"],
+      "storybook": { "detected": true, "build_status": "pass", "version": "8.1.0", "story_count": 3 },
+      "state_coverage": {
+        "required": ["default", "loading", "empty", "error"],
+        "states": { "default": true, "loading": true, "empty": false, "error": true, "restricted": false },
+        "missing": ["empty"], "complete": false
+      },
+      "interaction_tests": { "status": "pass", "total": 5, "passed": 5 },
+      "accessibility": { "status": "pass", "blocking_violations": 0, "total_violations": 2 },
+      "visual_regression": { "status": "pass", "changed": 0 },
+      "design_system": {
+        "status": "pass", "reused_components": ["MetricCard"],
+        "new_components": ["DashboardViewport"], "new_components_justified": true
+      }
+    }
+  ]
+}

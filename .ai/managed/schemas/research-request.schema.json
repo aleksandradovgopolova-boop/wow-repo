@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/research-request.schema.json",
+  "title": "ResearchRequest",
+  "description": "research.request — входной контракт research-модуля. Исследование запрашивается не «вопросом в интернет», а решением, которое оно должно поддержать (decision-first). В child лежит в .research/requests/RR-*.yaml.",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "research.request" },
+    "id": { "type": "string", "pattern": "^RR-\\d{3,}$" },
+    "title": { "type": "string", "minLength": 3 },
+    "requested_by": {
+      "type": "object",
+      "description": "Кто запросил: система/слой и (опционально) агент. Research не импортирует их доменные сущности — только строковые идентификаторы.",
+      "properties": {
+        "system": { "type": "string", "description": "например ai_ops, business_os, human" },
+        "layer": { "type": "string", "description": "например product, technology" },
+        "agent": { "type": "string" }
+      },
+      "required": ["system"],
+      "additionalProperties": false
+    },
+    "decision_to_support": {
+      "type": "object",
+      "description": "Решение, ради которого делается исследование. Обязательное поле — ключевой принцип модуля: turn question into decision evidence.",
+      "properties": {
+        "description": { "type": "string", "minLength": 10 },
+        "decision_maker": { "type": "string" }
+      },
+      "required": ["description"],
+      "additionalProperties": false
+    },
+    "questions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 5 },
+      "minItems": 1
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "workflow_hint": {
+      "type": "string",
+      "enum": ["quick", "deep", "comparison"],
+      "description": "Ожидаемый режим исполнения; маршрутизацию всё равно решает RESEARCH workflow."
+    },
+    "memory_check": {
+      "type": "object",
+      "description": "Обязательный шаг «проверь память до поиска»: что уже известно по вопросу из .research/memory/ и прошлых DecisionPackage.",
+      "properties": {
+        "performed": { "type": "boolean" },
+        "related_requests": { "type": "array", "items": { "type": "string", "pattern": "^RR-\\d{3,}$" } },
+        "related_decisions": { "type": "array", "items": { "type": "string", "pattern": "^DP-\\d{3,}$" } },
+        "summary": { "type": "string" }
+      },
+      "required": ["performed"],
+      "additionalProperties": false
+    },
+    "required_confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Ординальная шкала, не число: high требует ≥3 независимых источников (source_policy) и стороннего ревью."
+    },
+    "deadline": { "type": "string", "format": "date" },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "planned", "in_progress", "answered", "archived"]
+    },
+    "created_at": { "type": "string", "format": "date" }
+  },
+  "required": ["schema_version", "kind", "id", "title", "requested_by", "decision_to_support", "questions", "required_confidence", "status"],
+  "additionalProperties": false,
+  "x-no-secrets": "Только формулировки вопросов и ссылки-идентификаторы; без ключей и учётных данных.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "kind": "research.request",
+      "id": "RR-001",
+      "title": "Выбор моделей для генерации Personal Cosmic Book",
+      "requested_by": { "system": "ai_ops", "layer": "technology" },
+      "decision_to_support": { "description": "Выбрать основную модель генерации длинного русскоязычного текста книги" },
+      "questions": [
+        "Как DeepSeek и Kimi отличаются по качеству длинного русскоязычного текста?",
+        "Какова стоимость генерации одной книги на каждой модели?"
+      ],
+      "constraints": ["low_cost", "russian_language", "long_context"],
+      "workflow_hint": "comparison",
+      "memory_check": { "performed": true, "related_requests": [], "related_decisions": [], "summary": "Память пуста: первый запрос модуля." },
+      "required_confidence": "medium",
+      "deadline": "2026-08-01",
+      "status": "planned",
+      "created_at": "2026-07-22"
+    }
+  ]
+}

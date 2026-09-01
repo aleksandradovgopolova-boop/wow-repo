@@ -1,0 +1,25 @@
+# rules/quality/architecture-review.yaml — чек-лист независимой архитектурной проверки (v3.15.0).
+# Дополняет гейт architecture_review и агента architecture-reviewer. Гейт обязателен ТОЛЬКО при
+# архитектурных сигналах (required_when). Reviewer read-only, judge != writer. Опирается на
+# детерминированный снимок tools/architecture_baseline.py (12 осей) и оценивает КАЧЕСТВО решений,
+# а не только факты. Находки ссылаются на id. Стек-агностично.
+schema_version: 1
+kind: quality-checklist
+id: architecture-review
+used_by: [architecture-reviewer]
+baseline_input: "ai-ops audit architecture (tools/architecture_baseline.py) на проверяемом SHA"
+checks:
+  - {id: boundaries-respected, check: "Изменение уважает границы модулей/слоёв; нет протечки ответственности через границу (cross_boundary_change обоснован)", severity_default: major}
+  - {id: api-compat, check: "Совместимость API: breaking-change явно помечен, версия/миграция потребителей описана; иначе — блок", severity_default: critical}
+  - {id: data-migration-safe, check: "Миграции данных обратимы или имеют план отката; нет разрушающей миграции без бэкапа/окна; целостность сохранена", severity_default: critical}
+  - {id: new-service-justified, check: "Новый сервис/компонент оправдан (не дублирует существующий); объявлены владелец, границы, контракт, деплой", severity_default: major}
+  - {id: integration-contract, check: "Новая интеграция: контракт, режим отказа (timeout/retry/circuit), деградация при недоступности провайдера описаны", severity_default: major}
+  - {id: failure-modes, check: "Режимы отказа продуманы: что при сбое зависимости/сети/данных; нет тихого fail-open на критичном пути", severity_default: major}
+  - {id: deployment-impact, check: "Влияние на деплой оценено (deployment_change): миграции/переменные/порядок раскатки/откат; downstream CI не сломан", severity_default: major}
+  - {id: security-boundary, check: "Границы безопасности не ослаблены: authn/authz на новой поверхности, валидация ввода, секреты только через env/ref", severity_default: critical}
+  - {id: observability, check: "Наблюдаемость новой поверхности: логирование ключевых путей, метрики/трейсинг критичных операций", severity_default: minor}
+  - {id: adr-recorded, check: "Значимое/необратимое архитектурное решение зафиксировано (ADR/реестр решений); дрейф от прежних решений назван явно", severity_default: major}
+  - {id: baseline-drift, check: "Сверка с прежним architecture-baseline: непреднамеренные изменения границ/зависимостей/поверхности отмечены", severity_default: minor}
+verdict:
+  pass_when: "нет critical/major находок без принятого решения; breaking/migration/security-пункты закрыты или явно одобрены"
+  block_when: "есть неразрешённый critical (api-compat/data-migration/security-boundary) — независимо от воли писателя"

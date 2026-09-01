@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/regression-case.schema.json",
+  "title": "RegressionCase",
+  "description": "RegressionCase (RC) — v3.5 Observability, Regression Corpus & Evolution Loops. Постоянная запись находки/дефекта с таксономией слоя и привязкой к regression-тесту, чтобы починенное не регрессировало, а известные ограничения были явны. Честность: status=fixed требует fixed_version И regression_test (починка без охраняющего теста — не починка).",
+  "type": "object",
+  "required": ["schema_version", "kind", "failure_id", "title", "trigger", "expected_behavior",
+               "observed_behavior", "affected_layer", "status", "severity",
+               "first_seen_version", "regression_test"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "RegressionCase" },
+    "failure_id": { "type": "string", "pattern": "^RC-[0-9]{3,}$" },
+    "title": { "type": "string", "minLength": 1 },
+    "trigger": { "type": "string", "minLength": 1 },
+    "expected_behavior": { "type": "string", "minLength": 1 },
+    "observed_behavior": { "type": "string", "minLength": 1 },
+    "affected_layer": { "type": "string",
+      "enum": ["engine", "provider", "model", "reviewer", "policy", "context", "environment",
+               "security", "delivery", "fixture", "process"] },
+    "status": { "type": "string", "enum": ["open", "fixed", "mitigated", "wontfix"] },
+    "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "first_seen_version": { "type": "string", "minLength": 1 },
+    "fixed_version": { "type": ["string", "null"] },
+    "regression_test": { "type": "string", "minLength": 1,
+      "description": "чем охраняется (selftest/детест/дисциплина); для fixed обязан быть реальным тестом" },
+    "occurrences": { "type": "integer", "minimum": 1,
+      "description": "сколько раз класс проявлялся (default 1). >=2 -> повтор: рекомендацию мало (Вывод 3)" },
+    "on_repeat": { "type": "string", "enum": ["none", "escalate_to_structural"],
+      "description": "Вывод 3 «дефектов сессии»: при повторе класса вывод — не повтор рекомендации, а перевод в КОНСТРУКЦИЮ (единственный путь + запрет обхода линтером), которую забыть нельзя" },
+    "structural_fix": { "type": "string", "minLength": 1,
+      "description": "какая КОНСТРУКЦИЯ заменила рекомендацию (напр. единственная функция + запрет прямого вызова линтером). Обязателен при on_repeat=escalate_to_structural" }
+  },
+  "examples": [
+    {
+      "schema_version": 1, "kind": "RegressionCase", "failure_id": "RC-001",
+      "title": "authorization_idol: regex без границ слова матчил 'acl' в 'dataclass'/'oracle'",
+      "trigger": "security-паттерн permission|role|acl|... применялся к безобидной pricing-функции",
+      "expected_behavior": "флагуются только реальные auth/permission-места",
+      "observed_behavior": "легитимная минимальная правка блокировалась security=needs_review (false-positive)",
+      "affected_layer": "security", "status": "fixed", "severity": "high",
+      "first_seen_version": "3.0.18", "fixed_version": "3.0.19",
+      "regression_test": "security_pack selftest: \\b(?:...)\\w* + регрессионный деттест на dataclass"
+    }
+  ]
+}

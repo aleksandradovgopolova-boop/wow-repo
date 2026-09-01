@@ -1,0 +1,176 @@
+schema_version: 1
+kind: security-domains
+# Security Pack (v2.101, эпик Context Engineering, этап 5). Security review — не один общий вердикт
+# модели, а набор ПРИМЕНИМЫХ доменов с доказуемым evidence. Проверяются только применимые к
+# изменению домены (frontend-only не запускает database audit, но проверяет XSS/secrets).
+#
+# Правило evidence (жёсткое): security-домен нельзя закрыть фразой модели «уязвимостей нет».
+# Допустимые источники: scanner_result | dependency_diff | secret_scan | test_result |
+# policy_check | diff_review | security_reviewer | human_approval.
+#
+# applicability.signals — сигналы задачи; applicability.file_patterns — regex по изменённым файлам
+# (любое совпадение делает домен применимым). deterministic_checks — что кит может проверить сам
+# (см. tools/security_scan.py / security_pack.py). Остальное — вход для судьи/человека.
+
+allowed_evidence_sources: [scanner_result, dependency_diff, secret_scan, injection_scan, test_result,
+                           policy_check, diff_review, security_reviewer, human_approval]
+
+domains:
+  - id: authentication
+    applicability:
+      signals: [auth_change]
+      file_patterns: ["(?i)auth|login|logout|session|jwt|oauth|password|credential"]
+    deterministic_checks: [secret_scan]
+    reviewer_checklist: ["сессии инвалидируются при logout", "пароли хешируются (bcrypt/argon2)",
+                         "нет хардкод-кредов", "токены с TTL и ротацией"]
+    required_evidence: [secret_scan, security_reviewer]
+    severity_policy: {default: high}
+    blocking_conditions: ["найдены секреты/креды в коде", "плоское хранение паролей"]
+    human_approval_conditions: ["изменение механизма аутентификации"]
+    remediation_template: {summary: "убрать креды из кода, вынести в secret store; хешировать пароли"}
+
+  - id: authorization_idol
+    applicability:
+      signals: [auth_change, multi_tenant]
+      # v3.0.19 (finding живой квалификации): БАРЬЕР слова \b — иначе 'acl' матчил подстроку в
+      # 'dataclass'/'oracle'/'miracle' -> ложный needs_review на безобидном коде. \b...\w* сохраняет
+      # реальные auth-идентификаторы (role/roles, access/accessible, authorize/authorization, can_edit).
+      file_patterns: ['(?i)\b(?:permission|role|acl|access|authoriz|owner|tenant|is_admin|can_)\w*']
+    deterministic_checks: []
+    reviewer_checklist: ["проверка владельца ресурса перед доступом (нет IDOR)",
+                         "серверная проверка прав, не только UI", "default deny"]
+    required_evidence: [security_reviewer, diff_review]
+    severity_policy: {default: high}
+    blocking_conditions: ["доступ к объекту без проверки владельца/прав"]
+    human_approval_conditions: ["расширение прав/ролей"]
+    remediation_template: {summary: "добавить серверную проверку прав и владельца ресурса (object-level)"}
+
+  - id: input_validation
+    applicability:
+      signals: [handles_user_input, user_facing_change]
+      file_patterns: ["(?i)request|handler|controller|route|endpoint|param|query|body|form|input"]
+    deterministic_checks: [injection_scan]
+    reviewer_checklist: ["валидация и санитизация ввода", "нет конкатенации SQL",
+                         "экранирование вывода (XSS)", "параметризованные запросы"]
+    required_evidence: [injection_scan, security_reviewer]
+    severity_policy: {default: high}
+    blocking_conditions: ["SQL из f-string/конкатенации", "eval/exec на пользовательском вводе",
+                          "innerHTML/dangerouslySetInnerHTML без санитизации"]
+    human_approval_conditions: []
+    remediation_template: {summary: "параметризованные запросы; валидация схемой; экранирование вывода"}
+
+  - id: secrets
+    applicability:
+      signals: []
+      file_patterns: [".*"]
+    deterministic_checks: [secret_scan]
+    reviewer_checklist: ["нет секретов в коде/конфиге", "секреты из env/secret store"]
+    required_evidence: [secret_scan]
+    severity_policy: {default: critical}
+    blocking_conditions: ["любой обнаруженный секрет в изменениях"]
+    human_approval_conditions: ["изменение границы секретов (secret_boundary)"]
+    remediation_template: {summary: "удалить и РОТИРОВАТЬ секрет; хранить в secret store; env-инъекция"}
+
+  - id: dependencies
+    applicability:
+      signals: []
+      file_patterns: ["(?i)package\\.json|requirements\\.txt|go\\.mod|pyproject\\.toml|Cargo\\.toml|package-lock|yarn\\.lock|pnpm-lock"]
+    deterministic_checks: [dependency_diff]
+    reviewer_checklist: ["новые зависимости оправданы и одобрены", "нет известных CVE",
+                         "источник пакета доверенный"]
+    required_evidence: [dependency_diff]
+    severity_policy: {default: medium}
+    blocking_conditions: ["добавлена зависимость с известной critical/high CVE"]
+    human_approval_conditions: ["добавление новой прямой зависимости"]
+    remediation_template: {summary: "обосновать/одобрить зависимость; проверить CVE; запинить версию"}
+
+  - id: rate_limiting
+    applicability:
+      signals: [api_change, network_change]
+      file_patterns: ["(?i)endpoint|route|api|handler|controller"]
+    deterministic_checks: []
+    reviewer_checklist: ["публичные эндпоинты имеют rate limiting", "защита от brute force/abuse"]
+    required_evidence: [security_reviewer]
+    severity_policy: {default: medium}
+    blocking_conditions: []
+    human_approval_conditions: []
+    remediation_template: {summary: "добавить rate limiting/throttling на публичные эндпоинты"}
+
+  - id: file_upload
+    applicability:
+      signals: []
+      file_patterns: ["(?i)upload|multipart|file.*write|attachment|blob"]
+    deterministic_checks: []
+    reviewer_checklist: ["валидация типа/размера файла", "нет исполнения загруженного",
+                         "хранение вне webroot", "антивирус/санитизация при необходимости"]
+    required_evidence: [security_reviewer]
+    severity_policy: {default: high}
+    blocking_conditions: ["загрузка без валидации типа/размера"]
+    human_approval_conditions: []
+    remediation_template: {summary: "валидировать тип/размер; хранить изолированно; не исполнять"}
+
+  - id: network_ssrf
+    applicability:
+      signals: [network_change]
+      file_patterns: ["(?i)fetch|axios|http[s]?[._]|urllib|requests\\.|curl|url\\s*="]
+    deterministic_checks: [injection_scan]
+    reviewer_checklist: ["нет запроса по пользовательскому URL без allowlist (SSRF)",
+                         "TLS-верификация не отключена", "таймауты на внешние вызовы"]
+    required_evidence: [security_reviewer, diff_review]
+    severity_policy: {default: high}
+    blocking_conditions: ["запрос по неограниченному пользовательскому URL", "отключена TLS-верификация"]
+    human_approval_conditions: []
+    remediation_template: {summary: "allowlist хостов для исходящих запросов; не отключать TLS-верификацию"}
+
+  - id: logging_monitoring
+    applicability:
+      signals: [observability, auth_change]
+      file_patterns: ["(?i)log|logger|audit|metric|monitor"]
+    deterministic_checks: [secret_scan]
+    reviewer_checklist: ["нет секретов/PII в логах", "события безопасности логируются",
+                         "логи не дают инъекцию (log forging)"]
+    required_evidence: [secret_scan, diff_review]
+    severity_policy: {default: medium}
+    blocking_conditions: ["секреты/PII пишутся в лог"]
+    human_approval_conditions: []
+    remediation_template: {summary: "не логировать секреты/PII; структурные логи; экранирование"}
+
+  - id: deployment_config
+    applicability:
+      signals: [deploy_change]
+      file_patterns: ["(?i)dockerfile|docker-compose|\\.github/workflows|k8s|helm|terraform|\\.env|deploy"]
+    deterministic_checks: [secret_scan]
+    reviewer_checklist: ["нет секретов в конфиге/CI", "least-privilege для рантайма",
+                         "образ не root", "нет debug/insecure флагов в проде"]
+    required_evidence: [secret_scan, diff_review]
+    severity_policy: {default: high}
+    blocking_conditions: ["секреты в конфиге/CI", "рантайм под root без нужды"]
+    human_approval_conditions: ["изменение прод-конфигурации/прав деплоя"]
+    remediation_template: {summary: "секреты — в secret store; least-privilege; non-root образ"}
+
+  - id: ai_prompt_injection
+    applicability:
+      signals: [ai_component]
+      file_patterns: ["(?i)prompt|llm|openai|anthropic|completion|system_message|agent"]
+    deterministic_checks: [injection_scan]
+    reviewer_checklist: ["данные из репо/пользователя не переопределяют системные инструкции",
+                         "разделение доверенных инструкций и недоверенных данных",
+                         "ограничение инструментов модели по политике"]
+    required_evidence: [security_reviewer]
+    severity_policy: {default: high}
+    blocking_conditions: ["недоверенный ввод склеивается с системным промптом без изоляции"]
+    human_approval_conditions: ["расширение доступа инструментов модели"]
+    remediation_template: {summary: "изолировать недоверенные данные от инструкций; ограничить инструменты"}
+
+  - id: data_isolation
+    applicability:
+      signals: [multi_tenant]
+      file_patterns: ["(?i)tenant|org_id|account_id|workspace|isolation|scope.*query"]
+    deterministic_checks: []
+    reviewer_checklist: ["запросы фильтруются по tenant/scope", "нет утечки между арендаторами",
+                         "тесты на изоляцию данных"]
+    required_evidence: [security_reviewer, test_result]
+    severity_policy: {default: critical}
+    blocking_conditions: ["запрос без фильтра по tenant/scope в multi-tenant"]
+    human_approval_conditions: ["изменение границы изоляции арендаторов"]
+    remediation_template: {summary: "фильтровать все запросы по tenant/scope; тест на изоляцию"}

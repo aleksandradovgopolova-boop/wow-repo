@@ -1,0 +1,25 @@
+# rules/design/responsive-baseline.yaml — Responsive by Default (v2.6).
+# Принцип: человек не думает об адаптивности — процесс думает за него.
+# Целевые устройства определяются ОДИН РАЗ на продукт: context/product/DesignSystem.md
+# -> раздел Device matrix; все проверки ниже идут против этой матрицы.
+# Используется ux-reviewer'ом (гейт ux_review, blocking) и ui-ux-designer'ом при
+# проектировании; детализирует пункт `responsive` из ux-heuristics.yaml.
+schema_version: 1
+kind: design-checklist
+id: responsive-baseline
+used_by: [ux-reviewer, ui-ux-designer]
+gate: ux_review
+source_of_truth: context/product/DesignSystem.md#device-matrix
+items:
+  - {id: device-matrix-defined, check: "Матрица целевых устройств определена в DesignSystem (классы устройств + breakpoints); фича не может ссылаться на несуществующую матрицу", severity_default: critical}
+  - {id: mobile-first, check: "Layout проектируется mobile-first: базовый поток — самый узкий класс матрицы, расширения — через breakpoints", severity_default: major}
+  - {id: fluid-layout, check: "Сетка/контейнеры — относительные (fr/%, flex/grid, clamp), фиксированные ширины только осознанно; контент не вызывает горизонтальный скролл страницы", severity_default: critical}
+  - {id: breakpoints-from-tokens, check: "Breakpoints берутся из токенов DesignSystem, не задаются ad-hoc в компонентах", severity_default: major}
+  - {id: touch-targets, check: "Интерактивные цели >= 44x44 CSS px на touch-классах матрицы; жесты имеют кнопочную альтернативу", severity_default: critical}
+  - {id: input-modality, check: "Функциональность не зависит от hover/right-click: touch и клавиатура дают тот же результат", severity_default: critical}
+  - {id: text-scaling, check: "Типографика масштабируется (rem/clamp); при 200% зума и системных крупных шрифтах ничего не ломается", severity_default: major}
+  - {id: media-responsive, check: "Изображения/медиа адаптивны (max-width, srcset/sizes или аналог); тяжёлые ресурсы не грузятся на узких классах без нужды", severity_default: major}
+  - {id: overflow-content, check: "Длинный контент (таблицы, код, диаграммы) скроллится внутри своего контейнера, а не ломает страницу", severity_default: major}
+  - {id: safe-areas-orientation, check: "Safe areas (вырезы, системные бары) учтены; поворот экрана не теряет состояние и не ломает layout", severity_default: minor}
+  - {id: states-on-matrix, check: "Состояния Empty/Loading/Error/Success проверены на всех классах матрицы, не только на десктопе", severity_default: major}
+  - {id: e2e-viewport-matrix, check: "e2e/скриншотные проверки гоняются на viewport-матрице из DesignSystem (Playwright projects по классам устройств) — регрессии адаптивности ловит CI, не глаз; механизм — skill e2e-browser-testing", severity_default: major}

@@ -1,0 +1,39 @@
+# ai-ops-validate.yml — child-CI: валидация установки AI Ops без protected-пина.
+# Ставится `ai-ops init` в .github/workflows/ (или скопируйте вручную).
+#
+# Пин версии kit = installed_version из .ai-ops.yaml (НЕ хардкод в отдельной строке
+# protected-файла). Один источник версии, который и так едет через PR обновления
+# (update_policy: pr, .ai-ops.yaml — не protected). Клонируем kit по тегу
+# v<installed_version> и прогоняем child-валидатор.
+#
+# Почему так (findings обкатки v2.34): раньше пин жил отдельной строкой в protected
+# ci.yml -> каждое `ai-ops update` требовало ручной правки protected-файла ради одной
+# строки. Избыточная защита: пин и так меняется в .ai-ops.yaml при апдейте. Убираем
+# трение, версия — из единственного источника.
+#
+# Требует, чтобы релизы kit были тегированы (v2.34.0 и т.п.) — release.yml это делает.
+name: ai-ops-validate
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+      - name: Клонировать kit на пин = installed_version (.ai-ops.yaml)
+        run: |
+          SRC=$(python3 -c "import yaml;s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source'];print(s[4:] if s.startswith('git+') else s)")
+          VER=$(python3 -c "import yaml;print(yaml.safe_load(open('.ai-ops.yaml'))['parent']['installed_version'])")
+          echo "kit pin = v$VER (из .ai-ops.yaml, не protected)"
+          git clone --depth 1 --branch "v$VER" "$SRC" /tmp/ai-ops-kit \
+            || { echo "тег v$VER не найден в parent — релиз kit не тегирован?"; exit 1; }
+      - name: Child-валидатор (версии согласованы, managed-слой цел)
+        run: python3 /tmp/ai-ops-kit/validation/validate_ai_ops_child.py

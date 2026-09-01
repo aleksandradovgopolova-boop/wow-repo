@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ai-ops/feature-blueprint",
+  "title": "Feature Blueprint",
+  "description": "Паспорт функции: все артефакты жизненного цикла в одной структуре. Валидатор: validation/validate_feature_blueprint.py. Каталог функции: features/<id>/blueprint.yaml + подкаталоги по стадиям.",
+  "type": "object",
+  "required": ["schema_version", "kind", "feature", "artifacts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "feature-blueprint"},
+    "feature": {
+      "type": "object",
+      "required": ["id", "name", "status", "current_stage"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "name": {"type": "string"},
+        "owner": {"type": "string"},
+        "status": {"enum": ["planned", "in-progress", "released", "retired"]},
+        "profile": {"enum": ["lean", "full"], "description": "Скоуп стадий (v2.3): full — все 11; lean (прототип/MVP) — discovery/definition/delivery/analytics/retrospective. По умолчанию full. Валидатор требует артефакты только для достигнутых стадий профиля; стадии вне профиля можно добавлять в artifacts точечно."},
+        "current_stage": {
+          "enum": ["discovery", "definition", "ux", "architecture", "delivery",
+                   "analytics", "documentation", "release", "monitoring", "adoption", "retrospective"]
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "description": "Связи с другими сущностями (предвестник Knowledge Graph, Ф4).",
+      "properties": {
+        "goal": {"type": "string"},
+        "initiative": {"type": "string"},
+        "epic": {"type": "string"},
+        "stories": {"type": "array", "items": {"type": "string"}},
+        "experiments": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "Ключ — стадия жизненного цикла; значение — список артефактов. Пути относительны каталогу функции. Для стадий не позже current_stage файлы обязаны существовать.",
+      "propertyNames": {
+        "enum": ["discovery", "definition", "ux", "architecture", "delivery",
+                 "analytics", "documentation", "release", "monitoring", "adoption", "retrospective"]
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["path"],
+          "properties": {
+            "path": {"type": "string"},
+            "template": {"type": "string", "description": "Шаблон из templates/, по которому создан артефакт"},
+            "status": {"enum": ["planned", "draft", "done", "declined"]},
+            "declined_reason": {"type": "string", "description": "Обязательно при status=declined"}
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# rules/design/design-system-checklist.yaml — машиночитаемый чек-лист дизайн-системы (Ф2 roadmap, v1.4).
+# Используется design-system-reviewer'ом. Гейт: design_system_usage.
+schema_version: 1
+kind: design-checklist
+id: design-system-checklist
+used_by: [design-system-reviewer]
+gate: design_system_usage
+items:
+  - {id: components-reuse, check: "Компоненты берутся из дизайн-системы проекта; нет самодельных дублей штатных компонентов", severity_default: critical}
+  - {id: tokens-only, check: "Цвета, типографика, отступы, радиусы — только через токены; нет ad-hoc значений", severity_default: major}
+  - {id: variants-standard, check: "Используются штатные вариации/размеры/состояния компонентов, а не переопределённые", severity_default: major}
+  - {id: new-component-justified, check: "Новый компонент: зафиксировано, почему существующие не подошли; согласовано добавление в систему", severity_default: critical}
+  - {id: icons-standard, check: "Иконки — из библиотеки системы, единый стиль и размерная сетка", severity_default: minor}
+  - {id: no-system-fallback, check: "Если дизайн-системы в проекте нет — это зафиксировано явно, проверяется внутренняя консистентность экранов", severity_default: major}

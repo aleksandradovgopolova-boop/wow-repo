@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ai-ops/knowledge-graph",
+  "title": "Knowledge Graph",
+  "description": "Граф сущностей проекта (child-репозиторий: knowledge/graph.yaml). Типы и допустимые связи — registry/entities.yaml; валидатор — validation/validate_knowledge_graph.py.",
+  "type": "object",
+  "required": ["schema_version", "kind", "nodes"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "knowledge-graph"},
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "type": {"type": "string", "description": "Тип из registry/entities.yaml"},
+          "title": {"type": "string"},
+          "blueprint": {"type": "string", "description": "Для type=feature: путь к features/<id>/blueprint.yaml"},
+          "ref": {"type": "string", "description": "Путь к артефакту-первоисточнику узла"}
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "type", "to"],
+        "properties": {
+          "from": {"type": "string"},
+          "type": {"type": "string", "description": "Тип связи из registry/entities.yaml relations"},
+          "to": {"type": "string"}
+        }
+      }
+    }
+  }
+}

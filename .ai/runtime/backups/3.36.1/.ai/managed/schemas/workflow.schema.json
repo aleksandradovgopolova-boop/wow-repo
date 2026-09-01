@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-ops-kit.dev/schemas/workflow.schema.json",
+  "title": "Workflow",
+  "description": "Declarative runtime-independent workflow contract. No provider-specific logic (principle 12.6).",
+  "type": "object",
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string" },
+    "contract_version": { "type": "integer" },
+    "purpose": { "type": "string" },
+    "layer": { "type": "string", "enum": ["core", "preset"] },
+    "preset": { "type": ["string", "null"] },
+    "selection_criteria": { "type": "object", "additionalProperties": true },
+    "disqualifying_conditions": { "type": "array", "items": { "type": "string" } },
+    "required_artifacts": { "type": "array", "items": { "type": "string" } },
+    "optional_artifacts": { "type": "array", "items": { "type": "string" } },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "owner": { "type": "string" },
+          "writer": { "type": "string" },
+          "review_mode": { "type": "string", "enum": ["writer", "read-only"] },
+          "preset": { "type": "string" },
+          "uses_skills": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "owner"],
+        "additionalProperties": true
+      }
+    },
+    "quality_gates": { "type": "array", "items": { "type": "string" } },
+    "required_capabilities": { "type": "array", "items": { "type": "string" } },
+    "preferred_execution_mode": { "type": "string", "enum": ["native", "orchestrated", "sequential", "manual-assisted"] },
+    "minimum_execution_mode": { "type": "string", "enum": ["native", "orchestrated", "sequential", "manual-assisted"] },
+    "approval_policy": { "type": "object", "additionalProperties": true },
+    "archive_criteria": { "type": "string" },
+    "resumability": { "type": "string" },
+    "learning_output": { "type": "string", "enum": ["none", "optional", "recommended", "required"] }
+  },
+  "required": ["schema_version", "id", "purpose", "stages", "quality_gates", "preferred_execution_mode", "minimum_execution_mode"],
+  "additionalProperties": true,
+  "x-extensibility": "New workflow types are new documents; the adapter maps stages to runtime execution.",
+  "examples": [
+    {
+      "schema_version": 1,
+      "id": "QUICK",
+      "purpose": "Small low-risk local change",
+      "layer": "core",
+      "preset": null,
+      "selection_criteria": { "size": "small", "risk": "low" },
+      "disqualifying_conditions": ["risk in [high, critical]"],
+      "required_artifacts": ["change/intake.json", "change/execution/VerificationEvidence.md"],
+      "optional_artifacts": ["change/learning/LearningPatch.md"],
+      "stages": [{ "id": "intake", "owner": "intake-classifier", "writer": "intake-classifier" }],
+      "quality_gates": ["intake_completeness", "implementation_verification"],
+      "required_capabilities": ["file_read", "file_write"],
+      "preferred_execution_mode": "native",
+      "minimum_execution_mode": "sequential",
+      "approval_policy": { "human_approval_required": false },
+      "archive_criteria": "verification gate pass",
+      "resumability": "TaskState.yaml",
+      "learning_output": "optional"
+    }
+  ]
+}
