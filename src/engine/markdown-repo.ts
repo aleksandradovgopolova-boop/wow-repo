@@ -38,6 +38,8 @@ export interface MdPage {
   order: number;
   /** Rendered HTML of the Markdown body (frontmatter stripped). */
   bodyHtml: string;
+  /** Estimated reading time in whole minutes, from the body word count. */
+  readingMinutes: number;
   visibility: 'public' | 'internal';
   /** Repo-relative source file, for a "view source" affordance. */
   source: string;
@@ -75,6 +77,28 @@ function splitFrontmatter(raw: string): { data: Frontmatter; body: string } {
 function firstHeading(body: string): string | undefined {
   const m = body.match(/^#\s+(.+)$/m);
   return m ? m[1].trim() : undefined;
+}
+
+/** Words a reader gets through in a minute — the common estimate for prose. */
+const WORDS_PER_MINUTE = 200;
+
+/**
+ * Estimate reading time in whole minutes from a Markdown body. The heaviest
+ * non-prose syntax is removed first (fenced/inline code, link and image URLs,
+ * stray HTML, heading/list/emphasis markers) so the count tracks what a reader
+ * actually reads. Never reports less than one minute for a page with any words,
+ * and 0 for an empty body so callers can hide the label.
+ */
+export function estimateReadingMinutes(body: string): number {
+  const text = body
+    .replace(/```[\s\S]*?```/g, ' ') // fenced code blocks
+    .replace(/`[^`]*`/g, ' ') // inline code
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // links/images → their label
+    .replace(/<[^>]+>/g, ' ') // stray HTML tags
+    .replace(/[#>*_~`-]+/g, ' '); // heading/list/emphasis markers
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (words === 0) return 0;
+  return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
 }
 
 /** Turn "what-is-garden" into "what-is-garden" (kept as slug). */
@@ -170,6 +194,7 @@ export function loadMarkdownRepo(contentRoot: string): MdRepo {
       section,
       order: data.wowrepo?.order ?? 999,
       bodyHtml: rewriteMdLinks(rendered, dirOfUrl(urlPath), base),
+      readingMinutes: estimateReadingMinutes(bodyNoTitle),
       visibility: data.wowrepo?.visibility ?? 'public',
       source: file.replace(contentRoot, '').replace(/^\//, ''),
       updated: data.updated,
