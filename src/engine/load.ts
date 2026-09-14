@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { validatePagePlan, type PagePlan } from './page-plan.ts';
+import { resolveLastUpdated, type LastUpdated } from './last-updated.ts';
 
 /**
  * The engine ingests a *repository* and turns it into resolved pages. A
@@ -75,6 +76,10 @@ export interface ResolvedRepo {
    *  Absent on the raw, unprojected repo (which behaves as a single public
    *  site at the root, exactly as before). */
   viewer?: Viewer;
+  /** When the ingested content was last updated, resolved deterministically at
+   *  build time (see `resolveLastUpdated`). Absent when no deterministic source
+   *  is available; the footer then omits the line rather than guessing. */
+  lastUpdated?: LastUpdated;
 }
 
 /** Absolute path to the repository the engine ingests. Defaults to the Garden
@@ -204,7 +209,7 @@ export function resolveForViewer(
     };
   });
 
-  return { site: repo.site, pages, viewer };
+  return { site: repo.site, pages, viewer, lastUpdated: repo.lastUpdated };
 }
 
 /** Build an href for a page path inside the current projection. On the raw repo
@@ -270,7 +275,7 @@ export function loadRepo(repoRoot: string = GARDEN_REPO): ResolvedRepo {
     }
   }
 
-  return { site, pages };
+  return { site, pages, lastUpdated: resolveLastUpdated(repoRoot) };
 }
 
 /** Look up a resolved page by id (used to render next-path / related-links). */
