@@ -1,4 +1,6 @@
 import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
+import { resolveLastUpdated } from '../../src/engine/last-updated.ts';
+import { GARDEN_REPO } from '../../src/engine/load.ts';
 
 /**
  * Browser + visual checks for the four Garden pages.
@@ -88,6 +90,27 @@ test('navigation: header links reach every page and mark the current one', async
         .getByRole('navigation', { name: 'Reading path' })
         .getByRole('link', { name: p.title }),
     ).toHaveAttribute('aria-current', 'page');
+  }
+});
+
+test('footer: shows the deterministic last-updated date on every page', async ({
+  page,
+}) => {
+  // The engine resolves the stamp from a fixed source (git commit / build
+  // pin), so the test derives the expected value from the same resolver — no
+  // reliance on the reader's clock.
+  const expected = resolveLastUpdated(GARDEN_REPO);
+  expect(
+    expected,
+    'a deterministic last-updated source must be available at build',
+  ).toBeTruthy();
+
+  for (const p of PAGES) {
+    await page.goto(p.slug);
+    const stamp = page.locator('.site-footer time');
+    await expect(stamp, `footer date is present on ${p.name}`).toBeVisible();
+    await expect(stamp).toHaveAttribute('datetime', expected!.iso);
+    await expect(stamp).toHaveText(expected!.display);
   }
 });
 

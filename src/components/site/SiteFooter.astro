@@ -10,7 +10,11 @@ interface Props {
 }
 
 const { repo } = Astro.props;
-const year = new Date().getFullYear();
+const { lastUpdated } = repo;
+// The colophon year comes from the same deterministic source as the update
+// stamp, so it never drifts from the reader's clock. Falls back to the update
+// year when present; otherwise the colophon simply carries no year.
+const year = lastUpdated ? lastUpdated.iso.slice(0, 4) : undefined;
 ---
 
 <footer class="site-footer">
@@ -19,8 +23,13 @@ const year = new Date().getFullYear();
     <p class="site-footer__note">
       {repo.site.tagline}
     </p>
+    {lastUpdated && (
+      <p class="site-footer__updated">
+        Last updated <time datetime={lastUpdated.iso}>{lastUpdated.display}</time>
+      </p>
+    )}
     <p class="site-footer__colophon">
-      A living site composed with <span class="engine">WowRepo</span> · {year}
+      A living site composed with <span class="engine">WowRepo</span>{year && ` · ${year}`}
     </p>
   </div>
 </footer>
@@ -49,8 +58,18 @@ const year = new Date().getFullYear();
     max-width: 40ch;
   }
 
-  .site-footer__colophon {
+  .site-footer__updated {
     margin-top: var(--space-xs);
+    font-size: var(--step--1);
+    color: var(--color-text-soft);
+  }
+
+  .site-footer__updated time {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .site-footer__colophon {
+    margin-top: var(--space-2xs);
     font-size: var(--step--1);
     color: var(--color-text-faint);
     letter-spacing: 0.01em;
