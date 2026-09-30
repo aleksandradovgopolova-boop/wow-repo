@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}   # нужна история для git diff и коммита обновления на push
       # Python и pyyaml ставим только на раннерах GitHub (на своём раннере — PEP 668, см. ai-ops-validate.yml).
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: ${{ !vars.CI_RUNNER_LINUX }}
         with: {python-version: "3.12"}
       - run: pip install pyyaml
