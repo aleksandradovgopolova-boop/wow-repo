@@ -56,7 +56,7 @@ jobs:
 
       # Подписать SBOM keyless-подписью (аттестация Sigstore).
       - name: Подписать SBOM
-        uses: actions/attest-sbom@v1
+        uses: actions/attest-sbom@v4
         with:
           subject-path: sbom.spdx.json
           sbom-path: sbom.spdx.json
