@@ -1,0 +1,6 @@
+# feature-coverage baseline — принятое число verified-сирот (ратчет ВНИЗ).
+# Сидируется CI при первом прогоне; растёт молча не может (рост = красный гейт), снижение
+# опускает его. Правит CI (validate_feature_coverage --seed), не человек. Живёт В ДОЧКЕ.
+schema_version: 1
+kind: feature-coverage-baseline
+verified_orphans: 0
