@@ -4,7 +4,7 @@ description: Workflow ADOPTION — Довести выпущенную функ�
 # ai-adoption — Довести выпущенную функцию до активации и удержания; оценить фактический эффект против baseline.
 
 Сгенерировано из registry/workflows.yaml — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Проводит задачу по workflow **ADOPTION** (native / минимум

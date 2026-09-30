@@ -26,6 +26,15 @@ ApprovalRecord (features/<wid>/approvals/*.yaml):
 """
 from __future__ import annotations
 
+# v4: самодостаточный вход — файл можно запустить напрямую (без PYTHONPATH). Кладём корень пакета
+# (маркер VERSION) в sys.path ДО пакетных импортов — раньше это делал плоский shim tools/ через
+# _bootstrap; теперь точка входа сама себя обслуживает.
+import sys as _sys
+from pathlib import Path as _P_bootstrap
+_root = next((_p for _p in _P_bootstrap(__file__).resolve().parents if (_p / "VERSION").is_file()), None)
+if _root is not None and str(_root) not in _sys.path:
+    _sys.path.insert(0, str(_root))
+
 import argparse
 import json
 import sys

@@ -1,13 +1,18 @@
 {
   "schema_version": 1,
   "command": "update",
-  "from_version": "3.36.6",
-  "to_version": "3.36.7",
+  "from_version": "4.9.0",
+  "to_version": "4.9.2",
   "status": "ok",
   "compatibility": "compatible",
   "managed_changes": [
     {
       "path": ".ai/managed/VERSION",
+      "action": "replace",
+      "reason": "обновлён в пакете"
+    },
+    {
+      "path": ".ai/managed/ai_ops_kit/context/repo_graph.py",
       "action": "replace",
       "reason": "обновлён в пакете"
     },
@@ -24,7 +29,8 @@
   ],
   "direct_edits_detected": [],
   "migrations_applied": [
-    "3.33-to-3.34"
+    "3.33-to-3.34",
+    "3.36-to-3.37-plan-history"
   ],
   "preserved_paths": [
     ".ai/project/**",
@@ -48,21 +54,60 @@
       "status": "pass"
     }
   ],
-  "backup_ref": ".ai/runtime/backups/3.36.6",
+  "backup_ref": ".ai/runtime/backups/4.9.0",
   "pull_request": null,
   "human_approval_required": false,
-  "report": "Обновление 3.36.6 -> 3.36.7: 3 изменений, 551 файлов под контролем. Создайте PR с этим diff — silent update запрещён.",
+  "report": "Обновление 4.9.0 -> 4.9.2: 4 изменений, 679 файлов под контролем. Не тронуты (правили в репозитории): ai-ops-update.yml, ai-ops-record.yml, ai-ops-validate.yml. Не тронуты (происхождение неизвестно, дефектов не нашёл): ai-ops-audit.yml.\nMerge-driver planning/plan.yaml прописан в git config: непересекающиеся правки плана из разных работ теперь сводятся без ручного конфликта, на сомнении — обычный конфликт.\nARCHITECTURE.md: черновик НЕ создавал — этот документ у вас уже есть в `docs/ARCHITECTURE.md`. Канонический стандарт кита держит его в корне (`ARCHITECTURE.md`); перенести в одно место подготовлю по вашему слову — сам не переношу и не перезаписываю. Создайте PR с этим diff — silent update запрещён.",
   "context_backfilled": [],
-  "ci_workflows": [],
+  "ci_workflows": [
+    {
+      "file": "ai-ops-update.yml",
+      "action": "left-alone",
+      "was": "edited",
+      "broken_before": [],
+      "detail": "изменён в репозитории — кит его не трогает"
+    },
+    {
+      "file": "ai-ops-record.yml",
+      "action": "left-alone",
+      "was": "edited",
+      "broken_before": [],
+      "detail": "изменён в репозитории — кит его не трогает"
+    },
+    {
+      "file": "ai-ops-validate.yml",
+      "action": "left-alone",
+      "was": "edited",
+      "broken_before": [],
+      "detail": "изменён в репозитории — кит его не трогает"
+    },
+    {
+      "file": "ai-ops-audit.yml",
+      "action": "left-alone",
+      "was": "unknown",
+      "broken_before": [],
+      "detail": "происхождение неизвестно (установлен до 3.36.2)"
+    }
+  ],
   "zone_markers": [],
+  "gitignore": "present",
+  "gitattributes": "present",
+  "plan_merge_driver": "registered",
   "entry_point": {
-    "action": "updated",
-    "path": "/Users/sasad/projects/wow-repo/ai-ops"
+    "action": "unchanged",
+    "path": "/private/tmp/aiops-publication-20260930/wow-repo/ai-ops"
   },
   "communication_adapter": {
     "action": "unchanged",
-    "path": "/Users/sasad/projects/wow-repo/CLAUDE.md"
+    "path": "/private/tmp/aiops-publication-20260930/wow-repo/CLAUDE.md"
   },
+  "lint_hook": {
+    "action": "unchanged",
+    "path": "/private/tmp/aiops-publication-20260930/wow-repo/.claude/settings.json",
+    "detail": ""
+  },
+  "roadmap_migrated": [],
+  "architecture_migrated": [],
   "planning_seeded": [
     {
       "artifact": "ROADMAP.md",
@@ -71,6 +116,36 @@
     {
       "artifact": "planning/plan.yaml",
       "action": "exists"
+    },
+    {
+      "artifact": "ARCHITECTURE.md",
+      "action": "existing-at:docs/ARCHITECTURE.md"
+    },
+    {
+      "artifact": "SECURITY.md",
+      "action": "exists"
+    },
+    {
+      "artifact": "security/security-policy.md",
+      "action": "exists"
+    }
+  ],
+  "product_layer_seeded": [
+    {
+      "artifact": ".ai-ops/PRODUCT_PASSPORT.md",
+      "action": "exists"
+    },
+    {
+      "artifact": ".ai-ops/DELIVERY.md",
+      "action": "exists"
+    },
+    {
+      "artifact": ".ai-ops/POLICY.yaml",
+      "action": "exists"
+    },
+    {
+      "artifact": ".ai-ops/templates/",
+      "action": "templates-synced"
     }
   ],
   "skills_synced": [
@@ -88,6 +163,34 @@
   "commands_installed": {
     "claude_commands": 14,
     "codex_prompts": 0,
-    "codex_generated": 14
+    "codex_generated": 14,
+    "qwen_commands": 0,
+    "qwen_generated": 0
+  },
+  "changelog_slice": [
+    "4.9.2 — Безопасный выбор JS/TS проверок",
+    "4.9.1 — Проверки по влиянию и изолированные мутации"
+  ],
+  "whats_new": {
+    "status": "ok",
+    "versions": [
+      {
+        "version": "4.9.2",
+        "title": "Безопасный выбор JS/TS проверок",
+        "owner_layer": true
+      },
+      {
+        "version": "4.9.1",
+        "title": "Проверки по влиянию и изолированные мутации",
+        "owner_layer": true
+      }
+    ],
+    "text": "Что нового для вас — по версиям (2):\n\n### 4.9.2 — Безопасный выбор JS/TS проверок\n\n#### Что меняется для вас\n\nПри небольшой правке JS/TS выбор проверок сохраняет зависимые тесты с многострочным импортом.\n\n#### Что вошло\n\n- Сделайте: измените модуль, который тест импортирует в несколько строк. Увидите: зависимый тест остаётся в выбранном наборе. (#1234)\n- Сделайте: проверьте файл с соседними side-effect и named imports. Увидите: обе зависимости сохраняются. (#1234)\n\n#### Что изменилось в привычном поведении\n\n- Зависимость больше не теряется из-за расположения строк import. (#1234)\n\n#### Кого касается\n\n- **Владелец и бизнес:** небольшая правка получает достаточную проверку влияния. (#1234)\n- **Пользователи:** интерфейс продукта не меняется. (#1234)\n- **Поддержка:** полный набор сохраняется для неизвестного влияния и подготовки к слиянию. (#1234)\n\n#### Известные ограничения\n\n- Версия остаётся на квалификации; ускорение всего CI не заявляется. (#1234)\n- Playwright сохраняет полный набор. (#1234)\n\n#### Что сделать после выпуска\n\n- Обновите согласованную дочку из опубликованного тега и проверьте её профиль. (#1234)\n\n#### Подробнее\n\nПолный журнал изменений — в CHANGELOG.md.\n\n### 4.9.1 — Проверки по влиянию и изолированные мутации\n\n#### Что меняется для вас\n\nМаленькие правки можно проверять по их влиянию. Если влияние неизвестно, сохраняется полный набор; подготовка к слиянию и выпуску тоже требует его.\n\n#### Что вошло\n\n- Сделайте: проверьте одну правку теста. Увидите: выбранные тесты вместе с их зависимыми проверками. (#1232)\n- Сделайте: запустите ночные мутационные пробы. Увидите: четыре отдельные копии с прежним охватом. (#1232)\n\n#### Что изменилось в привычном поведении\n\n- Неизвестное влияние и критическая правка требуют полного набора, даже при слабом намерении проверки. (#1232)\n\n#### Кого касается\n\n- **Владелец и бизнес:** меньше повторов на небольшой правке, полный регресс сохраняется. (#1232)\n- **Пользователи:** продуктовый интерфейс не меняется. (#1232)\n- **Поддержка:** неизвестное влияние означает полный набор, а ошибка запуска не подтверждает проверку. (#1232)\n\n#### Известные ограничения\n\n- Версия остаётся на квалификации; ускорение всего CI не обещается. (#1232)\n- Playwright в дочке выполняется полностью. Локальную команду выбора подключают отдельно. (#1232)\n\n#### Что сделать после выпуска\n\n- Обновите согласованную дочку и измерьте небольшую правку и полный набор отдельно. (#1232)\n\n#### Подробнее\n\nПолный журнал изменений — в CHANGELOG.md."
+  },
+  "security_surface": {
+    "status": "nothing",
+    "new": [],
+    "preexisting": 0,
+    "text": "\nЧто этот выпуск привозит по безопасности (сканер кита по файлам .ai/managed/):\n  ничего: новых мест, которые сканер отмечает, выпуск не привозит.\n"
   }
 }

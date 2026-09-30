@@ -20,6 +20,13 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
+concurrency:
+  # Отменять УСТАРЕВШИЕ прогоны — но ТОЛЬКО для PR (новый пуш в тот же PR гасит прежний).
+  # На push в main / schedule / release / record отмена НЕ применяется: там каждый прогон
+  # относится к своему коммиту/событию, и его потеря = дыра в проверке или в записи.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   audit:
     # Раннер — переменной, не зашит (как в ai-ops-update): в организации со своими раннерами

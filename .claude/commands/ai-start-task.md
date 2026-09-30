@@ -4,7 +4,7 @@ description: Единая точка входа — опиши задачу сл
 # ai-start-task — единая точка входа
 
 Сгенерировано из registry/ — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 > **Канонический вход — `ai-run`** (3.0-срез 1). `ai-start-task` сохраняется как совместимый
 > алиас той же спины (route→RunPlan→WorkItem→preflight→active-work) и не удаляется (снятие —
@@ -30,15 +30,17 @@ description: Единая точка входа — опиши задачу сл
    - иначе → контракт по `selection_criteria.task_type`;
    - неизвестный task_type → **ENGINEERING** (честный default).
 4. Покажи пользователю выбранный workflow и **причину** (1–3 предложения).
-5. **Concurrency preflight** (пишущие workflow): `tools/concurrency_preflight.py --paths
-   <целевые файлы> --base origin/main` — открытые PR/свежие мержи по этим путям; при
-   collision перепроверь премиссу против актуального main до старта.
-6. **Изоляция**: git worktree под задачу — `tools/worktree.py add <id> --branch
-   <feature/…>` (работа не в main).
-7. **WorkItem** — единая сущность изменения: `tools/workitem.py start <features-dir> <id>
-   --task "…"` (связывает workflow + blueprint + прогон; один статус).
-8. **Реестр активных работ**: `tools/active_work.py register .ai/runtime/active-work.yaml
-   <id> --branch <ветка> --areas <зоны> --session <id> --workitem features/<id>/workitem.yaml`.
+5. **Concurrency preflight** (пишущие workflow): `PYTHONPATH=.ai/managed python3 -m
+   ai_ops_kit.gates.concurrency_preflight --paths <целевые файлы> --base origin/main` — открытые
+   PR/свежие мержи по этим путям; при collision перепроверь премиссу против актуального main до старта.
+6. **Изоляция**: git worktree под задачу — `PYTHONPATH=.ai/managed python3 -m
+   ai_ops_kit.engine.worktree add <id> --branch <feature/…>` (работа не в main).
+7. **WorkItem** — единая сущность изменения: `PYTHONPATH=.ai/managed python3 -m
+   ai_ops_kit.lifecycle.workitem start <features-dir> <id> --task "…"` (связывает workflow +
+   blueprint + прогон; один статус).
+8. **Реестр активных работ**: `PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.active_work
+   register .ai/runtime/active-work.yaml <id> --branch <ветка> --areas <зоны> --session <id>
+   --workitem features/<id>/workitem.yaml`.
 9. Инициализируй TaskState прогона (по WorkItem): `.ai/runtime/workitems/<id>/TaskState.yaml`.
 10. Передай управление команде выбранного маршрута: `/ai-<workflow>` (напр. ai-engineering).
     Для CRITICAL — сначала human approval, затем запуск.

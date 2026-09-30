@@ -26,7 +26,8 @@
               "build": {"type": ["string", "null"]},
               "lint": {"type": ["string", "null"]},
               "typecheck": {"type": ["string", "null"]},
-              "test": {"type": ["string", "null"]}
+              "test": {"type": ["string", "null"]},
+              "format": {"type": ["string", "null"], "description": "проверка оформления (--check), выводится только по доказательству; необязательно"}
             }
           },
           "evidence_source": {"type": "array", "items": {"type": "string"},

@@ -19,7 +19,7 @@ mass_mechanical_inspection    массовая механическая пров
 ```
 
 Стартовые пороги (калибруются): разведка ≥ 8 файлов, сравнение ≥ 5 файлов, лог ≥ 500 строк. См.
-`tools/delegation_advisor.py`.
+`ai_ops_kit/engops/delegation_advisor.py`.
 
 ## Что возвращается в основной контекст
 

@@ -7,10 +7,10 @@ schema_version: 1
 registry_type: entities
 
 entity_types:
-  goal:          {description: "Бизнес/продуктовая цель"}
+  goal:          {description: "Бизнес/продуктовая цель. Объявлена планом продукта; атрибут unresolved=true означает, что на цель сослался паспорт функции, а в плане её нет — разрыв нити, который обход называет вслух, а не заглушка вместо цели.", attributes: [unresolved]}
   initiative:    {description: "Инициатива, реализующая цель"}
   epic:          {description: "Крупный кусок ценности внутри инициативы"}
-  feature:       {description: "Функция; узел связывается с Feature Blueprint", attributes: [blueprint]}
+  feature:       {description: "Функция; узел связывается с Feature Blueprint. Атрибут declared_goal — цель, которую ОБЪЯВИЛ паспорт самой функции: принадлежность цели читается отсюда, а не выводится подъёмом по графу (эпик — общий узел, его родителя-цель объявляют паспорта соседних функций). Атрибут broken_links — объявленные уровни, которые связью НЕ стали: имя занято другой сущностью графа; звено названо вслух, а не пропадает молча. Атрибут name_taken_in_plan — какая ИМЕННО запись плана носит то же имя (цель, работа или обе): в граф вошла функция, запись плана осталась за ним, и конфликт назван адресно. Атрибут name_conflict_dropped — сколько ЕЩЁ записей плана ушло за графом вместе с ней (исход цели и работы под ней): пробел называет масштаб потери, а не одну строку.", attributes: [blueprint, declared_goal, broken_links, name_taken_in_plan, name_conflict_dropped]}
   story:         {description: "User story внутри функции"}
   design:        {description: "UX/дизайн-артефакт"}
   api:           {description: "API-контракт"}
@@ -22,11 +22,28 @@ entity_types:
   incident:      {description: "Инцидент эксплуатации"}
   experiment:    {description: "Эксперимент, проверяющий гипотезу"}
   insight:       {description: "Вывод из данных/инцидентов/экспериментов; вход следующего Discovery"}
+  outcome:       {description: "Проверяемый результат функции: baseline→target под guardrails и что реально измерено. Проекция OutcomeContract+OutcomeReadout (validate_product_objects).", attributes: [baseline, target, guardrails, measured, verdict]}
+  decision:      {description: "Решение из decisions/registry.yaml (эпизод ep-* или принцип dp-*): ЗАЧЕМ появилась функция. Узел несёт текст решения, а не пересказ кода."}
+  work:          {description: "Закрытая работа из history/plan-history.yaml (id + результат + pr/evidence): ЧТО построило функцию и где. Узел несёт название работы и её PR, а не пересказ кода.", attributes: [pr]}
+  review:        {description: "Персистентный review-вердикт функции (features/<id>/review/verdict.yaml): КТО/ЧТО проверил. Узел несёт, кем проверено (машина/независимый ревьюер/человек), verified и ревизию — проекция evidence_verdict (веха 4.2), а не пересказ кода. Пишет путь ревью (судья), не писатель.", attributes: [verified, reviewed_revision]}
 
 # Допустимые связи: from -> to (валидатор отклоняет рёбра вне этого списка).
+#
+# ЛЕСТНИЦА contains (goal -> initiative -> epic -> feature -> story) допускает ПРОПУСК среднего
+# уровня, и это объявлено парами, а не догадкой кода. Повод — замер на реальной дочке (ии-среда,
+# 21.09): все её функции объявляют цель И эпик, но не инициативу, потому что инициатива у продукта
+# просто не заведена. Пока разрешены были только смежные пары, объявленная автором цель не
+# становилась связью — функция оказывалась «ни к какой цели не привязана», хотя цель названа.
+# Требовать промежуточный уровень ради формы значило бы вводить ту самую бюрократию, которую
+# инварианты запрещают явно («восемь документов на каждую задачу»).
+# ГРАНИЦА: пропускается только уровень, которого В ОБЪЯВЛЕНИИ НЕТ. Связь по-прежнему идёт СВЕРХУ
+# ВНИЗ и только между уровнями, которые автор назвал сам; ничего не додумывается.
 relations:
   - {type: contains,     from: goal,       to: initiative}
+  - {type: contains,     from: goal,       to: epic}        # инициатива не заведена
+  - {type: contains,     from: goal,       to: feature}     # ни инициативы, ни эпика
   - {type: contains,     from: initiative, to: epic}
+  - {type: contains,     from: initiative, to: feature}     # эпик не заведён
   - {type: contains,     from: epic,       to: feature}
   - {type: contains,     from: feature,    to: story}
   - {type: specified-by, from: feature,    to: design}
@@ -45,3 +62,13 @@ relations:
   - {type: derived-from, from: insight,    to: experiment}
   - {type: feeds,        from: insight,    to: goal}
   - {type: feeds,        from: insight,    to: feature}
+  # Outcome: зачем функция существует и подтвердилась ли её ценность.
+  - {type: targets,      from: feature,    to: outcome}
+  - {type: measured-by,  from: outcome,    to: metric}
+  - {type: derived-from, from: insight,    to: outcome}
+  # Decision -> feature: из какого решения появилась функция (история «зачем», не пересказ кода).
+  - {type: motivates,    from: decision,   to: feature}
+  # Work -> feature: какая работа/PR построила функцию (история «что построили», не пересказ кода).
+  - {type: builds,       from: work,       to: feature}
+  # Review -> feature: кто/что проверил функцию (персистентный вердикт, не эхо прогона; судья ≠ писатель).
+  - {type: reviewed,     from: review,     to: feature}

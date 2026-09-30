@@ -134,8 +134,9 @@ def _rank(w, res, model, plan):
     if not _plan.goal_is_live(plan, gid):
         # Названо вслух: работа осталась под целью, которая больше никуда не ведёт. Молча опустить
         # её было бы вторым дефектом того же рода — человек не понял бы, почему совет изменился.
-        why.append(f"цель '{gid}' уже не ведёт вперёд (достигнута или на паузе) — "
-                   f"приоритет ниже живых целей; работу стоит перевесить в плане")
+        # Имя цели — человеческое: id-заглушку `goal-id-N` в лицо владельца не echo'им.
+        why.append(f"цель «{_plan.goal_display_name(gid)}» уже не ведёт вперёд (достигнута или "
+                   f"на паузе) — приоритет ниже живых целей; работу стоит перевесить в плане")
     if w.get("value") == "high":
         why.append("объявленная ценность высокая")
     if risk_score:
@@ -188,6 +189,12 @@ def _parallel_set(candidates, by_id, anchor=None):
 
     chosen, skipped = [], []
     if anchor is not None:
+        if not (by_id.get(anchor["id"]) or {}).get("write_scope"):
+            # Якорь без области записи: «не пересекается с ним» сравнивало бы с пустотой и было бы
+            # всегда правдой — ровно то «наверное, не пересекаются», которое здесь запрещено (#1203).
+            return [], [{"id": c["id"], "reason": f"у {anchor['id']} нет write_scope — "
+                                                  f"параллельность с ней недоказуема"}
+                        for c in candidates if c["id"] != anchor["id"]]
         chosen.append(anchor)                      # якорь занимает свою область записи первым
     for c in candidates:
         w = by_id[c["id"]]
@@ -264,6 +271,45 @@ def _holders(child_root, me=None):
     return others, mine, reach
 
 
+def _categorize(by_id, res, caps_known, budget_left, model, plan):
+    """Разложить работы по корзинам ответа: idём / удержано владельцем / заблокировано / готово /
+    не допущено. -> (in_progress, blocked, ready, not_ready, held).
+
+    `waiting_on_owner` — ОТДЕЛЬНАЯ корзина `held`: resolve() отдаёт её как ОБЪЯВЛЕННЫЙ факт
+    («механизм готов, ждём названного шага владельца»), и графом зависимостей она не снимется. Без
+    своей ветки такая работа не совпала бы ни с in_progress, ни с blocked/waiting, ни с ready — и
+    молча выпала бы из ВСЕХ списков ответа; пока рядом жила хоть одна in_progress-работа, пропажа
+    маскировалась. Инвариант: пустой совет обязан быть ОБЪЯСНЁН — поэтому удержанное владельцем
+    называется, а не теряется."""
+    in_progress, blocked, ready, not_ready, held = [], [], [], [], []
+    for wid, w in by_id.items():
+        r = res[wid]
+        row = {"id": wid, "title": w.get("title"), "type": w.get("type"),
+               "owner_role": w.get("owner_role"), "status": r["status"], "source": r["source"],
+               "reasons": r["reasons"], "unblocks": r["unblocks"], "drift": r["drift"]}
+        if r["status"] == "in_progress":
+            in_progress.append(row)
+        elif r["status"] == _plan.OWNER_WAIT_STATUS:
+            row["waiting_on"] = w.get(_plan.OWNER_WAIT_KEY)
+            held.append(row)
+        elif r["status"] in ("blocked", "waiting"):
+            row["blocked_by"] = r["blocked_by"]
+            row["conflicts_with"] = r["conflicts_with"]
+            blocked.append(row)
+        elif r["status"] == "ready":
+            allowed, checks = _admission(w, r, caps_known, budget_left)
+            row["admission"] = checks
+            if allowed:
+                score, why = _rank(w, r, model, plan)
+                row["score"], row["why"] = score, why
+                ready.append(row)
+            else:
+                row["blocked_by_admission"] = [c["id"] for c in checks if not c["ok"]]
+                not_ready.append(row)
+    return in_progress, blocked, ready, not_ready, held
+
+
+
 def compute(child_root, budget_left=None, me=None):
     """Ответ на четыре вопроса. -> dict (машиночитаемо; печать — в `render`).
 
@@ -326,28 +372,8 @@ def compute(child_root, budget_left=None, me=None):
                       "in_roadmap": g["id"] in (set(rm["horizons"].get("now", {}).get("goals", []))
                                                 | set(rm["horizons"].get("next_outcome", {}).get("goals", [])))})
 
-    in_progress, blocked, ready, not_ready = [], [], [], []
-    for wid, w in by_id.items():
-        r = res[wid]
-        row = {"id": wid, "title": w.get("title"), "type": w.get("type"),
-               "owner_role": w.get("owner_role"), "status": r["status"], "source": r["source"],
-               "reasons": r["reasons"], "unblocks": r["unblocks"], "drift": r["drift"]}
-        if r["status"] == "in_progress":
-            in_progress.append(row)
-        elif r["status"] in ("blocked", "waiting"):
-            row["blocked_by"] = r["blocked_by"]
-            row["conflicts_with"] = r["conflicts_with"]
-            blocked.append(row)
-        elif r["status"] == "ready":
-            allowed, checks = _admission(w, r, caps_known, budget_left)
-            row["admission"] = checks
-            if allowed:
-                score, why = _rank(w, r, model, plan)
-                row["score"], row["why"] = score, why
-                ready.append(row)
-            else:
-                row["blocked_by_admission"] = [c["id"] for c in checks if not c["ok"]]
-                not_ready.append(row)
+    in_progress, blocked, ready, not_ready, held = _categorize(
+        by_id, res, caps_known, budget_left, model, plan)
 
     # ВЫЧИТАНИЕ ТОГО, ЧТО ДЕРЖАТ ДРУГИЕ (работа `next-offers-work-nobody-holds`). Важность и
     # непересечение кит считал и раньше; отсутствовало ровно одно — вопрос УЧАСТНИКА «что взять МНЕ».
@@ -376,6 +402,18 @@ def compute(child_root, budget_left=None, me=None):
     ready.sort(key=lambda r: (-r["score"], r["id"]))
     in_progress.sort(key=lambda r: r["id"])
     blocked.sort(key=lambda r: r["id"])
+    held.sort(key=lambda r: r["id"])
+
+    # #565: у ИДУЩИХ работ записанная ветка берётся из ЕДИНОЙ Work-проекции — того же источника, что
+    # у `work show`/`explain`/`status`. СЕЛЕКТИВНОСТЬ (ready/blocked/waiting) остаётся ВЫЧИСЛЯЕМОЙ из
+    # графа зависимостей — это другой вопрос, и проекция его не подменяет; дополняем лишь per-work
+    # факт, которого у `next` своего нет. READ-ONLY (project_work читает по контракту и не бросает на
+    # отсутствующих/битых источниках — каждый его reader глушит свой OSError/YAMLError у себя).
+    from ai_ops_kit.lifecycle import work_view as _wv
+    for _r in in_progress:
+        _v = _wv.project_work(_r["id"], child_root)
+        if _v.get("branch"):
+            _r["branch"] = _v["branch"]
 
     next_best = ready[0] if ready else None
     parallel, par_skipped = ([], [])
@@ -392,10 +430,19 @@ def compute(child_root, budget_left=None, me=None):
         stale = _stale.assess(child_root, plan_rel)
     except Exception:                                   # noqa: BLE001 — обзор не обязан ронять ответ
         stale = {"dead_references": [], "plan_behind": None, "error": "проверка протухания не выполнена"}
+    # #635: устаревшие РЕШЕНИЯ — та же линия «чего не спрашивали». Возраст + изменение связанных
+    # файлов после даты решения; advisory, не роняет ответ (как staleness выше).
+    try:
+        from ai_ops_kit.planning import decision_staleness as _dstale
+        stale_decisions = _dstale.assess_decisions(child_root)
+    except Exception:                                   # noqa: BLE001 — обзор не обязан ронять ответ
+        stale_decisions = []
     return {"schema_version": 1, "plan_present": True, "staleness": stale,
+            "stale_decisions": stale_decisions,
             "plan_errors": val["errors"], "plan_warnings": val["warnings"],
             "roadmap": {"errors": rm["errors"], "warnings": rm["warnings"]},
             "where_are_we": where, "in_progress": in_progress, "blocked": blocked,
+            "held": held,
             "ready": ready, "next_best": next_best, "parallel_with": parallel,
             "parallel_skipped": par_skipped, "not_ready": not_ready,
             "held_by_others": held_by_others, "held_by_me": held_by_me,
@@ -429,7 +476,9 @@ def render(rep) -> str:
     for g in rep["where_are_we"]:
         mark = "✓" if g["outcome_reached"] else "·"
         rm = "" if g["in_roadmap"] else "  ⚠ цели нет в roadmap (работа без направления)"
-        L.append(f"  {mark} цель {g['goal']} [{g['status']}] — работа {g['work_done']}/{g['work_total']}{rm}")
+        # Не echo'им id-заглушку `goal-id-N` из bootstrap-черновика в лицо владельца.
+        name = _plan.goal_display_name(g["goal"])
+        L.append(f"  {mark} цель {name} [{g['status']}] — работа {g['work_done']}/{g['work_total']}{rm}")
         for k, v in (g["outcome"] or {}).items():
             L.append(f"      outcome {k}: {'достигнут' if v else 'не достигнут'}")
 
@@ -442,7 +491,7 @@ def render(rep) -> str:
             L.append(f"      {x}")
 
     L.append("3. ЧТО БЛОКИРУЕТ РАБОТУ")
-    if not rep["blocked"]:
+    if not rep["blocked"] and not rep.get("held"):
         L.append("  ничего не заблокировано")
     for r in rep["blocked"]:
         L.append(f"  · {r['id']} [{r['status']}] — {r['title']}")
@@ -454,10 +503,21 @@ def render(rep) -> str:
         for c in r["admission"]:
             if not c["ok"]:
                 L.append(f"      {c['id']}: {c['detail']}")
+    # УДЕРЖАННОЕ ВЛАДЕЛЬЦЕМ — ОТДЕЛЬНО ОТ «ЗАБЛОКИРОВАНО». `blocked`/`waiting` снимаются графом
+    # зависимостей сами; `waiting_on_owner` не снимется, пока владелец не сделает названный шаг —
+    # молчание о нём читалось бы как «работы больше нет», а не «дело за тобой».
+    for r in rep.get("held") or []:
+        L.append(f"  · {r['id']} ждёт твоего решения (waiting_on: {r.get('waiting_on') or '?'}) "
+                 f"— {r['title']}")
 
     L.append("4. ЧТО ВЗЯТЬ СЛЕДУЮЩИМ")
     nb = rep["next_best"]
-    if not nb:
+    held = rep.get("held") or []
+    if not nb and held:
+        L.append("  взять нечего — эти работы ждут твоего решения:")
+        for r in held:
+            L.append(f"      {r['id']} (waiting_on: {r.get('waiting_on') or '?'})")
+    elif not nb:
         L.append("  готовой работы нет — см. раздел 3 (это НЕ значит «всё сделано»)")
     else:
         L.append(f"  → {nb['owner_role']}: {nb['id']} — {nb['title']}")
@@ -474,11 +534,15 @@ def render(rep) -> str:
     # пустой раздел на каждом ответе обесценил бы его за неделю.
     st = rep.get("staleness") or {}
     dead, behind = st.get("dead_references") or [], st.get("plan_behind")
-    if dead or behind:
+    stale_dec = rep.get("stale_decisions") or []
+    if dead or behind or stale_dec:
         L.append("5. ЧЕГО НИКТО НЕ СПРАШИВАЛ")
         if behind:
             L.append(f"  план отстал от истории: {behind['commits']} изменени(й) влито после "
                      f"последней правки {behind['plan_rel']} — работа идёт мимо объявленного")
+        for dec in stale_dec[:5]:
+            L.append(f"  решение {dec['id']} может быть устаревшим: {dec['reason']} "
+                     "(advisory — пересмотр за вами, не блок)")
         for d in dead[:5]:
             L.append(f"  описание ссылается на то, чего нет: {d['doc']}:{d['line']} — "
                      f"{d['kind']} «{d['ref']}»")

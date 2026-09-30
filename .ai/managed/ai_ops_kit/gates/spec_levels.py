@@ -12,6 +12,14 @@
   L3 CRITICAL    — + threat model, rollback, migration, failure modes, audit, approvals,
                    compliance, disaster recovery.
 
+Словарь уровней (важно не путать две разные оси):
+  * ЗДЕСЬ L0–L3 — это ГЛУБИНА СПЕЦИФИКАЦИИ (сколько разделов нужно заполнить). Уровней
+    ровно четыре: L0..L3. L4/L5 в этой оси НЕ существует — если ищете их, вы попали не сюда.
+  * ЭТАПЫ ЖИЗНЕННОГО ЦИКЛА продукта (Discovery → Product Definition → UX → … → Monitoring,
+    см. VISION.md) — отдельная ось; в ките они названы словами, а не номерами Ln. Любая
+    нумерация «L0–L5» из черновиков (RR-018/DP-117) относилась бы к этапам цикла, а не к
+    глубине спецификации, и в кодовую базу не заведена.
+
 Правила (инварианты честности):
   * уровень выбирается детерминированно из сигналов; видно ПОЧЕМУ;
   * уровень МОЖНО повысить при риске/необратимости; НЕЛЬЗЯ понизить молча (запрос ниже расчётного ->
@@ -48,6 +56,80 @@ LEVEL_SECTIONS = {
         "human_approvals", "compliance_constraints", "disaster_recovery"],
 }
 SECTION_STATUSES = {"complete", "not_applicable", "declined", "needs_human", "missing"}
+
+# ─── Сторож против РАСПОЛЗАНИЯ ЦЕРЕМОНИИ (направление risk-based-ceremony) ───────────────────────
+# Замер продукт-ревью: «сложность растёт с риском, а не с полнотой». Объём процесса (сколько
+# разделов спеки требует уровень) обязан подниматься ТОЛЬКО вместе с риском. Но LEVEL_SECTIONS —
+# обычный dict: любой мог дописать раздел в L0, и форма для мелкой обратимой задачи молча
+# распухла бы без всякого риска, который это оправдывает. Здесь — БЮДЖЕТ числа разделов на уровень:
+# добавить раздел куда-либо можно только вместе с сознательным подъёмом потолка ЗДЕСЬ и записью в
+# `LEVEL_SECTION_BUDGET_RAISES` (что и почему). Так же, как module-size-baseline держит рост модулей:
+# `tests/unit/test_ceremony_budget.py` краснеет, если разделов на уровне стало больше потолка или
+# уровень потерял потолок. Усыхание (раздел убрали) свободно — потолок держит рост, не размер.
+LEVEL_SECTION_BUDGET = {0: 6, 1: 9, 2: 11, 3: 8}
+
+# Лента подъёмов потолка церемонии. Каждый рост LEVEL_SECTION_BUDGET обязан оставить здесь запись:
+# дата, уровень, старый->новый потолок, ПОЧЕМУ риск оправдывает лишний раздел. Пусто = потолки
+# держатся на исходной фиксации (счётчики LEVEL_SECTIONS на момент заведения сторожа).
+LEVEL_SECTION_BUDGET_RAISES = [
+    {"date": "2026-09-21", "level": "L0..L3",
+     "note": "исходная фиксация текущих счётчиков разделов (L0=6, L1=9, L2=11, L3=8) как потолков; "
+             "рост любого — только вместе с записью здесь, объясняющей риск"},
+]
+
+
+def ceremony_budget_errors(level_sections=None, budget=None, required_fn=None):
+    """Сторож против расползания церемонии. -> список ошибок ПРОДУКТОВЫМ языком (пусто = чисто).
+
+    Три инварианта «сложность от риска, а не от полноты»:
+      1. БЮДЖЕТ: число разделов на уровне не выше объявленного потолка (рост требует подъёма
+         потолка + записи, что риск это оправдывает). Усыхание разрешено.
+      2. МОНОТОННОСТЬ: обязательные разделы уровня N включают все разделы уровня N-1
+         (required_fn(N) ⊇ required_fn(N-1)) — церемония только ПРИРАСТАЕТ с риском, ни один
+         раздел нижнего уровня не пропадает. Проверяется НА САМОЙ функции сборки разделов
+         (`required_fn`, по умолчанию `required_sections`): сегодня она кумулятивна структурно, но
+         guard стережёт, чтобы будущая правка её такой и оставила — не декларация, а проверка.
+      3. БЕЗ ДУБЛЕЙ: раздел объявлен ровно на одном уровне (иначе церемония «дублирует», а не
+         добавляет — рост объёма без роста смысла).
+
+    Чистая функция: level_sections/budget/required_fn можно передать искусственные (для пробы
+    покраснения); по умолчанию берёт объявленные в модуле.
+    """
+    level_sections = LEVEL_SECTIONS if level_sections is None else level_sections
+    budget = LEVEL_SECTION_BUDGET if budget is None else budget
+    required_fn = required_sections if required_fn is None else required_fn
+    errors = []
+    levels = sorted(level_sections)
+    # 1) бюджет на уровень
+    for lv in levels:
+        n = len(level_sections[lv])
+        cap = budget.get(lv)
+        if cap is None:
+            errors.append(f"уровень L{lv}: {n} разделов, но потолка в бюджете нет — новый уровень "
+                          f"обязан быть объявлен в LEVEL_SECTION_BUDGET с записью, что оправдывает "
+                          f"его объём")
+        elif n > cap:
+            errors.append(f"уровень L{lv}: разделов {n} > потолок {cap} — церемония выросла без "
+                          f"обоснования риском; подними потолок в LEVEL_SECTION_BUDGET и запиши в "
+                          f"LEVEL_SECTION_BUDGET_RAISES, ПОЧЕМУ риск требует лишнего раздела")
+    # 2) монотонность накопленного набора: N ⊇ N-1 (проверяем РЕАЛЬНО, на required_fn)
+    for prev, lv in zip(levels, levels[1:]):
+        lost = set(required_fn(prev)) - set(required_fn(lv))
+        if lost:
+            errors.append(f"уровень L{lv}: потерял разделы нижнего уровня {sorted(lost)} — "
+                          f"церемония обязана ПРИРАСТАТЬ с риском, а не терять разделы (нарушена "
+                          f"монотонность required_sections)")
+    # 3) без дублей: идём снизу вверх, накапливая разделы
+    seen = set()
+    for lv in levels:
+        secs = set(level_sections[lv])
+        dup = seen & secs
+        if dup:
+            errors.append(f"уровень L{lv}: разделы {sorted(dup)} уже есть на нижнем уровне — "
+                          f"церемония обязана ДОБАВЛЯТЬ с риском, а не дублировать (объём растёт "
+                          f"без смысла)")
+        seen |= secs
+    return errors
 
 
 def classify(signals):
@@ -96,6 +178,50 @@ def required_sections(level):
     for lv in range(0, level + 1):
         out += LEVEL_SECTIONS.get(lv, [])
     return out
+
+
+# Тяжесть задачи, при которой прогон ДЕТЕРМИНИРОВАННО эскалирует незаявленный тип в ENGINEERING
+# (зеркало ai_route.route: size medium+/risk medium+). Порог держим здесь же, где считаем уровень,
+# чтобы раскрытие формы на `specify` опиралось ровно на тот же критерий, что эскалация на `run`.
+_HEAVY_SIZES = ("medium", "large", "xl")
+_HEAVY_RISKS = ("medium", "high", "critical")
+
+
+def escalation_disclosure(signals):
+    """Честное раскрытие ПРЕДВАРИТЕЛЬНОСТИ уровня/формы спеки — ДО того, как человек начал заполнять.
+
+    Зеркало run_plan._escalation_disclosure, но об УРОВНЕ и РАЗДЕЛАХ формы, а не о гейтах прогона.
+
+    Находка поля (obs 8a891ce7): когда тяжесть задачи (size/risk) НЕ заявлена, классификация даёт
+    базовый L0 QUICK, и `specify` выдаёт форму на 6 разделов. Но `run`, получив явный сигнал тяжести,
+    эскалирует в ENGINEERING и требует форму L1 (ещё 9 разделов). Человек заполнял НЕ ТУ форму и
+    узнавал ПОСЛЕ. Раскрытие обязано быть на шаге `specify` — назвать уровень и разделы, которые
+    добавит эскалация, ДО заполнения, а не задним числом.
+
+    Предварительно = тип задачи НЕ заявлен И тяжесть НЕ заявлена И расчётный уровень базовый L0:
+    при явном сигнале тяжести прогон поднимет уровень до L1 ENGINEERING. Если тяжесть заявлена (или
+    тип задачи заявлен явно, или уровень уже выше L0) — форма выдаётся сразу нужного уровня, и
+    раскрывать нечего (симметрично окончательному плану в #838: он раскрытие не несёт).
+
+    -> (provisional: bool, disclosure: dict|None).
+    """
+    signals = dict(signals or {})
+    size = (signals.get("size") or "").lower()
+    risk = (signals.get("risk") or "").lower()
+    heavy = size in _HEAVY_SIZES or risk in _HEAVY_RISKS
+    declared_type = bool(signals.get("task_type"))
+    if declared_type or heavy or classify(signals)["level"] != 0:
+        return False, None
+    esc_level = TASK_TYPE_LEVEL["ENGINEERING"]
+    cur_sections = set(required_sections(0))
+    disclosure = {
+        "reason": ("тяжесть задачи (size/risk) не заявлена — уровень описания предварительный; "
+                   "при явном сигнале тяжести прогон эскалирует, и форма спецификации вырастет "
+                   "(не факт о коде: форма создаётся до правок)"),
+        "level_if_escalated": LEVEL_NAME[esc_level],
+        "sections_if_escalated": [s for s in required_sections(esc_level) if s not in cur_sections],
+    }
+    return True, disclosure
 
 
 def assess(signals, provided=None):
@@ -161,6 +287,96 @@ def _spec_path(child_root, wid):
     return Path(child_root) / "features" / str(wid) / "spec.yaml"
 
 
+# Полевой замер (cockpit, 06.09.2026, фича free-tile-counter): сигналы задачи (--signals) НЕ
+# переносились между шагами specify -> plan -> run. specify корректно поднимал spec до L1
+# ENGINEERING, а plan без повторного --signals выдавал base_workflow=QUICK — уровень spec и workflow
+# прогона считались независимо и расходились, из-за чего ENGINEERING-задача молча ехала как QUICK
+# (судья code_review не запускался). Лечим у источника: specify СОХРАНЯЕТ сырые сигналы в spec.yaml
+# (блок `signals:`), а plan/run их подхватывают, когда --signals на вызове не передан.
+# `feature` — это сам wid (путь), `task_text` — текст конкретного вызова; к классификации уровня оба
+# отношения не имеют и только зашумили бы перенос, поэтому в сохранённое не попадают.
+_NONCARRY_SIGNAL_KEYS = ("feature", "task_text")
+
+
+def _carryable_signals(signals):
+    """Сырые сигналы задачи для сохранения в spec.yaml — без per-invocation шума (см. выше)."""
+    return {k: v for k, v in dict(signals or {}).items() if k not in _NONCARRY_SIGNAL_KEYS}
+
+
+def carried_signals(child_root, wid):
+    """Сигналы, сохранённые предыдущим `specify` в features/<wid>/spec.yaml (блок `signals:`).
+
+    -> dict. Пусто, если спеки нет, блока signals нет или файл битый. Fail-closed: сомнение = пустой
+    перенос, поведение как раньше (QUICK по умолчанию). Репозитории без блока signals (созданные
+    прежними версиями) работают как прежде — обратная совместимость.
+    """
+    sp = _spec_path(child_root, wid)
+    if not sp.is_file():
+        return {}
+    try:
+        import yaml
+        doc = yaml.safe_load(sp.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — битый spec: перенос пуст, а не догадка
+        return {}
+    stored = doc.get("signals") if isinstance(doc, dict) else None
+    return dict(stored) if isinstance(stored, dict) else {}
+
+
+# Разделы spec.yaml, из которых складывается ЗАДАЧА писателю, когда `run`/`do` вызваны без текста
+# задачи (только `--feature <wid>`). Порядок — как читает человек: сначала зачем и что, потом как
+# проверим и чем ограничены. Метка на русском предваряет содержимое раздела в собранном тексте.
+_TASK_SECTION_ORDER = (
+    ("goal", "Цель"),
+    ("scope", "Объём работ"),
+    ("expected_behavior", "Ожидаемое поведение"),
+    ("requirements", "Требования"),
+    ("acceptance_criteria", "Критерии приёмки"),
+    ("acceptance_scenarios", "Сценарии приёмки"),
+    ("edge_cases", "Крайние случаи"),
+    ("constraints", "Ограничения"),
+    ("affected_files", "Затрагиваемые файлы"),
+    ("implementation_plan", "План реализации"),
+    ("write_scope", "Область записи"),
+    ("verification_strategy", "Стратегия проверки"),
+)
+
+
+def task_from_spec(child_root, wid):
+    """Собрать ТЕКСТ ЗАДАЧИ из features/<wid>/spec.yaml для писателя, когда `run`/`do` вызваны без
+    позиционного текста (только `--feature`).
+
+    ПОЧЕМУ. Движок строит задачу писателю ТОЛЬКО из позиционного аргумента (`ctx = task + профиль`),
+    а НЕ из spec.yaml. Вызов `./ai-ops run --execute --feature <wid>` без текста давал писателю
+    пустой блок «=== ЗАДАЧА ===»: он либо не писал ничего, либо авторил спеку про «задача пуста».
+    Спека же — источник истины о том, что делать. Здесь берём заполненные (`status: complete`)
+    разделы и складываем их в связный текст задачи. Fail-closed: нет спеки / нет ни одного
+    заполненного раздела с содержимым -> "" (поведение как раньше, писатель получит пустую задачу и
+    кит честно заблокирует).
+    -> str (собранная задача) или "" .
+    """
+    sp = _spec_path(child_root, wid)
+    if not sp.is_file():
+        return ""
+    try:
+        import yaml
+        doc = yaml.safe_load(sp.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — битый spec: пустая задача, а не догадка
+        return ""
+    sections = doc.get("sections") if isinstance(doc, dict) else None
+    if not isinstance(sections, dict):
+        return ""
+    parts = []
+    for sid, label in _TASK_SECTION_ORDER:
+        entry = sections.get(sid)
+        if not isinstance(entry, dict) or entry.get("status") != "complete":
+            continue
+        content = entry.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        parts.append(f"{label}: {content.strip()}")
+    return "\n\n".join(parts)
+
+
 def provided_from_artifacts(child_root, wid, work_root=None):
     """v2.110: собрать provided-карту РАЗДЕЛОВ из РЕАЛЬНЫХ артефактов на диске (не из сигналов).
 
@@ -201,11 +417,37 @@ def provided_from_artifacts(child_root, wid, work_root=None):
         rel = rel_tmpl.format(wid=wid)
         for base in roots_for_credit:
             p = base / rel
-            if p.exists():
+            if _artifact_credits(p):
                 provided[sid] = {"status": status,
                                  "note": f"засчитан по артефакту {rel}"}
                 break
     return provided
+
+
+def _artifact_credits(p):
+    """#405: артефакт засчитывает раздел, только если он РЕАЛЬНЫЙ, а не просто существует.
+
+    Прежде credit ставился по `p.exists()` — пустой или недописанный `plan.yaml` (0 байт/битый
+    YAML, напр. при частичной записи между двумя прогонами) молча засчитывал раздел `complete`,
+    из-за чего spec-complete (а с ним вердикт readiness) флипал от прогона к прогону. Теперь:
+    - каталог (openspec/changes/<wid>) — засчитывает по существованию (как раньше);
+    - `.yaml`-файл — только если непустой И парсится в непустую структуру (fail-closed: битый/пустой
+      файл детерминированно НЕ засчитывает, а не «то complete, то нет»).
+    """
+    try:
+        if p.is_dir():
+            return True
+        if not p.is_file():
+            return False
+        if p.suffix.lower() not in (".yaml", ".yml"):
+            return p.exists()
+        text = p.read_text(encoding="utf-8")
+        if not text.strip():
+            return False
+        import yaml
+        return bool(yaml.safe_load(text))
+    except Exception:  # noqa: BLE001 — битый/непрочитанный артефакт -> не засчитывает (fail-closed)
+        return False
 
 
 def assess_from_artifacts(signals, child_root, wid, work_root=None):
@@ -239,12 +481,15 @@ def create_spec(child_root, wid, signals, overwrite=False):
     cls = classify(signals)
     level = cls["level"]
     if sp.is_file() and not overwrite:
-        return _add_missing_sections(sp, cls)
+        return _add_missing_sections(sp, cls, signals)
     sections = {sid: {"status": "missing", "content": "", "note": None}
                 for sid in required_sections(level)}
     doc = {"schema_version": 1, "kind": "spec", "workitem_id": str(wid),
            "level": level, "level_name": cls["level_name"],
            "level_reason": cls["reason"],
+           # Сырые сигналы задачи -> plan/run подхватят их без повторного --signals (см. коммент
+           # у _NONCARRY_SIGNAL_KEYS: цена молчаливого отката ENGINEERING в QUICK).
+           "signals": _carryable_signals(signals),
            # F-013: словарь статусов — прямо в файле. Спеку заполняет человек или агент без
            # контекста исходников кита; раньше допустимые значения находились только чтением
            # spec_levels.py, а угаданное слово молча превращало раздел в «не заполнено».
@@ -263,14 +508,19 @@ def _render_spec(doc):
             + yaml.safe_dump(doc, allow_unicode=True, sort_keys=False))
 
 
-def _add_missing_sections(sp, cls):
+def _add_missing_sections(sp, cls, signals=None):
     """F-029: дописать в существующий spec.yaml разделы, которых требует расчётный уровень.
     -> (path, created=False, {"added": [...], "error": None|str}). Заполненное не трогается;
     разделы не удаляются.
 
     Битый/непрочитанный файл НЕ переписываем: молча заменить описанное заготовками — потеря работы
     человека, а это дороже незакрытого гейта. Тогда added пуст, и вызывающий сообщает правду
-    («дописать не удалось»), а не выдаёт непроведённую правку за проведённую."""
+    («дописать не удалось»), а не выдаёт непроведённую правку за проведённую.
+
+    Сигналы переносятся тем же правилом, что у plan/run: сохранённое — база, переданное на этом
+    `specify` — сверху (явный --signals переопределяет). Если разделов дописывать нечего, но сигналы
+    изменились, файл всё равно перезаписывается — иначе перенос уровня терялся бы при повторном
+    specify без роста уровня."""
     import yaml
     level = cls["level"]
     try:
@@ -281,8 +531,12 @@ def _add_missing_sections(sp, cls):
         return sp, False, {"added": [], "error": "spec.yaml не содержит карты разделов (sections)"}
     sections = doc["sections"]
     added = [sid for sid in required_sections(level) if sid not in sections]
-    if not added:
+    stored = doc.get("signals") if isinstance(doc.get("signals"), dict) else {}
+    merged = {**stored, **_carryable_signals(signals)}
+    if not added and merged == stored:
         return sp, False, {"added": [], "error": None}
+    if merged:
+        doc["signals"] = merged
     for sid in added:
         sections[sid] = {"status": "missing", "content": "", "note": None}
     # Уровень поднимаем до расчётного и говорим ПОЧЕМУ; вниз не переписываем (нельзя понизить молча).

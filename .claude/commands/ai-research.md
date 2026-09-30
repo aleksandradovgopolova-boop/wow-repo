@@ -4,7 +4,7 @@ description: Workflow RESEARCH — Исследовательский вопро
 # ai-research — Исследовательский вопрос с проверкой фактов и синтезом.
 
 Сгенерировано из registry/workflows.yaml — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Проводит задачу по workflow **RESEARCH** (orchestrated / минимум

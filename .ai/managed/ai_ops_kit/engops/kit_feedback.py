@@ -46,6 +46,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402,F401
+from ai_ops_kit.shared.gitio import git  # noqa: E402
 
 OBSERVATION_CLASSES = ("defect", "friction", "question", "idea")
 SEVERITIES = ("p0", "p1", "p2")
@@ -101,12 +102,12 @@ def _kit_version(root):
 
 
 def _git_head(root):
+    # Единый вход к git с таймаутом (см. shared/gitio). OSError (нет git) по-прежнему -> None.
     try:
-        r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
-                           capture_output=True, text=True, timeout=20, check=False)
+        rc, out, _ = git(root, "rev-parse", "HEAD", timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
-    return (r.stdout or "").strip()[:12] or None if r.returncode == 0 else None
+    return out[:12] or None if rc == 0 else None
 
 
 def build(child_root, statement, *, evidence=None, severity=None, observation_class=None, at=None):

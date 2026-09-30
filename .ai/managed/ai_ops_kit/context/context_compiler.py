@@ -17,17 +17,13 @@
 поднимается overflow-флаг + open_question. Устаревшие артефакты помечаются (stale-warning).
 Инвариант: тот же WorkItem при тех же входах -> ВОСПРОИЗВОДИМЫЙ пакет (сортировки, без времени/рандома).
 
-Использование:
-  context_compiler.py <child_root> --signals '{...}' [--feature name] [--json]
-  context_compiler.py --selftest
-Возврат 0 — ок, 1 — ошибка (или overflow при --strict).
+План приходит извне (готовый `plan` или инъекция `build_plan`): этот модуль слоя `context` НЕ
+импортирует engine. CLI-обёртка, которой нужен построитель плана, живёт в точке входа —
+ai_ops_kit/devtools/context_compile_cli.py.
 """
 from __future__ import annotations
 
-import argparse
-import json
 import re
-import sys
 from pathlib import Path
 
 import yaml
@@ -36,6 +32,7 @@ PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is
             Path(__file__).resolve().parents[1])
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
 from ai_ops_kit.shared import project_detector    # noqa: E402
+from ai_ops_kit.shared.gitio import git           # noqa: E402
 
 CONTEXT_BUDGET_DEFAULT = 120_000   # токенов; override через signals["context_budget"] или config
 
@@ -113,14 +110,24 @@ def _file_tokens(rel):
     return 0
 
 
-def compile_bundle(signals, child_root, plan=None, context_budget=None):
-    """Собрать ContextBundle. Детерминированно; без времени/рандома -> воспроизводимо."""
+def compile_bundle(signals, child_root, plan=None, context_budget=None, build_plan=None):
+    """Собрать ContextBundle. Детерминированно; без времени/рандома -> воспроизводимо.
+
+    План приходит извне: либо готовый `plan` (RunPlan), либо строитель `build_plan`
+    (callable signals, workitem_id -> RunPlan). Так context НЕ импортирует engine — ни
+    статически, ни динамически (K2-развязка слоёв). Точки входа, у которых есть только
+    сигналы (CLI/валидаторы/engine), инъецируют `run_plan.build_plan`.
+    """
     child_root = Path(child_root)
     signals = dict(signals or {})
     if plan is None:
-        # v3.38 (K2): run_plan загружается динамически — context не импортирует engine.
-        _rp = __import__("ai_ops_kit.engine.run_plan", fromlist=["build_plan"])
-        plan = _rp.build_plan(signals, workitem_id=signals.get("feature"))
+        if build_plan is None:
+            raise ValueError(
+                "compile_bundle требует plan или build_plan: context не строит RunPlan сам "
+                "(K2 — context не импортирует engine). Передайте plan=<RunPlan> или "
+                "build_plan=run_plan.build_plan."
+            )
+        plan = build_plan(signals, workitem_id=signals.get("feature"))
     wid = plan["workitem_id"]
     base_wf = plan["base_workflow"]
     gate_ids = list(plan.get("gates", []))
@@ -236,7 +243,7 @@ def compile_bundle(signals, child_root, plan=None, context_budget=None):
         except OSError:
             pass
 
-    return {
+    bundle = {
         "schema_version": 1, "kind": "ContextBundle",
         "workitem_id": wid, "base_workflow": base_wf,
         "revision": _git_head(child_root),
@@ -258,12 +265,35 @@ def compile_bundle(signals, child_root, plan=None, context_budget=None):
         "context_budget": budget,
         "overflow": overflow,
     }
+    _warn_if_bundle_malformed(bundle)
+    return bundle
+
+
+def _warn_if_bundle_malformed(bundle):
+    """#678: провести вердикт формы ContextBundle в детерминированный генератор (validate-and-warn).
+
+    compile_bundle ОБЯЗАН давать валидный ContextBundle; нарушение — баг генератора, о котором нельзя
+    молчать: этот bundle становится payload для модели. WARN, а НЕ блок: компиляция контекста не
+    срывается. Логика check() лежит в слое `checks` (primitives), импорт идёт ВНИЗ (context -> checks),
+    без восходящего ребра context -> validation (v3.38-приём). Guard на ImportError оборонительный."""
+    try:
+        from ai_ops_kit.checks.context_bundle import check
+    except ImportError:
+        return
+    errs = check(bundle)
+    if errs:
+        import warnings
+        warnings.warn(
+            "ContextBundle собран с нарушением формы (" + "; ".join(errs)
+            + ") — контекст модели может быть неполным/нечестным",
+            RuntimeWarning, stacklevel=3,
+        )
 
 
 def _git_head(root):
-    import subprocess
-    r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True)
-    return r.stdout.strip() if r.returncode == 0 else None
+    # Единый вход к git с таймаутом (см. shared/gitio): зависший git не вешает компиляцию контекста.
+    rc, out, _ = git(root, "rev-parse", "HEAD")
+    return out if rc == 0 else None
 
 
 # Контекстные окна моделей (токены). Читаются из registry/models.yaml (SoT), не хардкод.
@@ -294,7 +324,8 @@ def _sha(text):
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:12]
 
 
-def build_payload(signals, child_root, plan=None, bundle=None, context_budget=None, model=None):
+def build_payload(signals, child_root, plan=None, bundle=None, context_budget=None, model=None,
+                  build_plan=None):
     """v2.108 Operational Context: собрать РЕАЛЬНЫЙ compiled payload для prompt модели из ContextBundle
     (содержимое правил/решений/спек/repo+project context), с бюджетом (output/tool-loop reserve + окно
     модели) и манифестом (source, hash, revision, tokens, reason). Превышение НЕ обрезает молча —
@@ -302,7 +333,8 @@ def build_payload(signals, child_root, plan=None, bundle=None, context_budget=No
     child_root = Path(child_root)
     signals = dict(signals or {})
     if bundle is None:
-        bundle = compile_bundle(signals, child_root, plan=plan, context_budget=context_budget)
+        bundle = compile_bundle(signals, child_root, plan=plan, context_budget=context_budget,
+                                build_plan=build_plan)
     budget = context_budget or bundle.get("context_budget") or CONTEXT_BUDGET_DEFAULT
     if model and model in MODEL_CONTEXT:
         budget = min(budget, MODEL_CONTEXT[model])
@@ -336,6 +368,19 @@ def build_payload(signals, child_root, plan=None, bundle=None, context_budget=No
     if inc.get("skills"):
         candidates.append(("skills", "skills", "Нужные skills: " + ", ".join(inc["skills"]),
                            "релевантные skills (по стадиям)"))
+    # #613 Storybook-навигация: при UI-изменении даём агенту каталог дизайн-системы дочки (и stories,
+    # связанные с затронутыми файлами), чтобы он ПЕРЕИСПОЛЬЗОВАЛ существующие компоненты/варианты/a11y,
+    # а не изобретал заново. Живой потребитель storybook_query (был built-not-wired). Guarded и дёшев:
+    # None, если у дочки нет Storybook — на не-UI дочке не шумим.
+    if signals.get("ui_changed"):
+        try:
+            from ai_ops_kit.ui import storybook_query as _sbq
+            _nav = _sbq.navigation_context(child_root, changed_files=signals.get("changed_files"))
+            if _nav:
+                candidates.append(("storybook", "storybook-navigation", _nav,
+                                   "навигация по дизайн-системе Storybook — переиспользуй существующее (#613)"))
+        except Exception:  # noqa: BLE001,S110 — навигация это КОНТЕКСТ, не гейт: её сбой не должен ронять сборку контекста
+            pass
 
     included_items, excluded_for_budget, parts, used = [], [], [], 0
     for kind, source, text, reason in candidates:
@@ -371,33 +416,3 @@ def build_payload(signals, child_root, plan=None, bundle=None, context_budget=No
     }
 
 
-def main(argv):
-    ap = argparse.ArgumentParser(prog="context_compiler.py")
-    ap.add_argument("child_root", nargs="?", default=".")
-    ap.add_argument("--signals", default="{}")
-    ap.add_argument("--feature")
-    ap.add_argument("--budget", type=int)
-    ap.add_argument("--json", action="store_true")
-    ap.add_argument("--strict", action="store_true", help="ненулевой код при overflow")
-    a = ap.parse_args(argv)
-    signals = json.loads(a.signals)
-    if a.feature:
-        signals["feature"] = a.feature
-    b = compile_bundle(signals, Path(a.child_root), context_budget=a.budget)
-    if a.json:
-        print(json.dumps(b, ensure_ascii=False, indent=2))
-    else:
-        inc = b["included"]
-        print(f"CONTEXT-BUNDLE {b['workitem_id']} ({b['base_workflow']}) · ~{b['estimated_tokens']}/"
-              f"{b['context_budget']} ток.{' ⚠OVERFLOW' if b['overflow'] else ''}")
-        print(f"  агенты ({len(inc['agents'])}): {', '.join(inc['agents']) or '—'}")
-        print(f"  правила: {', '.join(inc['rules']) or '—'} · skills: {', '.join(inc['skills']) or '—'}")
-        print(f"  стек: {', '.join(inc['repository_context']) or 'не определён'}")
-        print(f"  исключено источников: {len(b['excluded'])}")
-        for q in b["open_questions"]:
-            print(f"  ? {q}")
-    return 1 if (a.strict and b["overflow"]) else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))

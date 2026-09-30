@@ -39,14 +39,29 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
+from ai_ops_kit.shared.gitio import git
 from ai_ops_kit.planning import contours as _contours
+
+# Классификация зрелости, реконструкция и состояние контуров вынесены в проб-свободный спутник
+# repo_audit_analysis.py (module-size, структурный разрез). Статусы provenance и порог свежести
+# объявлены ТАМ (одно место), а фасад ре-экспортирует их прежними именами: внешний код и тесты
+# продолжают читать `repo_audit.VERIFIED`, `repo_audit.classify` и т.д. Направление импортов
+# одностороннее — спутник фасад НЕ импортирует, обратного ребра нет.
+from ai_ops_kit.planning.repo_audit_analysis import (  # noqa: E402,F401
+    CONFLICTING,
+    INFERRED,
+    MISSING,
+    PARTIAL,
+    STALE,
+    STALE_AFTER_DAYS,
+    UNKNOWN,
+    USER_CONFIRMED,
+    VERIFIED,
+)
 
 # Расширения, считающиеся исходным кодом при классификации. Список узкий сознательно: markdown и
 # yaml не делают репозиторий продуктом, иначе папка с документацией классифицировалась бы как
@@ -60,24 +75,15 @@ _SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "b
               # предъявлял бы как доказательство путь во временной копии самого себя.
               ".claude"}
 
-# Сколько дней документ контура считается свежим. `stale` объявлен в словаре состояний модели,
-# значит обязан ВЫВОДИТЬСЯ, а не быть словом в реестре: капабилити, которую никто не считает, —
-# ровно то, что инварианты кита запрещают объявлять.
-STALE_AFTER_DAYS = 180
-
-VERIFIED, INFERRED, PARTIAL, MISSING, UNKNOWN, STALE, USER_CONFIRMED = (
-    "verified", "inferred", "partial", "missing", "unknown", "stale", "user_confirmed")
-
 
 def _git(root: Path, *args):
-    """git с проглоченной ошибкой. -> stdout|None. None означает «история не читается»,
-    и это НЕ ноль коммитов: разница между ними меняет класс репозитория."""
+    """git с проглоченной ошибкой (единый вход с таймаутом, см. shared/gitio). -> stdout|None.
+    None означает «история не читается», и это НЕ ноль коммитов: разница меняет класс репозитория."""
     try:
-        r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
-                           timeout=20, check=False)
+        rc, out, _ = git(root, *args, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
-    return r.stdout.strip() if r.returncode == 0 else None
+    return out if rc == 0 else None
 
 
 def _product_ci(root) -> list:
@@ -251,541 +257,21 @@ def discover(child_root) -> dict:
     return ev
 
 
-def classify(evidence: dict, model: dict | None = None) -> dict:
-    """CLASSIFY — новый продукт, ранний, существующий или неизвестно.
-
-    UNKNOWN — не «пустой». Пустой репозиторий ЧИТАЕТСЯ и даёт нули; нечитаемый не даёт ничего.
-    Разница определяет, начинать ли bootstrap или сначала спросить, и поэтому она в коде, а не в
-    интуиции читателя.
-    """
-    model = model or _contours.load_model()
-    th = ((model.get("classification") or {}).get("thresholds") or {})
-    src = evidence.get("source_files")
-    commits = evidence.get("commits")
-
-    if not evidence.get("tree_readable") or src is None:
-        return {"class": "UNKNOWN", "confidence": "none",
-                "reasons": ["дерево репозитория не читается — сигналы классификации недоступны"],
-                "onboarding": "ask_before_acting"}
-
-    has_ci = bool(evidence.get("ci"))
-    has_tests = bool(evidence.get("test_files"))
-    has_migr = bool(evidence.get("migrations"))
-    has_rel = bool(evidence.get("release_history"))
-    reasons = []
-
-    if src <= th.get("new_max_source_files", 10) and not has_ci and not has_tests:
-        if commits is None:
-            reasons.append(f"файлов кода {src}, CI и тестов нет; история git не читается")
-            conf = "medium"
-        elif commits <= th.get("new_max_commits", 5):
-            reasons.append(f"файлов кода {src}, коммитов {commits}, CI и тестов нет")
-            conf = "high"
-        else:
-            reasons.append(f"файлов кода {src}, но коммитов {commits} — это не scaffold")
-            return {"class": "EARLY_PRODUCT", "confidence": "medium", "reasons": reasons,
-                    "onboarding": "reconstruct_then_bootstrap"}
-        return {"class": "NEW_PRODUCT", "confidence": conf, "reasons": reasons,
-                "onboarding": "product_bootstrap"}
-
-    strong = sum([has_ci, has_tests, has_migr, has_rel])
-    if commits is not None and commits >= th.get("existing_min_commits", 50) and strong >= 1:
-        reasons.append(f"коммитов {commits}, файлов кода {src}")
-        reasons.append("признаки живой системы: " + ", ".join(
-            n for n, v in (("CI", has_ci), ("тесты", has_tests), ("миграции", has_migr),
-                           ("релизы", has_rel)) if v))
-        return {"class": "EXISTING_PRODUCT", "confidence": "high", "reasons": reasons,
-                "onboarding": "reconstruct_first"}
-    if strong >= 3:
-        reasons.append("история короткая или не читается, но CI, тесты и данные на месте")
-        return {"class": "EXISTING_PRODUCT", "confidence": "medium", "reasons": reasons,
-                "onboarding": "reconstruct_first"}
-
-    reasons.append(f"код есть (файлов {src}), продуктовой и архитектурной истории почти нет")
-    if commits is not None:
-        reasons.append(f"коммитов {commits}")
-        # Порог `early_max_commits` объявлен в реестре и ОБЯЗАН читаться: реестр обещает, что пороги
-        # правятся данными живых прогонов, а не кодом. Прежде он не читался никем — объявление без
-        # реализации, то есть в точности то, что инварианты кита запрещают.
-        early_max = th.get("early_max_commits", 50)
-        if commits > early_max:
-            reasons.append(f"история длиннее порога ранней стадии ({early_max}), но признаков "
-                           f"живой системы (CI, тесты, миграции, релизы) меньше двух — "
-                           f"состояние определяется как раннее осознанно")
-    return {"class": "EARLY_PRODUCT", "confidence": "medium" if commits is not None else "low",
-            "reasons": reasons, "onboarding": "reconstruct_then_bootstrap"}
-
-
-ANSWERS_REL = ".ai/project/onboarding-answers.yaml"
-
-
-def answers_path(child_root) -> Path:
-    return Path(child_root) / ANSWERS_REL
-
-
-class AnswersCorrupt(Exception):
-    """Файл ответов онбординга существует, но не разбирается.
-
-    Отдельный тип, а не `return {}`: «ответов нет» и «ответы есть, но прочитать нечем» — разные
-    ответы, и второй НЕ даёт права переспрашивать и перезаписывать. Ровно так был потерян
-    заполненный файл в живом прогоне niti (F-023).
-    """
-
-
-def read_answers(child_root) -> dict:
-    """Ответы человека из файла онбординга. Пустое значение — это «ещё не ответил», а не ответ."""
-    p = answers_path(child_root)
-    if not p.is_file():
-        return {}
-    try:
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as e:
-        # НЕРАЗОБРАННЫЙ ФАЙЛ — ЭТО НЕ «ОТВЕТОВ НЕТ» (F-023, живой прогон niti 2026-08-12).
-        # Прежде здесь стоял `return {}`, и это было началом потери данных: кит получал «ответов
-        # нет», переспрашивал всё заново и ПЕРЕЗАПИСЫВАЛ файл пустым. Ответы владельца исчезали
-        # молча — вместе с тем, что он вписал руками. Тот же инвариант, что «не смог прочитать» !=
-        # «нет»: см. DeliveryReceipt и реестр гейтов.
-        raise AnswersCorrupt(f"{p}: файл ответов не разбирается ({e}) — починить, а не отвечать "
-                             f"заново; иначе ответы будут перезаписаны пустыми") from e
-    ans = (data.get("answers") or {}) if isinstance(data, dict) else {}
-    return {k: v for k, v in ans.items()
-            if v not in (None, "", [], {}) and str(v).strip() not in ("", "?")}
-
-
-_ANSWER_KEY_RE = re.compile(r"^ {2}([A-Za-z_][A-Za-z0-9_.-]*):(?:\s|$)")
-
-
-def _inline_comment(rest: str) -> str:
-    """Комментарий в хвосте строки значения. -> `# …` или пустая строка.
-
-    Резать по первому `#` нельзя: значение пишется как JSON-строка и `#` внутри кавычек — часть
-    ОТВЕТА, а не комментарий (`goal: "рост #1 по выручке"`). Поэтому кавычки считаются, экранирование
-    учитывается, и решётка признаётся началом комментария только вне кавычек и после пробела —
-    ровно правило YAML.
-    """
-    in_quotes, escaped = False, False
-    for i, ch in enumerate(rest):
-        if escaped:
-            escaped = False
-            continue
-        if in_quotes and ch == "\\":
-            escaped = True
-            continue
-        if ch == '"':
-            in_quotes = not in_quotes
-            continue
-        if ch == "#" and not in_quotes and (i == 0 or rest[i - 1] in " \t"):
-            return rest[i:].rstrip()
-    return ""
-
-
-def _owner_comments(text: str, kit_lines: set) -> dict:
-    """Что в существующем файле написал ЧЕЛОВЕК, а не кит. -> {header, before, inline, tail}.
-
-    ЗАЧЕМ (F-020, живой прогон niti 2026-08-12). `write_question_file` пересобирает файл целиком:
-    значения переносились через `read_answers`, а комментарии — нет. Владелец вписал к каждому
-    ответу источник (`file:line`), и после следующего `ai-ops model` их осталось НОЛЬ строк. Для
-    файла, чья роль — «подтверждённые факты», это потеря ОСНОВАНИЯ: утверждение остаётся, а отличить
-    подтверждённое от переписанного больше нечем. Обход в том прогоне — прятать ссылки внутрь
-    значений — был обходом, а не решением.
-
-    ЧЕЙ КОММЕНТАРИЙ — РЕШАЕТСЯ СРАВНЕНИЕМ С ТЕМ, ЧТО КИТ ПИШЕТ САМ (`kit_lines`), а не догадкой по
-    форме. Строка, совпавшая с собственной строкой кита, принадлежит киту и будет сгенерирована
-    заново; всё остальное — владельца и переносится дословно.
-
-    ГРАНИЦА НАЗВАНА, А НЕ СПРЯТАНА: если формулировка вопроса ИЗМЕНИЛАСЬ между версиями кита, старая
-    строка перестаёт совпадать с новой и будет сохранена как авторская — один раз, при первом
-    прогоне после обновления. Выбор осознанный: лишняя строка видна и удаляется рукой, а потерянное
-    основание не восстанавливается ничем. Обратный порядок предпочтений сделал бы ровно тот дефект,
-    который здесь чинится.
-    """
-    header, before, inline, tail = [], {}, {}, []
-    pending, in_answers = [], False
-    for raw in text.splitlines():
-        line = raw.rstrip()
-        stripped = line.strip()
-        if not in_answers:
-            if stripped == "answers:":
-                in_answers = True
-            elif stripped.startswith("#") and line not in kit_lines:
-                header.append(stripped)
-            continue
-        m = _ANSWER_KEY_RE.match(line)
-        if m:
-            qid = m.group(1)
-            if pending:
-                before[qid] = list(pending)
-                pending = []
-            c = _inline_comment(line[m.end(1) + 1:])
-            if c:
-                inline[qid] = c
-            continue
-        if stripped.startswith("#") and line not in kit_lines:
-            pending.append(stripped)
-    tail = pending                      # комментарии после последнего ключа — тоже человеческие
-    return {"header": header, "before": before, "inline": inline, "tail": tail}
-
-
-def write_question_file(child_root, ask: dict):
-    """Создать/дополнить файл, в который человек ВПИШЕТ ответы. -> путь.
-
-    Прежде `ai-ops model` печатал вопросы и ЗАВЕРШАЛСЯ: куда писать ответы, не сказано, интерактива
-    нет — человек прочитал двенадцать вопросов и не может ответить. Тупик на главном шаге первого
-    сценария, при том что онбординг обещал «соберу материалы и покажу на проверку».
-
-    Существующие ответы НЕ затираются никогда: файл дополняется новыми вопросами, ответы остаются.
-    ВМЕСТЕ С НИМИ ОСТАЮТСЯ КОММЕНТАРИИ ВЛАДЕЛЬЦА (F-020): и те, что стоят над ответом, и хвостовые
-    в той же строке. Ответ без основания — это утверждение, которое нечем проверить, а основание
-    владелец пишет именно комментарием: `main_goal_now: "…"  # docs/product.md:14`.
-
-    ЛИШНЕЙ ЗАПИСИ НЕ ДЕЛАЕМ. Если содержимое не изменилось, файл не перезаписывается: `ai-ops model`
-    зовут и просто «посмотреть состояние», и трогать mtime (а в чужом репозитории — показывать файл
-    изменённым в `git status`) ради того же текста команда не вправе. Это единственный файл, который
-    она создаёт, и создаёт ровно потому, что вопросам нужно место для ответа.
-    """
-    p = answers_path(child_root)
-    # Если файл есть, но не читается — НЕ перезаписываем: это уничтожило бы ответы владельца.
-    # Пусть ошибка дойдёт до человека словами «починить, а не отвечать заново» (F-023).
-    existing = read_answers(child_root)
-    header = [
-        "# Ответы владельца на вопросы онбординга AI Ops.",
-        "#",
-        "# Здесь только то, что из кода честно не выводится: цели продукта, его пользователи,",
-        "# границы, которые нельзя нарушать. Кит эти вещи не выдумывает — поэтому спрашивает.",
-        "#",
-        "# Как отвечать: впишите значение после двоеточия. Пустая строка означает «ещё не ответил»,",
-        "# и вопрос останется. Ответ сильнее любого вывода кита: он становится подтверждённым фактом",
-        "# (`user_confirmed`) и больше не переспрашивается.",
-        "#",
-        "# После заполнения запустите снова:  ./ai-ops model",
-    ]
-    # Строки, которые кит пишет САМ, — эталон для разбора «чей комментарий» (F-020). Собираются до
-    # генерации, потому что разбор существующего файла обязан знать их заранее.
-    kit_comments, kit_lines = {}, set(header)
-    for q in ask.get("questions") or []:
-        qid = q.get("id")
-        if not qid or qid in kit_comments:
-            continue
-        block = [f"  # {q.get('ask', '')}"]
-        if q.get("proposal") and q["proposal"].get("value"):
-            block.append(f"  #   по коду предполагаю: {q['proposal']['value']} — подтвердите или "
-                         f"замените")
-        kit_comments[qid] = block
-        kit_lines.update(block)
-
-    own = {"header": [], "before": {}, "inline": {}, "tail": []}
-    if p.is_file():
-        try:
-            own = _owner_comments(p.read_text(encoding="utf-8"), kit_lines)
-        except OSError:
-            pass                               # прочитать не смогли — комментариев не будет, но
-            # ответы уже прочитаны выше через `read_answers`, и потерять их этот путь не может
-
-    def _value_line(qid, val):
-        """Строка значения вместе с хвостовым комментарием владельца, если он был."""
-        dumped = json.dumps(val, ensure_ascii=False) if val is not None else '""'
-        c = own["inline"].get(qid)
-        return f"  {qid}: {dumped}" + (f"  {c}" if c else "")
-
-    lines = header + own["header"] + ["answers:"]
-    seen = set()
-    for q in ask.get("questions") or []:
-        qid = q.get("id")
-        if not qid or qid in seen:
-            continue
-        seen.add(qid)
-        lines.extend(kit_comments[qid])
-        lines.extend(f"  {c}" for c in own["before"].get(qid, []))
-        val = existing.get(qid)
-        # ЗНАЧЕНИЕ ПИШЕТСЯ ОДНОЙ СТРОКОЙ, БЕЗ МАРКЕРОВ ДОКУМЕНТА (F-023, живой прогон niti).
-        #
-        # Прежде стоял `yaml.safe_dump(val, default_flow_style=True).strip()`, и он ломал файл
-        # ДВАЖДЫ. Первое: для голого скаляра PyYAML дописывает маркер конца документа —
-        # `safe_dump("текст")` даёт `'текст\n...\n'`, а `.strip()` убирает только пробелы, поэтому
-        # в файл попадала строка `...`, начинавшая НОВЫЙ YAML-документ. Второе: дефолт `width=80`
-        # переносил длинное значение, а префикс `  {qid}: ` добавлялся лишь к первой строке —
-        # продолжение оказывалось на отступе соседних ключей.
-        #
-        # Итог был потерей данных: кит записывал файл, который сам не мог прочитать, `read_answers`
-        # отдавал «ответов нет», кит переспрашивал всё заново и перезаписывал файл пустым. Ломалось
-        # ровно на содержательных ответах — короткие выживали.
-        #
-        # `json.dumps` даёт валидный YAML (YAML — надмножество JSON): двойные кавычки, одна строка,
-        # никаких маркеров документа.
-        lines.append(_value_line(qid, val))
-        lines.append("")
-    # Ответы на вопросы, которых больше не задают, сохраняем: человек их дал, они факт.
-    for qid, val in existing.items():
-        if qid not in seen:
-            # ТОТ ЖЕ json.dumps, ЧТО ВЫШЕ (F-021, вторая половина). Первая правка закрыла только
-            # ветку «вопрос ещё задаётся», а ОТВЕЧЕННЫЕ идут ИМЕННО СЮДА — их уже не спрашивают.
-            # То есть дефект остался ровно там, где живут данные: на niti ответы гибли и после
-            # «исправления», пока это место не поправили. Поймано повторным прогоном на живом
-            # продукте, а не чтением кода.
-            lines.extend(f"  {c}" for c in own["before"].get(qid, []))
-            lines.append(_value_line(qid, val))
-    lines.extend(own["tail"])
-    body = "\n".join(lines).rstrip() + "\n"
-    if p.is_file():
-        try:
-            if p.read_text(encoding="utf-8") == body:
-                return p                       # тот же текст — писать нечего
-        except OSError:
-            pass                               # прочитать не смогли — перезапишем, это не потеря
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(body, encoding="utf-8")
-    return p
-
-
-def owner_confirmed(child_root) -> dict:
-    """Факты, ПОДТВЕРЖДЁННЫЕ владельцем: `.ai-ops.yaml -> product_operating_model.confirmed`.
-
-    Это единственный производитель состояния `user_confirmed`, и он обязан существовать: состояние
-    объявлено в модели с `trust: high` и названо единственным способом повысить `inferred`. Слово в
-    реестре, которого не вычисляет никто, — ровно та «capability без реализации», которую
-    инварианты кита запрещают (то же правило уже применено к `stale`).
-    """
-    # Файл ответов читается НЕЗАВИСИМО от наличия `.ai-ops.yaml`: человек отвечает на вопросы
-    # онбординга ДО того, как у репозитория появится настроенная конфигурация, и ранний выход по
-    # отсутствию конфига обнулял его ответы молча.
-    data = {}
-    cfg = Path(child_root) / ".ai-ops.yaml"
-    if cfg.is_file():
-        try:
-            data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
-            data = {}                                  # битый конфиг — забота doctor'а
-    if not isinstance(data, dict):
-        data = {}
-    conf = dict((data.get("product_operating_model") or {}).get("confirmed") or {})
-    # Файл ответов онбординга — ВТОРОЙ законный источник подтверждений и основной по факту: человек
-    # отвечает там, а не правит конфигурацию руками. Ответ из файла имеет тот же вес.
-    conf.update(read_answers(child_root))
-    return {k: v for k, v in conf.items() if v not in (None, "")}
-
-
-def reconstruct(child_root, evidence: dict, model: dict | None = None) -> dict:
-    """RECONSTRUCT — что кит утверждает о репозитории и НА КАКОМ ОСНОВАНИИ.
-
-    -> {ключ: {"value": …, "status": verified|inferred|unknown, "evidence": [...]}}
-
-    `verified` — только факт репозитория (файл, манифест, миграция, CI). Всё, что получено
-    рассуждением о структуре, — `inferred`, и повышению не подлежит: подтвердить может человек
-    (`user_confirmed`), а не убедительность вывода.
-    """
-    model = model or _contours.load_model()
-    root = Path(child_root)
-    out = {}
-
-    prof = evidence.get("profile") or {}
-    langs = [s.get("language") for s in (prof.get("stacks") or []) if s.get("language")]
-    if langs:
-        out["languages"] = {"value": langs, "status": VERIFIED,
-                            "evidence": sorted({e for s in prof.get("stacks") or []
-                                                for e in (s.get("evidence_source") or [])})[:6]}
-    else:
-        out["languages"] = {"value": None, "status": UNKNOWN,
-                            "evidence": [], "note": "манифесты зависимостей не распознаны"}
-
-    fw = sorted({f for s in (prof.get("stacks") or []) for f in (s.get("frameworks") or [])})
-    if fw:
-        out["frameworks"] = {"value": fw, "status": VERIFIED, "evidence": ["манифесты зависимостей"]}
-
-    if evidence.get("migrations"):
-        out["persistence"] = {"value": "реляционная СУБД с миграциями", "status": VERIFIED,
-                              "evidence": list(evidence["migrations"])}
-    elif evidence.get("containers"):
-        out["persistence"] = {"value": None, "status": UNKNOWN,
-                              "evidence": list(evidence["containers"]),
-                              "note": "хранилище может быть объявлено в compose — не разобрано"}
-
-    if evidence.get("api_schemas"):
-        out["api_contracts"] = {"value": "контракты API объявлены файлами", "status": VERIFIED,
-                                "evidence": list(evidence["api_schemas"])}
-
-    if evidence.get("ci"):
-        cmds = {}
-        for s in prof.get("stacks") or []:
-            for k, v in (s.get("commands") or {}).items():
-                if v:
-                    cmds[k] = v
-        # ССЫЛКА СОВПАДАЕТ С ИСТОЧНИКОМ (F-019, часть 2). Значения команд читаются из МАНИФЕСТОВ
-        # стека (`package.json` -> scripts и т.п.), а не из шагов workflow — прежде evidence
-        # указывал только на CI, то есть «подтверждено» ссылалось не туда, где взяты данные.
-        _cmd_ev = list(evidence.get("dependency_manifests") or [])
-        out["ci_pipeline"] = {"value": sorted(cmds) or "CI объявлен", "status": VERIFIED,
-                              "evidence": list(evidence["ci"]) + _cmd_ev,
-                              "note": "CI продукта обнаружен; перечисленные команды взяты из "
-                                      "манифестов стека, шаги workflow не разбирались"}
-
-    if evidence.get("containers"):
-        out["deployment"] = {"value": "контейнерная поставка", "status": INFERRED,
-                             "evidence": list(evidence["containers"]),
-                             "note": "какое окружение считается production — решение владельца"}
-
-    src, tests = evidence.get("source_files") or 0, evidence.get("test_files") or 0
-    if src:
-        out["test_coverage_presence"] = {
-            "value": f"{tests} тестовых файлов на {src} файлов кода",
-            "status": VERIFIED if tests else MISSING, "evidence": ["обход дерева"]}
-
-    # Архитектурный стиль — самый соблазнительный вывод и самый опасный: имена папок не являются
-    # архитектурой. Поэтому статус всегда inferred, и рядом стоит основание.
-    style, why = None, []
-    if (root / "src" / "modules").is_dir() or (root / "modules").is_dir():
-        style, why = "modular_monolith", ["src/modules/*"]
-    elif any((root / d).is_dir() for d in ("services", "apps", "packages")):
-        style, why = "multi-service / monorepo", [d for d in ("services", "apps", "packages")
-                                                  if (root / d).is_dir()]
-    elif src:
-        style, why = "single application", ["структура каталогов"]
-    if style:
-        out["architecture_style"] = {"value": style, "status": INFERRED, "evidence": why,
-                                     "note": "вывод из структуры; подтверждение владельца желательно"}
-
-    # То, что из кода НЕ выводится. Молчать об этом нельзя: молчание читается как «нечего сказать».
-    for key, note in (("primary_user", "пользователи продукта из репозитория не выводятся"),
-                      # Ключ назван так же, как id ВОПРОСА в модели (`main_goal_now`): иначе ответ
-                      # человека никогда не встретится со своим вопросом — ровно тот дефект, что был
-                      # у `production_env` (ключ реконструкции не совпадал с id вопроса).
-                      ("main_goal_now", "цель продукта из репозитория не выводится"),
-                      ("sensitive_data", "чувствительность данных определяет владелец")):
-        # `asks_human: True` — ключ, который кит НЕ ВЫВОДИТ ПО ОПРЕДЕЛЕНИЮ, а не «пока не нашёл».
-        # Разница машиночитаемая, потому что от неё зависит, задавать ли вопрос: `languages`
-        # неизвестны на пустом репозитории, но выводятся из манифестов — спрашивать их у человека
-        # неуважительно. И у каждого такого ключа обязан быть ПАРНЫЙ вопрос в модели, иначе ответ
-        # никогда не встретится со своим вопросом (так уже случилось дважды).
-        out[key] = {"value": None, "status": UNKNOWN, "evidence": [], "note": note,
-                    "asks_human": True}
-
-    # Ключ реконструкции обязан совпадать с id ВОПРОСА (`production_env` в модели), иначе
-    # предложение «по коду предполагаю X — подтвердить?» не доходит до вопроса никогда — именно так
-    # обещание и не исполнялось. Основание для догадки есть там, где есть контейнер или CI-деплой;
-    # где его нет, состояние остаётся `unknown`, а не выдумывается.
-    if evidence.get("containers") or evidence.get("ci"):
-        out["production_env"] = {
-            "value": "окружение, куда деплоит существующий конвейер", "status": INFERRED,
-            "evidence": list(evidence.get("containers") or evidence.get("ci") or []),
-            "note": "какое окружение считается production — решение владельца",
-            "asks_human": True}
-    else:
-        out["production_env"] = {"value": None, "status": UNKNOWN, "evidence": [],
-                                 "note": "признаков деплоя не найдено", "asks_human": True}
-
-    # ПОСЛЕДНИМ: подтверждение владельца перебивает и `inferred`, и `unknown`. Порядок не случаен —
-    # человек сильнее любого вывода кита, и обратное затирание сделало бы подтверждение бесполезным.
-    _answers = read_answers(child_root)
-    for key, value in owner_confirmed(child_root).items():
-        where = (ANSWERS_REL if key in _answers else ".ai-ops.yaml")
-        out[key] = {"value": value, "status": USER_CONFIRMED,
-                    "evidence": [f"подтверждено владельцем ({where})"],
-                    "note": "подтверждение человека сильнее вывода кита",
-                    "asks_human": (out.get(key) or {}).get("asks_human", False)}
-    return out
-
-
-def _reviewed_at(path: Path):
-    """`reviewed_at` из frontmatter документа. -> date|None. None означает «дата не объявлена»,
-    и это НЕ «свежий»: судить о свежести документа без даты нечем, поэтому решение остаётся за
-    `validate_freshness`, владельцем этой области, а не за онбордингом."""
-    import datetime as _dt
-    try:
-        head = path.read_text(encoding="utf-8", errors="replace")[:800]
-    except OSError:
-        return None
-    if not head.startswith("---"):
-        return None
-    for line in head.split("---", 2)[1].splitlines():
-        if line.strip().startswith("reviewed_at:"):
-            raw = line.split(":", 1)[1].strip().strip('"\'')
-            try:
-                return _dt.date.fromisoformat(raw)
-            except ValueError:
-                return None
-    return None
-
-
-def _is_stale(root: Path, rels, today=None) -> bool:
-    """Устарел ли хоть один источник истины контура. Дата не объявлена -> не устарел (см. выше)."""
-    import datetime as _dt
-    today = today or _dt.date.today()
-    for rel in rels:
-        for pre in ("", ".ai/project/", ".ai/custom/"):
-            p = root / (pre + rel)
-            if p.is_file():
-                d = _reviewed_at(p)
-                if d and (today - d).days > STALE_AFTER_DAYS:
-                    return True
-                break
-    return False
-
-
-def _contour_state(child_root, c: dict, evidence: dict, model: dict) -> dict:
-    """Состояние контура в терминах семи статусов + что с ним делать.
-
-    Логика намеренно скучная: есть обязательные источники истины -> `verified`; часть есть ->
-    `partial`; ничего нет, но контур восстановим -> `inferred` возможен, фактическое состояние
-    `missing`; ничего нет и восстановить нечем -> `missing`. `unknown` остаётся за случаем, когда
-    дерево не читается: тогда неизвестно даже отсутствие.
-    """
-    root = Path(child_root)
-    # `sot_for`, а не поле контура. Прежде онбординг читал ТОЛЬКО дефолт кита, поэтому `ai-ops model`
-    # — единственное, что видит человек — давал ответ, ПРОТИВОПОЛОЖНЫЙ `contours.sot_state`:
-    # владелец объявил, где лежит его правда, а кит продолжал требовать свой путь и переспрашивать
-    # вечно. Правило «объявление владельца сильнее догадки кита» до этого модуля не доехало.
-    _sot = _contours.sot_for(model, c["id"], root)
-    req = [s for s in _sot if s.get("required")]
-    opt = [s for s in _sot if not s.get("required")]
-
-    def _has(rel):
-        for pre in ("", ".ai/project/", ".ai/custom/"):
-            if (root / (pre + rel)).exists():
-                return True
-        return False
-
-    if not evidence.get("tree_readable"):
-        state = UNKNOWN
-    else:
-        have_req = [s["path"] for s in req if _has(s["path"])]
-        have_opt = [s["path"] for s in opt if _has(s["path"])]
-        if req and len(have_req) == len(req):
-            state = STALE if _is_stale(root, have_req) else VERIFIED
-        elif have_req or have_opt:
-            state = PARTIAL
-        else:
-            state = MISSING
-
-    # Заготовка плана НЕ закрывает контур планирования: файл есть, а плана нет.
-    if state == VERIFIED and c.get("id") == "planning_execution":
-        try:
-            from ai_ops_kit.planning import delivery_plan as _dp
-            if _dp.is_template(_dp.load(root)):
-                state = PARTIAL
-        # «НЕ СМОГ ПРОВЕРИТЬ» НЕ РАВНО «ПРОВЕРЕНО» (срез ратчета, 2026-08-12). Прежний `pass`
-        # оставлял состояние VERIFIED: при БИТОМ `planning/plan.yaml` контур объявлялся
-        # подтверждённым, хотя проверка не состоялась. И это не гипотеза — `delivery_plan.load()`
-        # по контракту БРОСАЕТ `PlanCorrupt` на неразобранном файле («„работы нет“ и „файл не
-        # заполнен“ это разные ответы»), то есть путь достижим ровно там, где ошибка дороже всего.
-        # Тот же класс, что F-018: существование файла принималось за заполненность.
-        except Exception:  # noqa: BLE001 — любой отказ проверки -> UNKNOWN, а не VERIFIED
-            state = UNKNOWN
-
-    rec = c.get("reconstruction") or {}
-    qs = c.get("questions") or []
-    # ПРОБЕЛ ЗАКРЫТ — ВОПРОСОВ НЕТ. Контур с полным источником истины отвечает на свои вопросы сам;
-    # спрашивать «кто основной пользователь» у репозитория с заполненным ProductOverview — то же
-    # самое, что спрашивать про PostgreSQL при наличии миграций. Устаревший источник (`stale`)
-    # вопросы возвращает: он отвечает, но неизвестно, на какой год.
-    closed = state == VERIFIED
-    return {"contour": c["id"], "title": c.get("title"), "question": c.get("question"),
-            "state": state, "owner_role": c.get("owner_role"),
-            "present": [s["path"] for s in (c.get("source_of_truth") or []) if _has(s["path"])],
-            "missing_required": [s["path"] for s in req if not _has(s["path"])],
-            "ai_can_reconstruct": rec.get("ability", "none"),
-            "reconstruct_from": rec.get("from") or [],
-            "needs_human": (not closed) and (bool(qs) or rec.get("ability") == "none"),
-            "gap_tier": c.get("gap_tier", "opportunistic"),
-            "questions": [] if closed else [dict(q) for q in qs]}
+# Работа с файлом ответов владельца (`.ai/project/onboarding-answers.yaml`) вынесена в
+# проб-свободный спутник repo_audit_answers.py (module-size, P2). Ре-экспорт сохраняет прежние имена:
+# внешние импортёры (`repo_audit.write_question_file`, `from ...repo_audit import read_answers,
+# answers_path, AnswersCorrupt`) продолжают работать. Поведение не менялось — чистый перенос.
+from ai_ops_kit.planning.repo_audit_answers import (  # noqa: E402,F401
+    ANSWERS_REL,
+    AnswersCorrupt,
+    _ANSWER_KEY_RE,
+    _inline_comment,
+    _owner_comments,
+    answers_path,
+    read_answers,
+    record_answer,
+    write_question_file,
+)
 
 
 def audit(child_root, evidence: dict | None = None, model: dict | None = None) -> dict:
@@ -810,9 +296,16 @@ def audit(child_root, evidence: dict | None = None, model: dict | None = None) -
     # ответа о нём (`gap_plan` его блокирующим считал). В child-репозитории кита `.ai-ops.yaml`
     # есть ВСЕГДА, значит контур границ AI не попадал в blocking_gaps никогда.
     blocking_tiers = {t.get("id") for t in (model.get("gap_tiers") or []) if t.get("blocks_work")}
+    # SR-1: версия стандарта репозитория (отдельная от версии пакета) + сходится ли отпечаток
+    # состава требований с объявленным. Расхождение = требования правили, а версию не подняли.
+    from ai_ops_kit.planning import standard as _standard
+    std = {"version": _standard.current_version(),
+           "fingerprint_in_sync": _standard.load().get("requirements_fingerprint")
+           == _standard.compute_fingerprint()}
     return {"contours": rows, "by_state": by_state,
             "ready": [r["contour"] for r in rows if r["state"] == VERIFIED],
             "ai_can_build": ai_only, "needs_human": human,
+            "standard": std,
             "blocking_gaps": [r["contour"] for r in rows
                               if r["state"] != VERIFIED and r["gap_tier"] in blocking_tiers]}
 
@@ -880,8 +373,12 @@ def run(child_root) -> dict:
     cls = classify(ev, model)
     rec = reconstruct(child_root, ev, model)
     aud = audit(child_root, ev, model)
+    # Противоречия источников истины — на верхний уровень отчёта: их поднимает reconstruct на
+    # факте, но человеку (`model`) и презентеру нужен явный список, а не раскопки в факте.
+    conflicts = (rec.get("persistence") or {}).get("conflicts") or []
     return {"schema_version": 1, "kind": "repository-understanding",
             "classification": cls, "evidence": ev, "reconstructed": rec, "audit": aud,
+            "conflicts": conflicts,
             "gap_plan": gap_plan(aud, model), "ask": question_package(aud, rec)}
 
 
@@ -908,6 +405,14 @@ def render(rep: dict) -> str:
     if unknowns:
         L.append(f"  не знаю (и не выдумываю): {', '.join(unknowns)}")
 
+    conflicts = rep.get("conflicts") or []
+    if conflicts:
+        L.append("\nПРОТИВОРЕЧИЯ ИСТОЧНИКОВ (не выбираю сторону молча)")
+        for c in conflicts:
+            L.append(f"  ⚠ {c['category']}: {c['summary']}")
+            for cl in c["claims"]:
+                L.append(f"      {cl['source']} ({cl['path']}): {', '.join(cl['values'])}")
+
     L.append("\nКОНТУРЫ МОДЕЛИ")
     for r in rep["audit"]["contours"]:
         who = ("пробел закрыт" if r["state"] == VERIFIED
@@ -917,6 +422,13 @@ def render(rep: dict) -> str:
         L.append(f"  {r['state']:9} {r['title']} · {who} · срочность {r['gap_tier']}")
         if r["missing_required"]:
             L.append(f"            нет: {', '.join(r['missing_required'])}")
+        # SR-6: пустая секция — отдельная находка, не «есть». Заголовок без тела выглядит закрытым.
+        for sf in r.get("section_findings") or []:
+            if sf["empty_sections"]:
+                L.append(f"            {sf['path']}: разделы есть, но ПУСТЫ (выглядят закрытыми): "
+                         f"{', '.join(sf['empty_sections'])}")
+            if sf["missing_sections"]:
+                L.append(f"            {sf['path']}: нет разделов: {', '.join(sf['missing_sections'])}")
 
     L.append("\nПЛАН ДОСТРОЙКИ (progressive — не «заполните 14 документов»)")
     for tid, t in rep["gap_plan"].items():
@@ -959,6 +471,22 @@ def main(argv=None):
     else:
         print(render(rep))
     return 0
+
+
+# Аналитическое ядро (классификация зрелости + реконструкция + состояние/устаревание контуров)
+# живёт в спутнике repo_audit_analysis.py. Явный ре-экспорт сохраняет прежнюю публичную поверхность
+# фасада: `repo_audit.classify`, `repo_audit.reconstruct`, `repo_audit._contour_state` и т.д.
+# продолжают импортироваться отсюда. `audit`/`run` выше зовут эти имена как модульные глобали —
+# ре-экспорт делает их доступными в этом пространстве имён. Обратного импорта нет.
+from ai_ops_kit.planning.repo_audit_analysis import (  # noqa: E402,F401
+    _contour_state,
+    _is_stale,
+    _maturity,
+    _reviewed_at,
+    classify,
+    owner_confirmed,
+    reconstruct,
+)
 
 
 if __name__ == "__main__":

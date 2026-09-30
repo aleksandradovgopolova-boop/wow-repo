@@ -4,7 +4,7 @@ description: Подключить AI Ops и подготовить репози�
 # ai-ops-init — разговорная установка и онбординг
 
 Сгенерировано из registry/ — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Превращает «подключи AI Ops и подготовь репозиторий» в шаги, без ручных python-команд

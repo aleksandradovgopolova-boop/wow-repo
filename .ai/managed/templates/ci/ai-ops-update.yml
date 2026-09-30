@@ -8,8 +8,17 @@
 # открывает update-PR, если ключ отсутствует ИЛИ auto_update: true. Чтобы ОТКЛЮЧИТЬ ежедневные PR —
 # поставьте auto_update: false (опт-аут). Ручной запуск (workflow_dispatch) работает всегда.
 #
-# Примечание: PR, созданный GITHUB_TOKEN, не запускает CI автоматически (ограничение GitHub).
-# Если нужен прогон CI на таком PR — закройте/откройте его или используйте PAT/GitHub App.
+# Флаг parent.auto_merge_patch — авто-слияние ТОЛЬКО патч-версий (совпадают major.minor, растёт
+# patch). ПО УМОЛЧАНИЮ ВЫКЛ: слияние в main сильнее, чем открыть PR, поэтому это опт-ин рукой
+# владельца. Минор и мажор всегда остаются на ревью. Мерж не мгновенный — через `gh pr merge --auto`,
+# то есть после обязательных проверок ветки (branch protection). Без настроенной защиты ветки GitHub
+# сольёт сразу — тогда включайте флаг осознанно (и учтите примечание про GITHUB_TOKEN ниже).
+#
+# CI на update-PR. PR, созданный GITHUB_TOKEN, GitHub не запускает через `on: pull_request`
+# (защита от рекурсии). Чтобы проверки шли на update-PR (и авто-мерж патчей реально их ждал):
+# заведите secret AI_OPS_PAT — fine-grained PAT или токен GitHub App с правами contents:write и
+# pull-requests:write. Тогда PR авторства этого токена, и CI дочки на нём стартует штатно. Без
+# секрета всё работает как раньше (PR открывается, но проверки на нём сами не запускаются).
 name: ai-ops-update
 on:
   schedule:
@@ -21,6 +30,13 @@ on:
 permissions:
   contents: write
   pull-requests: write
+concurrency:
+  # Отменять УСТАРЕВШИЕ прогоны — но ТОЛЬКО для PR (новый пуш в тот же PR гасит прежний).
+  # На push в main / schedule / release / record отмена НЕ применяется: там каждый прогон
+  # относится к своему коммиту/событию, и его потеря = дыра в проверке или в записи.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   update:
     # Раннер выбирается ПЕРЕМЕННОЙ, а не зашит. `ubuntu-latest` существует только у
@@ -31,6 +47,14 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
+        # Токен для пуша ветки и создания PR. Если задан secret AI_OPS_PAT (fine-grained PAT или
+        # токен GitHub App с правами contents+pull-requests) — берём его: тогда update-PR авторства
+        # этого токена, и обычный CI дочки (`on: pull_request`) на нём ЗАПУСКАЕТСЯ. Без секрета —
+        # github.token (как раньше): PR создаётся, но GitHub не стартует на нём проверки сам, и
+        # авто-мерж патчей `--auto` ждать нечего. Хотите CI на update-PR (и осмысленный авто-мерж) —
+        # заведите secret AI_OPS_PAT.
+        with:
+          token: ${{ secrets.AI_OPS_PAT || github.token }}
       # Python ставим ТОЛЬКО на раннерах GitHub. На своей машине `setup-python` уходит в
       # tool cache по пути раннеров GitHub (`/Users/runner`), которого там нет, а `pip install`
       # в системный python Ubuntu 24.04 запрещён (PEP 668, externally-managed-environment).
@@ -96,10 +120,16 @@ jobs:
       - name: Открыть PR с обновлением
         if: steps.ver.outputs.proceed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.AI_OPS_PAT || github.token }}
+          HAS_PAT: ${{ secrets.AI_OPS_PAT != '' }}
           TO: ${{ steps.ver.outputs.available }}
           FROM: ${{ steps.ver.outputs.installed }}
         run: |
+          if [ "$HAS_PAT" = true ]; then
+            echo "токен: AI_OPS_PAT — CI дочки запустится на update-PR"
+          else
+            echo "::notice::secret AI_OPS_PAT не задан — PR откроется, но CI на нём GitHub сам не запустит (и авто-мержу патчей нечего ждать). Заведите AI_OPS_PAT, чтобы проверки шли на update-PR."
+          fi
           if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
             echo "изменений нет — PR не нужен"; exit 0
           fi
@@ -119,6 +149,31 @@ jobs:
             echo "Автообновление AI Ops Kit: **$FROM → $TO**."
             echo
             echo "Локальные слои (\`.ai/project/\`, \`.ai/custom/\`) не тронуты."
+            echo
+            # ЧТО МЕНЯЕТСЯ ДЛЯ ВАС (#1210) — слой владельца каждой версии между FROM и TO, ТЕКСТОМ, а не
+            # внутри JSON ниже. Тот же приём, что у раздела безопасности: python читает ФАЙЛ отчёта
+            # сам, текст не проходит ни через выражение workflow, ни через переменную shell. Версия без слоя —
+            # заголовком раздела (так и сказано в тексте); нет раздела в отчёте — «НЕ УДАЛОСЬ».
+            python3 -c 'import json,sys
+          t=None
+          try: t=json.load(open(sys.argv[1],encoding="utf-8"))["whats_new"]["text"]
+          except Exception: pass
+          if not isinstance(t,str) or not t.strip(): t="Что нового для вас: прочитать описание выпусков НЕ УДАЛОСЬ (раздела нет в отчёте обновления или он пуст) — это не «ничего нового»; см. CHANGELOG кита."
+          t=t.strip()
+          print(t if len(t)<=12000 else t[:12000].rstrip()+"\n\n… (обрезано — полный текст в CHANGELOG кита)")' "${REPORT:-/nonexistent}"
+            echo
+            # Раздел безопасности (#1157) — из ФАЙЛА отчёта, python читает его сам: текст с адресами
+            # не проходит ни через `${{ }}`, ни через переменную shell, поэтому кавычки и `$()`
+            # в нём остаются текстом. Нет отчёта или раздела — так и сказано, а не пропущено молча.
+            echo '```text'
+            # Не строка / пусто / нет файла -> «НЕ УДАЛОСЬ»: шаг идёт ПОСЛЕ push, падать ему нельзя.
+            python3 -c 'import json,sys
+          t=None
+          try: t=json.load(open(sys.argv[1],encoding="utf-8"))["security_surface"]["text"]
+          except Exception: pass
+          if not isinstance(t,str) or not t.strip(): t="Что этот выпуск привозит по безопасности: проверить НЕ УДАЛОСЬ (раздела нет в отчёте обновления или он пуст) — это не «ничего»."
+          print(t.replace("```","`​``").strip())' "${REPORT:-/nonexistent}"
+            echo '```'
             if [ -n "$REPORT" ]; then
               echo; echo '<details><summary>update-report</summary>'; echo
               echo '```json'; cat "$REPORT"; echo '```'; echo '</details>'
@@ -126,3 +181,23 @@ jobs:
           } > /tmp/pr-body.md
           gh pr create --title "chore: ai-ops update $FROM -> $TO" \
             --body-file /tmp/pr-body.md --base "${GITHUB_REF_NAME:-main}"
+      - name: Авто-мерж патч-версии (если включено parent.auto_merge_patch)
+        # ОПТ-ИН, ПО УМОЛЧАНИЮ ВЫКЛ. Сливается сам ТОЛЬКО патч (совпадают major.minor, растёт patch);
+        # минор и мажор всегда остаются на ревью. `--auto` = слияние после обязательных проверок
+        # ветки, а не мгновенно; без branch protection GitHub сольёт сразу — это ответственность
+        # владельца, включившего флаг. Любая осечка (auto-merge не разрешён в репозитории, версия не
+        # патч, флаг выкл) — не падение, а оставленный на ревью PR.
+        if: steps.ver.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AI_OPS_PAT || github.token }}
+          TO: ${{ steps.ver.outputs.available }}
+          FROM: ${{ steps.ver.outputs.installed }}
+        run: |
+          AUTOMERGE=$(python3 -c "import yaml; print(str(yaml.safe_load(open('.ai-ops.yaml'))['parent'].get('auto_merge_patch', False)).lower())")
+          if [ "$AUTOMERGE" != true ]; then echo "parent.auto_merge_patch выкл — PR остаётся на ревью"; exit 0; fi
+          KIND=$(python3 -c "f=('$FROM'.lstrip('v').split('-')[0].split('+')[0].split('.')+['0','0','0'])[:3]; t=('$TO'.lstrip('v').split('-')[0].split('+')[0].split('.')+['0','0','0'])[:3]; print('patch' if f[0]==t[0] and f[1]==t[1] and int(t[2])>int(f[2]) else 'other')" 2>/dev/null || echo other)
+          if [ "$KIND" != patch ]; then echo "обновление $FROM -> $TO не патч-версия — авто-мерж не для неё, PR остаётся на ревью"; exit 0; fi
+          BRANCH="ai-ops/update-v$TO"
+          echo "патч-версия $FROM -> $TO при auto_merge_patch=true — включаю авто-мерж (сольётся после обязательных проверок ветки)"
+          gh pr merge "$BRANCH" --squash --auto \
+            || echo "::notice::авто-мерж не включился — нужна защита ветки с обязательными проверками и разрешённый auto-merge в настройках репозитория; PR остаётся на ревью"

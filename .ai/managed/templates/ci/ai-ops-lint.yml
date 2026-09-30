@@ -1,0 +1,70 @@
+# ai-ops-lint.yml — child-CI: линт и формат ДОЧКИ её собственными командами.
+# Ставится `ai-ops init`/`update` в .github/workflows/. Опт-аут — удалить файл (кит не вернёт).
+#
+# ЗАЧЕМ (#1183). Прежде child-CI гонял только валидаторы кита: всё, что написано мимо `ai-ops run`
+# (человеком или агентом в обычной сессии), линтом дочки не проверялось нигде. Здесь исполняются
+# ЕЁ команды — те, что кит нашёл в репозитории (конфиг инструмента / scripts / Makefile / шаг CI),
+# а не правила кита. Сделать проверку обязательной — Settings → Branches → required check
+# `ai-ops-lint / lint`.
+#
+# Откуда команды. Профиль репозитория строит детектор кита — та же единственная точка детекции,
+# что у онбординга (`ai_ops_kit/shared/project_detector.py`). Кеш профиля `.ai/repository-profile.yaml`
+# в git дочки не хранится, поэтому профиль собирается здесь, из клона кита на пине installed_version.
+#
+# Профиль стиля AI Ops. Если дочка включила его (`./ai-ops lint-profile --apply` — файлы профиля и
+# замороженная линия сохранены в репозитории), тот же шаг исполняет и `lint-profile check`: новое
+# расхождение сверх линии (имя не латиницей, импорт через границу слоя) — красный с адресом; проверить
+# нечем или профиль устарел — тоже красный с причиной. Профиль не включён — одна строка в журнале.
+#
+# Честность. Нет линтера — шаг зелёный, но с предупреждением «код не проверен» в аннотации и в
+# сводке прогона: пропуск не выдаётся за пройденную проверку. Команда объявлена, а инструмента на
+# раннере нет — красный с названной причиной.
+name: ai-ops-lint
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  # Отменять устаревшие прогоны только для PR; push в main проверяет свой коммит до конца.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    # Раннер — переменной (`vars.CI_RUNNER_LINUX`), с запасным `ubuntu-latest`: см. ai-ops-validate.yml.
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      # Python ставим ТОЛЬКО на раннерах GitHub (на своей машине setup-python уходит в чужой tool cache).
+      - uses: actions/setup-python@v5
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+      - name: Проверить python и pyyaml (свой раннер)
+        if: ${{ vars.CI_RUNNER_LINUX }}
+        run: |
+          python3 -c 'import sys, yaml; print("python", sys.version.split()[0], "· pyyaml", yaml.__version__)' \
+            || { echo "на раннере '${{ vars.CI_RUNNER_LINUX }}' нет python3 с pyyaml — поставьте их на машину раннера"; exit 1; }
+      - name: Клонировать kit на пин = installed_version (.ai-ops.yaml)
+        run: |
+          SRC=$(python3 -c "import yaml;s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source'];print(s[4:] if s.startswith('git+') else s)")
+          VER=$(python3 -c "import yaml;print(yaml.safe_load(open('.ai-ops.yaml'))['parent']['installed_version'])")
+          echo "kit pin = v$VER (из .ai-ops.yaml)"
+          git clone --depth 1 --branch "v$VER" "$SRC" "$RUNNER_TEMP/ai-ops-kit" \
+            || { echo "не удалось клонировать kit v$VER из $SRC — нет тега, нет доступа или каталог занят"; exit 1; }
+      - name: Профиль репозитория (детектор кита, как у онбординга)
+        run: |
+          PYTHONPATH="$RUNNER_TEMP"/ai-ops-kit \
+            python3 "$RUNNER_TEMP"/ai-ops-kit/ai_ops_kit/shared/project_detector.py detect . --json \
+            > "$RUNNER_TEMP/repository-profile.json"
+      # Ставит зависимости стека (lockfile — детерминированно), затем исполняет команды линта и
+      # формата (формат — только в режиме проверки) и, если включён, профиль стиля AI Ops
+      # (`lint-profile check`). Код 1 = нарушения, рост сверх линии или команда не исполнилась.
+      - name: Линт и формат дочки (её собственные команды) + профиль стиля
+        run: |
+          python3 "$RUNNER_TEMP"/ai-ops-kit/templates/runtime/lint_hook.py ci --root . \
+            --profile "$RUNNER_TEMP/repository-profile.json" --install

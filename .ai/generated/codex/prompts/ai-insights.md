@@ -1,7 +1,7 @@
 # ai-insights — Непрерывное улучшение — из данных после релиза к инсайтам и гипотезам следующего Discovery.
 
 Сгенерировано из registry/workflows.yaml — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Проводит задачу по workflow **INSIGHTS** (native / минимум

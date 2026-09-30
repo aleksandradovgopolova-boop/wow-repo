@@ -1,0 +1,447 @@
+# rules.yaml — машинный реестр Архитектурной конституции
+# Генерируется из ARCHITECTURE_CONSTITUTION.md (scripts/build-rules.py). Не редактировать вручную.
+# level/category/severity/gate/enforced_in — явные поля источника, не эвристика.
+# validation.automated = (gate ∉ {none, meta}); manual = не automated или severity high/critical.
+version: "1.0"
+rules_total: 40
+rules:
+  - id: HON-001
+    title: "Правило без гейта — пожелание"
+    part: preamble
+    level: MUST
+    category: principle
+    severity: high
+    gate: "meta"
+    enforced_in: meta
+    validation:
+      automated: false
+      manual: true
+  - id: HON-002
+    title: "Недоказанное называется недоказанным"
+    part: preamble
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: HON-003
+    title: "Запрет ложной зрелости"
+    part: preamble
+    level: MUST_NOT
+    category: anti_pattern
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: HON-004
+    title: "Объявлено ≠ подключено (built ≠ wired)"
+    part: preamble
+    level: MUST
+    category: principle
+    severity: high
+    gate: "test_dormant_inventory"
+    enforced_in: parent
+    validation:
+      automated: true
+      manual: true
+  - id: HON-005
+    title: "Писатель ≠ судья"
+    part: preamble
+    level: MUST
+    category: principle
+    severity: critical
+    gate: "reviewer_handoff"
+    enforced_in: child
+    validation:
+      automated: true
+      manual: true
+  - id: ARCH-001
+    title: "Зависимости образуют DAG — без циклов"
+    part: I
+    level: MUST_NOT
+    category: anti_pattern
+    severity: high
+    gate: "validate_layering"
+    enforced_in: parent
+    validation:
+      automated: true
+      manual: true
+  - id: ARCH-002
+    title: "Направление зависимостей — вниз по слоям"
+    part: I
+    level: MUST
+    category: principle
+    severity: high
+    gate: "validate_layering"
+    enforced_in: parent
+    validation:
+      automated: true
+      manual: true
+  - id: ARCH-003
+    title: "Логика живёт в своём слое"
+    part: I
+    level: SHOULD
+    category: anti_pattern
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: ARCH-004
+    title: "Один источник истины"
+    part: I
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: ARCH-005
+    title: "Границы модулей — только через контракты"
+    part: I
+    level: MUST_NOT
+    category: anti_pattern
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: ARCH-006
+    title: "Нет god-модуля и монолита"
+    part: I
+    level: MUST_NOT
+    category: anti_pattern
+    severity: high
+    gate: "validate_module_size"
+    enforced_in: parent
+    validation:
+      automated: true
+      manual: true
+  - id: ARCH-007
+    title: "Фреймворк изолирован адаптером"
+    part: I
+    level: SHOULD
+    category: principle
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: ARCH-008
+    title: "Контракты явные и версионируемые"
+    part: I
+    level: MUST
+    category: principle
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: CODE-001
+    title: "Функции короткие и односмысловые"
+    part: II
+    level: SHOULD
+    category: anti_pattern
+    severity: medium
+    gate: "validate_func_size"
+    enforced_in: parent
+    validation:
+      automated: true
+      manual: false
+  - id: CODE-002
+    title: "Плоский поток — ранние возвраты"
+    part: II
+    level: SHOULD
+    category: anti_pattern
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: CODE-003
+    title: "Без дублирования (DRY)"
+    part: II
+    level: MUST_NOT
+    category: anti_pattern
+    severity: medium
+    gate: "test_code_duplication"
+    enforced_in: parent
+    validation:
+      automated: true
+      manual: false
+  - id: CODE-004
+    title: "Имена раскрывают намерение"
+    part: II
+    level: SHOULD
+    category: principle
+    severity: low
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: CODE-005
+    title: "Без магических значений"
+    part: II
+    level: SHOULD
+    category: anti_pattern
+    severity: low
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: CODE-006
+    title: "Ошибки не глотать"
+    part: II
+    level: MUST_NOT
+    category: anti_pattern
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: CODE-007
+    title: "Без мёртвого и закомментированного кода"
+    part: II
+    level: MUST_NOT
+    category: anti_pattern
+    severity: medium
+    gate: "test_capability_reachability"
+    enforced_in: parent
+    validation:
+      automated: true
+      manual: false
+  - id: CODE-008
+    title: "Тестируемость"
+    part: II
+    level: MUST
+    category: principle
+    severity: high
+    gate: "validate_test_taxonomy"
+    enforced_in: child
+    validation:
+      automated: true
+      manual: true
+  - id: CODE-009
+    title: "Строгая типизация"
+    part: II
+    level: SHOULD
+    category: anti_pattern
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: CODE-010
+    title: "Без галлюцинаций API"
+    part: II
+    level: MUST_NOT
+    category: anti_pattern
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: CODE-011
+    title: "Один язык идентификаторов и одна конвенция имён"
+    part: II
+    level: MUST
+    category: principle
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: CODE-012
+    title: "Линтер и форматтер в дочке исполняются"
+    part: II
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: SEC-001
+    title: "Путь раскрытия уязвимостей в каждом репозитории"
+    part: III
+    level: MUST
+    category: principle
+    severity: high
+    gate: "required_repo_artifacts"
+    enforced_in: child
+    validation:
+      automated: true
+      manual: true
+  - id: SEC-002
+    title: "Секреты не в коде"
+    part: III
+    level: MUST_NOT
+    category: anti_pattern
+    severity: critical
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: SEC-003
+    title: "Входные данные недоверенны"
+    part: III
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: SEC-004
+    title: "Наименьшие привилегии"
+    part: III
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: SEC-005
+    title: "Гигиена цепочки поставок"
+    part: III
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: SEC-006
+    title: "Защита main — ревью до мержа"
+    part: III
+    level: MUST
+    category: principle
+    severity: high
+    gate: "reviewer_handoff"
+    enforced_in: child
+    validation:
+      automated: true
+      manual: true
+  - id: SEC-007
+    title: "Не течь внутренности в ошибках и логах"
+    part: III
+    level: MUST_NOT
+    category: anti_pattern
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: SEC-008
+    title: "Архитектура безопасности документирована"
+    part: III
+    level: MUST
+    category: principle
+    severity: high
+    gate: "required_repo_artifacts"
+    enforced_in: child
+    validation:
+      automated: true
+      manual: true
+  - id: DATA-001
+    title: "Явная схема данных"
+    part: IV
+    level: MUST
+    category: anti_pattern
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: DATA-002
+    title: "Схема — источник истины, реализация из неё"
+    part: IV
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: DATA-003
+    title: "Контракт версионируется; ломающее — только мажор"
+    part: IV
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: DATA-004
+    title: "Обратная совместимость по умолчанию"
+    part: IV
+    level: SHOULD
+    category: principle
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: DATA-005
+    title: "Ошибки контракта — явные и машиночитаемые"
+    part: IV
+    level: SHOULD
+    category: anti_pattern
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: DATA-006
+    title: "Миграции данных — через миграцию, обратимо и проверяемо"
+    part: IV
+    level: MUST
+    category: anti_pattern
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: DATA-007
+    title: "Идемпотентность операций с эффектом"
+    part: IV
+    level: SHOULD
+    category: principle
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true

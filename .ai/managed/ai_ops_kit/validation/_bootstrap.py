@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """_bootstrap.py — sys.path setup для модулей ai_ops_kit/validation/.
 
-Тёзка `tools/_bootstrap.py` — НЕ копипаста по недосмотру, а следствие правила интерпретатора:
+Тёзка `shared/_bootstrap.py` — НЕ копипаста по недосмотру, а следствие правила интерпретатора:
 при запуске скрипта `sys.path[0]` — это каталог САМОГО скрипта. Поэтому `import _bootstrap` из
-валидатора ищет `_bootstrap` рядом с ним, и никакой файл в `tools/` его не заменит.
+валидатора ищет `_bootstrap` рядом с ним, и файл из соседнего пакета его не заменит.
 Каталогов, из которых запускают скрипты, два — значит и bootstrap'ов два. Оба ставят одни и те же
 пути, состояния не держат, и порядок их импорта ни на что не влияет.
 
@@ -37,6 +37,6 @@ if PKG.name == "managed" and PKG.parent.name == ".ai":
         except OSError:
             pass
 
-for _p in (str(PKG / "tools"), str(PKG / "ai_ops_kit" / "validation"), str(PKG)):
+for _p in (str(PKG / "ai_ops_kit" / "validation"), str(PKG)):
     if _p not in sys.path:
         sys.path.insert(0, _p)

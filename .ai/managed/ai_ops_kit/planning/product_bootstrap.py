@@ -14,6 +14,12 @@
 по закрытию СВОИХ ЖЕ пробелов: она выведена из аудита, а не сочинена. Отсюда и содержание плана:
 «описать модель данных», «объявить окружения» — с ролью, областью записи и затронутым контуром.
 
+ПЕРВЫЙ ШАГ — ПРОДУКТОВЫЙ, КОГДА ЕГО НАЗВАЛ ВЛАДЕЛЕЦ (#1203). Если владелец в ответах онбординга сам
+назвал следующий результат для пользователя (`next_outcome`, подтверждён им), план открывается
+работой к этому результату под целью первого приоритета, а описания контуров идут следом — они
+остаются в плане и важны там, где описания нет. Это не выдумка кита: текст работы — слово владельца.
+Не назвал (или это лишь догадка кита) — продуктовой работы нет, план прежний.
+
 ЧЕГО КИТ НЕ ПЕРЕЗАПИСЫВАЕТ. Ничего. Существующий файл — факт о продукте, и он сильнее любого
 шаблона: bootstrap создаёт только отсутствующее и говорит, что пропустил и почему.
 
@@ -119,6 +125,48 @@ def work_items(understanding: dict, model: dict | None = None, child_root=".") -
     return out
 
 
+# Цель и работа первого продуктового шага (#1203). Цель — первая в плане: `next` ставит работу под
+# целью первого приоритета выше описаний, не трогая веса выбора.
+FIRST_OUTCOME_GOAL = "first-user-outcome"
+_OWNER_SAID = (_audit.USER_CONFIRMED, _audit.VERIFIED)
+
+
+def _owner_fact(understanding: dict, key: str) -> str | None:
+    """Значение факта, если его сказал владелец (или оно доказано), — не догадка кита."""
+    v = ((understanding.get("reconstructed") or {}).get(key) or {})
+    return str(v["value"]).strip() if v.get("value") and v.get("status") in _OWNER_SAID else None
+
+
+def first_product_step(understanding: dict) -> dict | None:
+    """Работа к следующему результату, который назвал владелец. -> элемент плана | None."""
+    outcome = _owner_fact(understanding, "next_outcome")
+    if not outcome:
+        return None
+    outcome = outcome.rstrip(" .")
+    short = outcome if len(outcome) <= 110 else outcome[:107].rstrip() + "…"
+    return {"id": "reach-first-user-outcome", "title": f"Первый результат для пользователя: {short}",
+            "type": "engineering", "goal": FIRST_OUTCOME_GOAL, "status": "todo",
+            "owner_role": "engineer", "value": "high", "depends_on": [],
+            "why": ("этот результат владелец назвал следующим для пользователя в ответах онбординга; "
+                    "начать — уточнить задачу и довести до проверенного изменения")}
+
+
+def _roadmap_is_kit_template(path: Path) -> bool:
+    """ROADMAP — это заготовка кита, а не направление продукта? (#1204)
+
+    Установщик кладёт `ROADMAP.md` с целями-заглушками `goal-id-N`. Прежде bootstrap видел «файл уже
+    есть» и не трогал его — план он в том же случае заменял, а направление нет: ответы владельца до
+    ROADMAP не доходили, и советы кита читали заглушку («безымянное направление»). Заготовка —
+    когда ВСЕ цели файла заглушки: хоть одно своё имя — это уже слово человека, его не трогаем.
+    """
+    try:
+        parsed = _roadmap.parse(path.read_text(encoding="utf-8"))
+    except OSError:
+        return False
+    goals = [g for h in parsed.values() for g in h["goals"]]
+    return bool(goals) and all(_plan.is_placeholder_goal(g) for g in goals)
+
+
 def _roadmap_text(understanding: dict) -> str:
     """ROADMAP из ФАКТОВ, с честными пробелами там, где фактов нет."""
     rec = understanding.get("reconstructed") or {}
@@ -152,7 +200,9 @@ def _roadmap_text(understanding: dict) -> str:
     L += ["## Сейчас", "",
           f"- `{BASELINE_GOAL}` — продукт описан настолько, чтобы работу можно было планировать и",
           "  проверять: у каждого контура есть источник истины, и кит перестаёт отвечать «не знаю»."]
-    if goal_now:
+    if goal_now and goal_src in _OWNER_SAID:
+        L += [f"- главная цель продукта сейчас: «{goal_now}» _(источник: {goal_src})_."]
+    elif goal_now:
         L += [f"- _нужно ваше слово:_ главная цель продукта сейчас — по репозиторию похоже на",
               f"  «{goal_now}» _(источник: {goal_src})_. Подтвердите или замените, и дайте цели id."]
     else:
@@ -161,7 +211,9 @@ def _roadmap_text(understanding: dict) -> str:
     L += ["",
           "## Следующий результат", "",
           "Что изменится **для пользователя** после ближайшей работы.", "",
-          "- _нужно ваше слово:_ один проверяемый результат глазами пользователя.",
+          (f"- `{FIRST_OUTCOME_GOAL}` — {_owner_fact(understanding, 'next_outcome')} _(слово владельца)_."
+           if _owner_fact(understanding, "next_outcome") else
+           "- _нужно ваше слово:_ один проверяемый результат глазами пользователя."),
           "",
           "## Дальше", "",
           "- _нужно ваше слово:_ крупная возможность, к которой идёте после ближайшего результата.",
@@ -187,10 +239,13 @@ def _plan_text(items: list) -> str:
             "# Дальше он ваш: добавляйте продуктовую работу, меняйте порядок, снимайте лишнее.\n"
             "# Статусы `ready`/`blocked`/`waiting` НЕ объявляйте — кит считает их из зависимостей,\n"
             "# гейтов и активной работы.\n")
-    doc = {"schema_version": 1, "kind": "delivery-plan",
-           "goals": [{"id": BASELINE_GOAL, "status": "active",
-                      "outcome": {"every_contour_has_a_source_of_truth": False}}],
-           "work": items}
+    goals = [{"id": BASELINE_GOAL, "status": "active",
+              "outcome": {"every_contour_has_a_source_of_truth": False}}]
+    if any(w.get("goal") == FIRST_OUTCOME_GOAL for w in items):
+        # Первой: порядок целей в плане и есть их приоритет для `next` (#1203).
+        goals.insert(0, {"id": FIRST_OUTCOME_GOAL, "status": "active",
+                         "outcome": {"owner_named_outcome_reached": False}})
+    doc = {"schema_version": 1, "kind": "delivery-plan", "goals": goals, "work": items}
     return head + yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, width=100)
 
 
@@ -203,7 +258,8 @@ def plan(child_root, understanding: dict | None = None, model: dict | None = Non
     root = Path(child_root)
     model = model or _contours.load_model()
     understanding = understanding or _audit.run(root)
-    items = work_items(understanding, model, root)
+    step = first_product_step(understanding)
+    items = ([step] if step else []) + work_items(understanding, model, root)
 
     rm_rel = _roadmap.roadmap_rel(root)
     pl_rel = _plan.plan_rel(root)
@@ -215,10 +271,14 @@ def plan(child_root, understanding: dict | None = None, model: dict | None = Non
 
     actions = []
     rm_exists = (root / rm_rel).is_file()
+    rm_is_template = rm_exists and _roadmap_is_kit_template(root / rm_rel)
     actions.append({
         "path": rm_rel, "what": "направление продукта (четыре горизонта)",
-        "exists": rm_exists, "will_write": not rm_exists,
-        "why": ("уже есть — не трогаю: существующий файл сильнее любого шаблона" if rm_exists
+        "exists": rm_exists, "will_write": (not rm_exists) or rm_is_template,
+        "replaces_template": rm_is_template,
+        "why": ("в файле лежит заготовка кита (цели-заглушки) — заменю её направлением из фактов"
+                if rm_is_template else
+                "уже есть — не трогаю: существующий файл сильнее любого шаблона" if rm_exists
                 else "направление не является артефактом, поэтому «что важнее сейчас» "
                      "не на чём считать"),
         "provenance": "факты репозитория + пометки «нужно ваше слово» там, где фактов нет"})

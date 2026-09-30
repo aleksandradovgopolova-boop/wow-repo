@@ -21,7 +21,7 @@
 рассуждали о коде и ревью, а вопросы «куда это поедет», «кто вправе туда деплоить», «какие секреты
 там нужны» не задавал никто — при том что именно на этом шве живут самые дорогие ошибки.
 
-## CommitContract (`tools/commit_policy.py`)
+## CommitContract (`ai_ops_kit/engops/commit_policy.py`)
 
 Один коммит = один откатываемый шаг одной задачи.
 
@@ -44,10 +44,10 @@ empty_commit                нет файлов
 Мягкие применяются только к отслеживаемым типам задач (ENGINEERING / AI_FEATURE / PRODUCT / CRITICAL);
 QUICK ими не обвешивается. Поднять до блока — `engineering_operating_model.commit.enforce: block`.
 
-Модуль **не сканирует содержимое файлов** — это делает `tools/security_scan.py`, дублировать не надо.
+Модуль **не сканирует содержимое файлов** — это делает `ai_ops_kit/security/security_scan.py`, дублировать не надо.
 Здесь дополняющая проверка: имена файлов и текст сообщения.
 
-## BranchContract (`tools/branch_policy.py`)
+## BranchContract (`ai_ops_kit/engops/branch_policy.py`)
 
 **Жёсткие инварианты:**
 
@@ -66,7 +66,7 @@ multi_workitem    в ветке коммиты нескольких WorkItem
 stale_branch      ветка старше 14 дней
 ```
 
-## EnvironmentMap (`tools/environment_map.py`, срез 2)
+## EnvironmentMap (`ai_ops_kit/checks/environment_map.py`, срез 2)
 
 Read-only снимок окружений: что **объявлено** в конфиге против того, что реально **видно** в
 репозитории (CI `environment:` в GitHub Actions, файлы `.env.<name>`). Ценность — не список, а
@@ -81,11 +81,11 @@ production_without_approvers production объявлен, а кто вправе
 ```
 
 **Секреты: только ИМЕНА.** Значения не читаются, не логируются и не попадают в отчёт ни при каких
-условиях (проверяется selftest'ом). Поиск утечек в содержимом — `tools/security_scan.py`, не здесь.
+условиях (проверяется selftest'ом). Поиск утечек в содержимом — `ai_ops_kit/security/security_scan.py`, не здесь.
 `kind` окружения выводится из имени детерминированно; неузнанное имя даёт `unknown`, а не угаданный
 `production`.
 
-## DeployReadiness (`tools/deploy_readiness.py`, срез 2)
+## DeployReadiness (`ai_ops_kit/gates/deploy_readiness.py`, срез 2)
 
 Кит **не деплоит** и не собирается — он не даёт **врать о готовности**. Лестница та же, что у
 UI-evidence, потому что болезнь та же («у нас всё готово» без проверяемых признаков):
@@ -122,7 +122,7 @@ non-blocking skip `scope=not_applicable`, не тихий pass. Есть сиг�
 `rules/quality/deploy-readiness.yaml`. Недоступность инструмента даёт `warn`, а не `pass`:
 бездоказательного pass не существует.
 
-## EconomicPreflight (`tools/economic_preflight.py`, срез 3)
+## EconomicPreflight (`ai_ops_kit/gates/economic_preflight.py`, срез 3)
 
 Деньги узнавались ПОСЛЕ того, как их потратили: контекстный бюджет денег не касается,
 `Budget.charge_call` рвётся на N-м вызове (когда N−1 уже оплачены), `cost_account` сверяет расход
@@ -150,7 +150,7 @@ block             ХУДШИЙ сравнимый прогон превышае�
    значит разложить историю по ним нечем, и модуль этого не изображает. Он отдаёт наблюдённое
    распределение (min/median/max), размер выборки и уверенность.
 
-Встроено в `tools/preflight.py` шагом 7 — после approvals, до tool loop. На `reevaluate_only`
+Встроено в `ai_ops_kit/gates/preflight.py` шагом 7 — после approvals, до tool loop. На `reevaluate_only`
 (переоценка уже построенной фичи) не применяется: новой существенной траты там нет.
 
 `require_estimate: true` блокирует любой первый прогон в репозитории — законный выбор, но он обязан
@@ -202,7 +202,7 @@ engineering_operating_model:
 ```
 
 Ключа нет — работают дефолты из `DEFAULTS` обоих модулей. Согласованность порогов проверяет
-`validation/validate_engops_policy.py` (в CI).
+`ai_ops_kit/validation/validate_engops_policy.py` (в CI).
 
 ## Поверхность
 

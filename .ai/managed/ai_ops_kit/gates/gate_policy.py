@@ -172,6 +172,44 @@ def candidate_blocking_gates(signals: dict) -> set:
     return {d["gate"] for d in candidate_policy(signals) if _effective(d) == "blocks"}
 
 
+# --- shadow -> live: owner-флаг боевого enforcement риск-калиброванной политики (#543) ------------
+# По умолчанию OFF. Пока флаг выключен, движок держит СЕГОДНЯШНЮЮ строгость (все UI-гейты blocking по
+# current_policy) — candidate только считается рядом (shadow). Флип opt-in: без явного owner-решения
+# ни один гейт не ослабляется. Флаг едет в сигналах задачи (плоско `risk_calibrated_enforcement` или
+# вложенно `gates.risk_calibrated_enforcement`); на входе CLI туда же инжектится значение из .ai-ops.yaml.
+def risk_calibrated_enforcement_enabled(signals: dict) -> bool:
+    """ON только по явному owner-флагу. Всё остальное -> False (без тихого ослабления гейтов)."""
+    s = signals or {}
+    g = s.get("gates")
+    if isinstance(g, dict) and "risk_calibrated_enforcement" in g:
+        return bool(g.get("risk_calibrated_enforcement"))
+    return bool(s.get("risk_calibrated_enforcement"))
+
+
+def effective_enforcement(gate: str, static_blocking: bool, signals: dict, *, enabled: bool) -> tuple:
+    """Действующая строгость гейта -> (blocking: bool, reason: str|None) под owner-флагом (#543).
+
+    Флаг OFF (enabled=False) ИЛИ не-UI-гейт -> строгость = статическая gate.blocking, БЕЗ изменений
+    (сегодняшнее поведение). Флаг ON + UI-гейт -> строгость берётся из candidate_policy: гейт, чья
+    кандидатная политика advisory (internal low-risk не-safety: ux_review / visual_regression /
+    design_system_usage), ДЕМОТируется в non-blocking; blocking-тир (user_facing / critical, а также
+    accessibility_review в internal) остаётся blocking.
+
+    Инвариант направления: калибровка НИКОГДА не делает гейт строже статического — только снимает
+    блокировку (blocking -> advisory). Это ровно та безопасность, что доказывает selftest
+    (candidate не мягче current для user_facing/critical -> для них демотии не будет)."""
+    if not enabled or gate not in UI_GATES:
+        return static_blocking, None
+    dec = {d["gate"]: d for d in candidate_policy(signals)}.get(gate)
+    if dec is None:
+        return static_blocking, None
+    cand_blocking = _effective(dec) == "blocks"
+    if static_blocking and not cand_blocking:
+        return False, (f"risk-calibrated enforcement (#543): гейт {gate} -> advisory "
+                       f"(ui_impact={derive_ui_impact(signals)}; {dec['reason']})")
+    return static_blocking, None
+
+
 def effective_review_outcome(gate: str, signals: dict, reviewer_status: str,
                              evidence_status: str = "not_run") -> tuple:
     """КАЛИБРОВАННОЕ enforcement (v3.1.8): как политика трактует вердикт ревьюера по UI-гейту.

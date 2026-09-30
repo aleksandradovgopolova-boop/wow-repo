@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -27,7 +28,7 @@ PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is
 # v3.30: код движка переехал в пакеты ai_ops_kit/*. Без него граф видел только тонкие
 # алиасы в tools/ и терял РЕАЛЬНЫХ импортёров — анализ влияния (--impact) молча
 # недооценивал последствия правки.
-DEFAULT_SUBDIRS = ("ai_ops_kit", "tools", "validation")
+DEFAULT_SUBDIRS = ("ai_ops_kit",)
 JS_TS_EXTENSIONS = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
 
 # `.ai/` — ОБЛАСТЬ КИТА В ДОЧКЕ, А НЕ КОД ПРОДУКТА (F-022, корень).
@@ -45,44 +46,33 @@ JS_TS_EXTENSIONS = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
 # версии 3.27.7, где докстринг ещё не был raw-строкой): `<unknown>:11: invalid escape sequence`.
 # Свой докстринг кит починил 08.08 (8f6aac4), но у дочки лежала копия ДО этой правки — и он
 # исправно разбирал её как код продукта.
-PY_SKIP_DIRS = (".git", "node_modules", "venv", ".venv", "__pycache__", ".ai")
-JS_SKIP_DIRS = ("node_modules", "dist", "build", ".next", "coverage", ".ai")
+PY_SKIP_DIRS = (".git", "node_modules", "venv", ".venv", "__pycache__", ".ai", ".claude", "build", "dist", "coverage")
+JS_SKIP_DIRS = ("node_modules", "dist", "build", ".next", "coverage", ".ai", ".git", ".venv", "venv", ".claude")
+
+
+def _source_files(root: Path, subdirs, extensions, skip_dirs, path_filter):
+    """Prune generated/dependency trees BEFORE traversal; never follow directory symlinks."""
+    out = []
+    for base in ([root / sd for sd in subdirs] if subdirs else [root]):
+        if not base.is_dir() or any(part in skip_dirs for part in base.relative_to(root).parts):
+            continue
+        for directory, dirs, names in os.walk(base, followlinks=False):
+            dirs[:] = sorted(d for d in dirs if d not in skip_dirs)
+            for name in names:
+                path = Path(directory) / name
+                if path.suffix not in extensions:
+                    continue
+                if path_filter is None or path_filter(str(path.relative_to(root))):
+                    out.append(path)
+    return sorted(set(out))
 
 
 def _py_files(root: Path, subdirs=None, path_filter=None):
-    """Найти Python файлы. Если subdirs=None — искать во всём репо."""
-    out = []
-    search_dirs = [root / sd for sd in subdirs] if subdirs else [root]
-    for d in search_dirs:
-        if not d.is_dir():
-            continue
-        for p in sorted(d.rglob("*.py")):
-            # v3.7.0: access pre-filter — denied-путь НЕ читается для графа
-            if path_filter is not None and not path_filter(str(p.relative_to(root))):
-                continue
-            parts = p.relative_to(root).parts
-            if any(skip in parts for skip in PY_SKIP_DIRS):
-                continue
-            out.append(p)
-    return out
+    return _source_files(root, subdirs, (".py",), PY_SKIP_DIRS, path_filter)
 
 
 def _js_ts_files(root: Path, subdirs=None, path_filter=None):
-    """v3.26.0: найти JS/TS файлы в указанных директориях (или во всём репо если subdirs=None)."""
-    out = []
-    search_dirs = [root / sd for sd in (subdirs or [""])] if subdirs else [root]
-    for d in search_dirs:
-        if not d.is_dir():
-            continue
-        for ext in JS_TS_EXTENSIONS:
-            for p in sorted(d.rglob(f"*{ext}")):
-                parts = p.relative_to(root).parts
-                if any(skip in parts for skip in JS_SKIP_DIRS):
-                    continue
-                if path_filter is not None and not path_filter(str(p.relative_to(root))):
-                    continue
-                out.append(p)
-    return out
+    return _source_files(root, subdirs, JS_TS_EXTENSIONS, JS_SKIP_DIRS, path_filter)
 
 
 def _analyze(path: Path):
@@ -102,9 +92,12 @@ def _analyze(path: Path):
         if isinstance(n, ast.Import):
             for a in n.names:
                 mods.add(_stem(a.name.split(".")))
+                mods.add(a.name.split(".")[-1])
         elif isinstance(n, ast.ImportFrom):
-            if n.module and n.level == 0:
+            if n.module:
                 parts = n.module.split(".")
+                mods.add(parts[-1])
+                mods.update(a.name for a in n.names)
                 # `from ai_ops_kit.<пакет> import <модуль>, ...` — модули перечислены в names,
                 # а не в module. Без этой ветки все внутренние связи схлопывались бы в один узел
                 # `ai_ops_kit`, и --impact терял бы РЕАЛЬНЫХ импортёров (v3.33; тот же класс,
@@ -113,6 +106,8 @@ def _analyze(path: Path):
                     mods.update(a.name for a in n.names)
                 else:
                     mods.add(_stem(parts))
+            else:
+                mods.update(a.name for a in n.names)
     return symbols, mods
 
 
@@ -136,11 +131,12 @@ def _analyze_js(path: Path):
 
     # Imports: import ... from 'module', import 'module', require('module')
     mods = set()
-    # ES modules: import ... from '...'
-    for m in re.findall(r'''import\s+(?:.*?\s+from\s+)?['"]([^'"]+)['"]''', content):
-        # Берём только relative imports (начинаются с . или ..) или внутренние модули
+    # Read side-effect imports separately from `from` specifiers: a multiline
+    # named import must not swallow a preceding side-effect statement.
+    specifiers = set(re.findall(r"\bimport\s*['\"]([^'\"]+)['\"]", content))
+    specifiers.update(re.findall(r"\bfrom\s*['\"]([^'\"]+)['\"]", content))
+    for m in specifiers:
         if m.startswith(".") or (not m.startswith("/") and not m.startswith("@")):
-            # Извлекаем имя модуля (без расширения и пути)
             mod_name = Path(m).stem if "/" in m else m.split("/")[0]
             mods.add(mod_name)
     # CommonJS: require('...')
@@ -152,6 +148,25 @@ def _analyze_js(path: Path):
     return symbols, mods
 
 
+def _uncertain_dependency(path: Path) -> bool:
+    """Static selection cannot certify dynamic loading, JS aliases/re-exports or parse failures."""
+    if path.is_symlink():
+        return True
+    try:
+        text = path.read_text(encoding="utf-8")
+        if path.suffix == ".py":
+            tree = ast.parse(text, filename=str(path))
+            return any(isinstance(n, ast.Call) and (
+                isinstance(n.func, ast.Name) and n.func.id in ("__import__", "eval", "exec") or
+                isinstance(n.func, ast.Attribute) and n.func.attr in
+                ("import_module", "spec_from_file_location", "run_path", "run_module")) for n in ast.walk(tree))
+        return bool(re.search(r"\bimport\s*\(|\brequire\s*\((?!\s*['\"])|"
+                              r"\brequire\s*\(\s*['\"](?:@|/)|"
+                              r"(?:from\s*|import\s*)['\"](?:@|/)|\bexport\s+.*?\bfrom\s", text))
+    except (SyntaxError, OSError, UnicodeError):
+        return True
+
+
 def build_graph(root=PKG, subdirs=DEFAULT_SUBDIRS, path_filter=None, include_js=True) -> dict:
     """Построить граф зависимостей. v3.26.0: include_js=True добавляет JS/TS файлы."""
     root = Path(root)
@@ -159,12 +174,14 @@ def build_graph(root=PKG, subdirs=DEFAULT_SUBDIRS, path_filter=None, include_js=
     js_files = _js_ts_files(root, subdirs, path_filter=path_filter) if include_js else []
     all_files = py_files + js_files
 
-    stem_to_rel = {}
+    stem_to_rels = {}
     rels = []
     for f in all_files:
         rel = str(f.relative_to(root))
         rels.append((f, rel))
-        stem_to_rel[f.stem] = rel   # плоское имя модуля -> путь
+        stem_to_rels.setdefault(f.stem, set()).add(rel)
+        if f.name == "__init__.py" or (f.suffix in JS_TS_EXTENSIONS and f.stem == "index"):
+            stem_to_rels.setdefault(f.parent.name, set()).add(rel)
 
     file_info, symbol_index, import_edges, tests = {}, {}, {}, {}
     for f, rel in rels:
@@ -176,7 +193,7 @@ def build_graph(root=PKG, subdirs=DEFAULT_SUBDIRS, path_filter=None, include_js=
         file_info[rel] = {"symbols": syms, "imports": sorted(mods), "language": "js" if f.suffix in JS_TS_EXTENSIONS else "py"}
         for s in syms:
             symbol_index.setdefault(s, []).append(rel)
-        internal = sorted({stem_to_rel[m] for m in mods if m in stem_to_rel and stem_to_rel[m] != rel})
+        internal = sorted({target for m in mods for target in stem_to_rels.get(m, ()) if target != rel})
         import_edges[rel] = internal
         stem = Path(rel).stem
         if stem.startswith("test_") or stem.endswith("_test") or stem.endswith(".test") or stem.endswith(".spec"):
@@ -184,6 +201,7 @@ def build_graph(root=PKG, subdirs=DEFAULT_SUBDIRS, path_filter=None, include_js=
     return {"kind": "repository-graph", "root": str(root), "subdirs": list(subdirs) if subdirs else ["*"],
             "file_count": len(rels), "files": file_info, "symbol_index": symbol_index,
             "import_edges": import_edges, "tests": tests,
+            "uncertainties": [rel for f, rel in rels if _uncertain_dependency(f)],
             "languages": {"python": len(py_files), "javascript": len(js_files)}}
 
 

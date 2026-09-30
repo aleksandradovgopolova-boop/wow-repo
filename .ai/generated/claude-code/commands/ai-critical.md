@@ -4,7 +4,7 @@ description: Workflow CRITICAL — Критическое/необратимое
 # ai-critical — Критическое/необратимое изменение с максимальной строгостью — high/critical risk, hotfix, security-sensitive. Цель critical-эскалации маршрутизатора.
 
 Сгенерировано из registry/workflows.yaml — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Проводит задачу по workflow **CRITICAL** (orchestrated / минимум

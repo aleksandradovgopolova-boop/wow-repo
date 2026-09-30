@@ -1,0 +1,169 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "governance-report",
+  "description": "Машиночитаемый отчёт соответствия ПРОДУКТА дочки инженерному стандарту (SR-17..23, срез 2 инженерного стандарта). Производит ai_ops_kit/planning/governance_report.py, зовёт из джобы дочки validate_governance_report.py. ЧЕТЫРЕ числа: pass/violated/not_applicable/not_checked, их сумма равна total (SR §3.2 — 'проверить не удалось' не сворачивается в 'в порядке'). Каждая строка несёт closed_by из словаря гейтов кита (SR-20). Override перечислены с причиной и сроком; число not_applicable равно числу активных override (SR-23). Отчёт advisory: доставка, а не блокирующая сила (issue #605 §5).",
+  "type": "object",
+  "required": ["schema_version", "kind", "report_version", "standard_version", "repository", "counts", "rows", "overrides"],
+  "properties": {
+    "schema_version": {"type": "integer"},
+    "kind": {"const": "governance-report"},
+    "report_version": {"type": "integer",
+      "description": "версия ФОРМЫ отчёта (SR-18); растёт при изменении структуры отчёта"},
+    "part": {"const": "standard_compliance",
+      "description": "часть джобы дочки (SR-17): здоровье установки — соседние шаги, эта часть — соответствие стандарту"},
+    "standard_version": {"type": ["integer", "null"],
+      "description": "версия стандарта, которой отчёт мерил дочку (из .ai-ops.yaml standard.version или пакета)"},
+    "repository": {"type": "string"},
+    "counts": {
+      "type": "object",
+      "description": "четыре числа + total; total == pass+violated+not_applicable+not_checked",
+      "required": ["pass", "violated", "not_applicable", "not_checked", "total"],
+      "properties": {
+        "pass": {"type": "integer"},
+        "violated": {"type": "integer"},
+        "not_applicable": {"type": "integer"},
+        "not_checked": {"type": "integer"},
+        "total": {"type": "integer"}
+      },
+      "additionalProperties": false
+    },
+    "rows": {
+      "type": "array",
+      "description": "по строке на проверенное требование; not_applicable/not_checked обязаны нести reason",
+      "items": {
+        "type": "object",
+        "required": ["requirement", "status", "closed_by"],
+        "properties": {
+          "requirement": {"type": "string"},
+          "status": {"enum": ["pass", "violated", "not_applicable", "not_checked"]},
+          "closed_by": {"enum": ["validator", "judge", "writer", "human"],
+            "description": "кто закрыл строку (SR-20) — тот же словарь, что у quality/gates.yaml closed_by"},
+          "reason": {"type": "string"},
+          "address": {"type": "string", "description": "адрес нарушения (файл::секция), а не только факт (SR-11)"},
+          "detail": {"type": "string"}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"status": {"enum": ["not_applicable", "not_checked"]}}},
+            "then": {"required": ["reason"]}
+          }
+        ],
+        "additionalProperties": true
+      }
+    },
+    "overrides": {
+      "type": "array",
+      "description": "override требований стандарта из .ai-ops.yaml; виден в каждом отчёте (SR-23)",
+      "items": {
+        "type": "object",
+        "required": ["requirement", "active"],
+        "properties": {
+          "requirement": {"type": "string"},
+          "reason": {"type": "string", "description": "причина отключения; пустая не проходит (SR-21)"},
+          "review_by": {"type": "string", "description": "дата пересмотра (ISO); просроченная -> находка (SR-22)"},
+          "remove_when": {"type": "string", "description": "названное условие снятия вместо даты (SR-22)"},
+          "active": {"type": "boolean", "description": "применён ли override (только валидный активен)"},
+          "problem": {"type": "string", "description": "почему override НЕ применён (нет причины/срока/просрочен)"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "architecture": {
+      "type": "object",
+      "description": "Архитектурные инварианты дочки (SR-9..13, срез 3) — ОТДЕЛЬНЫЙ advisory-блок, не свёрнутый в четыре числа §3.2: он приблизителен (граф JS/TS regex, §5.2) и не складывается со структурным фактом секций. Производит ai_ops_kit/planning/architecture_invariants.py по объявлению schemas/architecture-invariants.schema.json.",
+      "required": ["kind", "strength", "counts", "rows"],
+      "properties": {
+        "kind": {"const": "architecture-invariants"},
+        "schema_version": {"type": "integer"},
+        "strength": {"const": "advisory", "description": "инвариант поверх JS/TS-графа рождается advisory (§5.2); блокирует только после замера ложных на живом репозитории"},
+        "declared": {"type": "boolean", "description": "объявлены ли зоны И правила; иначе строки not_checked (SR-12)"},
+        "source": {"type": ["string", "null"], "description": "откуда прочитано объявление (файл или .ai-ops.yaml)"},
+        "counts": {
+          "type": "object",
+          "required": ["pass", "violated", "not_checked"],
+          "properties": {
+            "pass": {"type": "integer"},
+            "violated": {"type": "integer"},
+            "not_checked": {"type": "integer"}
+          },
+          "additionalProperties": false
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["requirement", "status", "closed_by", "strength"],
+            "properties": {
+              "requirement": {"type": "string"},
+              "status": {"enum": ["pass", "violated", "not_checked"]},
+              "closed_by": {"enum": ["validator", "judge", "writer", "human"]},
+              "strength": {"const": "advisory"},
+              "address": {"type": "string", "description": "файл:строка -> ребро графа (SR-11), а не только факт"},
+              "reason": {"type": "string"},
+              "detail": {"type": "string"}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"status": {"const": "not_checked"}}},
+                "then": {"required": ["reason"]}
+              }
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "drift": {
+      "type": "object",
+      "description": "Расхождение (drift) архитектуры дочки (SR-14..16, срез 4) — ВТОРОЙ РОД находки, отдельный от нарушения: код и его описание разошлись, и неизвестно, какое устарело; чинить автоматически нельзя, только показать. Отличается от нарушения СЛОВАМИ (состояние `drift`), а не severity (SR-14). Меряется на ДИФФЕ, а не на дереве (SR-15): переиспользует source_of_truth_behind и сравнение сохранённого снимка архитектуры (SR-16). Производит ai_ops_kit/planning/drift.py; advisory (§5).",
+      "required": ["kind", "strength", "class", "counts", "rows"],
+      "properties": {
+        "kind": {"const": "drift"},
+        "schema_version": {"type": "integer"},
+        "strength": {"const": "advisory", "description": "расхождение показывают, но не блокируют: оно по определению не знает, какая сторона устарела"},
+        "class": {"const": "drift", "description": "РОД находки — расхождение, отдельный от нарушения инварианта (SR-14)"},
+        "snapshot": {"type": "string", "description": "путь сохранённого снимка архитектуры в области дочки (SR-16)"},
+        "snapshot_saved": {"type": "boolean", "description": "сохранён ли снимок; без него расхождение снимка not_checked (сравнивать не с чем)"},
+        "comparable": {"type": "boolean", "description": "есть ли изменённые пути (диф); без них блок not_checked, а не pass (SR-15)"},
+        "counts": {
+          "type": "object",
+          "required": ["pass", "drift", "not_checked"],
+          "properties": {
+            "pass": {"type": "integer"},
+            "drift": {"type": "integer"},
+            "not_checked": {"type": "integer"}
+          },
+          "additionalProperties": false
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["requirement", "status", "class", "closed_by", "strength"],
+            "properties": {
+              "requirement": {"type": "string"},
+              "status": {"enum": ["pass", "drift", "not_checked"],
+                "description": "`drift` — своё слово состояния, не `violated` (SR-14: род, а не severity)"},
+              "class": {"const": "drift"},
+              "closed_by": {"enum": ["validator", "judge", "writer", "human"]},
+              "strength": {"const": "advisory"},
+              "address": {"type": "string", "description": "адрес расхождения (контур или путь снимка)"},
+              "reason": {"type": "string"},
+              "detail": {"type": "string"}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"status": {"const": "not_checked"}}},
+                "then": {"required": ["reason"]}
+              }
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

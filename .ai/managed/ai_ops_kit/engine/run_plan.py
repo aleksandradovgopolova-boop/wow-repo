@@ -16,6 +16,15 @@
 """
 from __future__ import annotations
 
+# v4: самодостаточный вход — файл можно запустить напрямую (без PYTHONPATH). Кладём корень пакета
+# (маркер VERSION) в sys.path ДО пакетных импортов — раньше это делал плоский shim tools/ через
+# _bootstrap; теперь точка входа сама себя обслуживает.
+import sys as _sys
+from pathlib import Path as _P_bootstrap
+_root = next((_p for _p in _P_bootstrap(__file__).resolve().parents if (_p / "VERSION").is_file()), None)
+if _root is not None and str(_root) not in _sys.path:
+    _sys.path.insert(0, str(_root))
+
 import argparse
 import hashlib
 import json
@@ -54,9 +63,8 @@ def load(rel):
 def _base_workflow(signals):
     """base_workflow из ai_route; при сбое — честный fallback. -> (workflow, reasons, confidence)."""
     try:
-        sys.path.insert(0, str(PKG / "validation"))
-        from ai_ops_kit.shared import _bootstrap  # noqa: F401 — кладёт validation/ в sys.path ДО плоских импортов ниже
-        from ai_ops_kit.engine import ai_route
+        from ai_ops_kit.shared import _bootstrap  # noqa: F401 — импорт ради side-effect: кладёт корень пакета в sys.path
+        from ai_ops_kit.shared import ai_route
         d = ai_route.route(signals)
         return d.get("workflow"), d.get("reasons", []), d.get("classification_confidence", "normal")
     # Причина подавления ЗАПИСАНА (срез engine ратчета 2026-08-12): это ПРАВИЛЬНЫЙ образец —
@@ -69,6 +77,46 @@ def _base_workflow(signals):
         wfs = load("registry/workflows.yaml")["workflows"]
         wf = tt if tt in wfs else "ENGINEERING"
         return wf, [f"fallback base_workflow={wf} (ai_route недоступен: {e})"], "normal"
+
+
+def _escalation_disclosure(base_wf, current_gates, confidence, wfs):
+    """Честное раскрытие ПРЕДВАРИТЕЛЬНОЙ классификации: что добавит прогон, если поднимется уровень.
+
+    Находка поля (obs 64a4840a/8a891ce7): когда тяжесть задачи (size/risk) не заявлена, ai_route
+    выбирает QUICK и помечает classification 'low'. Человек видит план на 3 гейта и форму L0 QUICK,
+    а прогон, получив size/risk, эскалирует в ENGINEERING — применяет 11 гейтов и требует форму L1.
+    План обязан НАЗВАТЬ это ДО заполнения, а не задним числом: 3 гейта — не окончательный набор.
+
+    Это симметрично честности треков: не утверждение факта о ненаписанном коде, а условие эскалации
+    («при явном сигнале тяжести …»). Эскалация детерминирована ai_route: неизвестная тяжесть -> QUICK
+    (low); явный сигнал тяжести (size medium+/risk medium+) -> ENGINEERING.
+
+    -> (provisional: bool, disclosure: dict|None).
+    """
+    if confidence != "low" or base_wf != "QUICK" or "ENGINEERING" not in wfs:
+        return False, None
+    esc_wf = "ENGINEERING"
+    esc_gates = [g for g in (wfs[esc_wf].get("quality_gates") or []) if g not in current_gates]
+    disclosure = {
+        "reason": ("тяжесть задачи (size/risk) не заявлена в сигналах — классификация "
+                   "предварительная; при явном сигнале тяжести прогон эскалирует, и набор гейтов и "
+                   "глубина формы вырастут (не факт о коде: план строится до правок)"),
+        "escalation_workflow": esc_wf,
+        "gates_if_escalated": esc_gates,
+    }
+    # Форма спецификации растёт вместе с уровнем: назвать разделы, которые добавит L1, ДО заполнения
+    # (obs 8a891ce7 — человек заполнил форму L0 и узнал про L1 только на run).
+    try:
+        from ai_ops_kit.gates import spec_levels
+        cur_lvl = spec_levels.TASK_TYPE_LEVEL.get(base_wf, 0)
+        esc_lvl = spec_levels.TASK_TYPE_LEVEL.get(esc_wf, 1)
+        disclosure["spec_level_if_escalated"] = spec_levels.LEVEL_NAME.get(esc_lvl)
+        _cur = set(spec_levels.required_sections(cur_lvl))
+        disclosure["spec_sections_if_escalated"] = [
+            s for s in spec_levels.required_sections(esc_lvl) if s not in _cur]
+    except Exception as e:  # noqa: BLE001 — раскрытие формы не критично: гейты уже названы честно
+        disclosure["spec_sections_error"] = f"глубина формы не раскрыта: {e}"
+    return True, disclosure
 
 
 def build_plan(signals, workitem_id=None):
@@ -95,6 +143,7 @@ def build_plan(signals, workitem_id=None):
     task_hash = hashlib.sha256(task_text.encode("utf-8")).hexdigest()[:12] if task_text else None
     # Явный workitem_id валидируем (может дойти до путей); авто-сгенерированный безопасен by construction.
     wid = validate_workitem_id(workitem_id) if workitem_id else (f"wi-{task_hash}" if task_hash else "wi-unknown")
+    provisional, disclosure = _escalation_disclosure(base_wf, gates, classification_confidence, wfs)
     return {
         "schema_version": 1, "kind": "run-plan",
         "workitem_id": wid, "task_hash": task_hash,
@@ -102,6 +151,11 @@ def build_plan(signals, workitem_id=None):
         "required_tracks": required, "conditional_tracks": conditional, "skipped_tracks": skipped,
         "gates": gates, "route_reasons": route_reasons,
         "classification_confidence": classification_confidence,
+        # Один источник истины о наборе гейтов: этот же `gates` прогон и применяет (gate_executor
+        # получает gate_ids=plan["gates"]). Когда классификация предварительна, план не выдаёт 3
+        # гейта за окончательные, а честно называет эскалацию (см. _escalation_disclosure).
+        "classification_provisional": provisional,
+        "escalation_disclosure": disclosure,
         "execution_budget": {"max_cost": None, "max_duration": None, "max_model_calls": None},
     }
 
@@ -138,6 +192,18 @@ def validate_plan(data):
         for e in data.get(key, []) or []:
             if not e.get("reason"):
                 errors.append(f"{key}: у трека '{e.get('track')}' нет reason")
+    # Раскрытие эскалации: провизорный план ОБЯЗАН его нести, окончательный — не должен (иначе
+    # план снова обещает не то, что применит прогон). Названные к добавлению гейты обязаны резолвиться.
+    disc = data.get("escalation_disclosure")
+    if data.get("classification_provisional"):
+        if not disc:
+            errors.append("classification_provisional=true, но escalation_disclosure отсутствует")
+        else:
+            for g in disc.get("gates_if_escalated", []) or []:
+                if g not in gate_ids:
+                    errors.append(f"escalation_disclosure.gates_if_escalated: '{g}' отсутствует в quality/gates.yaml")
+    elif disc:
+        errors.append("escalation_disclosure присутствует при classification_provisional=false")
     return errors
 
 

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"${CLAUDE_PROJECT_DIR:-.}/.ai/managed/templates/runtime/lint_hook.py\"; [ -f \"$f\" ] || exit 0; exec \"${AI_OPS_PYTHON:-python3}\" \"$f\" hook  # ai-ops-kit:lint-hook",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

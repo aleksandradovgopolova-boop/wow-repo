@@ -1,0 +1,79 @@
+# ai-ops-sbom.yml — supply-chain дочки: SBOM + подписанные релизы (OpenSSF Scorecard: Signed-Releases).
+# Ставится `ai-ops init` в .github/workflows/ (или скопируйте вручную). Опт-аут: удалить этот файл.
+#
+# ЧТО ЭТО ДАЁТ. На КАЖДЫЙ опубликованный релиз:
+#   * генерируется SBOM (перечень всех зависимостей артефакта, формат SPDX) и прикладывается к релизу;
+#   * SBOM подписывается keyless-подписью Sigstore (`actions/attest-sbom`) — «что внутри» становится
+#     проверяемым, а не декларацией;
+#   * на артефакты выпускается build provenance (`actions/attest-build-provenance`) — доказательство
+#     «этот файл собрал ИМЕННО этот workflow из ИМЕННО этого коммита». Это и есть «подписанный релиз»
+#     в терминах OpenSSF: подпись без секретных ключей, проверяется `gh attestation verify`.
+#
+# ПОЧЕМУ keyless. Классическая подпись требует хранить приватный ключ в secrets — сам по себе риск
+# supply-chain. Sigstore/OIDC выдаёт короткоживущий сертификат под конкретный прогон: хранить нечего.
+#
+# ADVISORY. Прогон на релизе ничего не гейтит в PR — он добавляет доказательства к уже принятому
+# релизу. Ничего не мержит и не удаляет.
+#
+# ГРАНИЦА С ИНВАРИАНТОМ КИТА. Фордж-конфигурация дочки. `sbom-action` ставит `syft` внутри прогона CI —
+# это инструмент СБОРКИ артефакта дочки, к рантайм-зависимостям инструментов кита отношения не имеет.
+#
+# ПОДСТАВЬТЕ ПУТИ. `subject-path`/артефакты ниже — пример: замените на то, что реально собирает ваш
+# релиз (wheel, tarball, образ). Без подписываемого артефакта шаг provenance просто пропускается.
+#
+# ПИНЫ. Действия по мажорному тегу; для Pinned-Dependencies закрепите на commit SHA (см. SUPPLY-CHAIN.md).
+name: ai-ops-sbom
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  # Отменять УСТАРЕВШИЕ прогоны — но ТОЛЬКО для PR (новый пуш в тот же PR гасит прежний).
+  # На push в main / schedule / release / record отмена НЕ применяется: там каждый прогон
+  # относится к своему коммиту/событию, и его потеря = дыра в проверке или в записи.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sbom-and-sign:
+    name: SBOM + signed release
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
+    permissions:
+      contents: write     # приложить SBOM к релизу
+      id-token: write     # keyless-подпись Sigstore (OIDC)
+      attestations: write # запись аттестаций provenance/SBOM
+    steps:
+      - uses: actions/checkout@v4
+
+      # SBOM всего дерева в формате SPDX-JSON.
+      - name: Сгенерировать SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      # Подписать SBOM keyless-подписью (аттестация Sigstore).
+      - name: Подписать SBOM
+        uses: actions/attest-sbom@v1
+        with:
+          subject-path: sbom.spdx.json
+          sbom-path: sbom.spdx.json
+
+      # Provenance = «подписанный релиз»: доказать, кто и из чего собрал артефакт.
+      # ← ЗАМЕНИТЕ subject-path на реальный артефакт вашего релиза (например, dist/*.whl).
+      - name: Build provenance для артефактов релиза
+        if: hashFiles('dist/**') != ''
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "dist/**"
+
+      # Приложить SBOM к странице релиза через gh CLI (он предустановлен на раннерах GitHub) —
+      # без внешнего действия, чтобы не тянуть ещё одну зависимость в supply-chain.
+      - name: Приложить SBOM к релизу
+        if: github.event_name == 'release'
+        continue-on-error: true   # ADVISORY: отсутствие ассета не должно ронять уже вышедший релиз
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" sbom.spdx.json --clobber

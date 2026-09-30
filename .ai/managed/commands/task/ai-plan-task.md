@@ -11,7 +11,7 @@
 3. Создать work packages.
 4. Назначить write-scope, проверки и зависимости.
 5. Определить approvals, rollback и gates.
-6. **Записать срез эффекта**: `tools/run_report.py features/<id> --record` — автонакопление
+6. **Записать срез эффекта**: `PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.run_report features/<id> --record` — автонакопление
    истории. Срез на каждой стадии (plan/implement/verify/finish) даёт ≥3 среза за прогон,
    что само закрывает baseline метрик эффекта (не отдельный «не забыть» шаг).
 

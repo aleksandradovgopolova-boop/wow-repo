@@ -22,6 +22,7 @@ import argparse
 import json
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import yaml
@@ -91,7 +92,7 @@ def build_handoff(report, work_root=None):
     else:
         next_action = "проверить отчёт и решить следующий шаг"
 
-    return {
+    handoff = {
         "schema_version": 1, "kind": "RunHandoff",
         "run_id": f"{wid}@{sha[:12]}" if sha else wid,
         "workitem_id": wid,
@@ -108,6 +109,30 @@ def build_handoff(report, work_root=None):
         "next_action": next_action,
         "resume_from_revision": sha,
     }
+    _warn_if_handoff_malformed(handoff)
+    return handoff
+
+
+def _warn_if_handoff_malformed(handoff):
+    """#678: провести вердикт формы RunHandoff в детерминированный генератор.
+
+    build_handoff ОБЯЗАН давать валидный по контракту RunHandoff; нарушение — баг генератора или
+    битый report, о котором нельзя молчать: этот файл читает resume, а битую форму resume-preflight
+    отвергает fail-closed. WARN, а НЕ блок: доставка handoff важнее, а форму дополнительно ловит
+    preflight на другой стороне. Логика check() лежит в слое `checks` (primitives), поэтому импорт
+    идёт ВНИЗ (engine -> checks), без восходящего ребра engine -> validation (v3.38-приём). Guard на
+    ImportError — оборонительный: `checks` доставляется дочке как ядро, но частичную установку не роняем."""
+    try:
+        from ai_ops_kit.checks.run_handoff import check
+    except ImportError:
+        return
+    errs = check(handoff)
+    if errs:
+        warnings.warn(
+            "RunHandoff собран с нарушением формы (" + "; ".join(errs)
+            + ") — resume может быть ненадёжен",
+            RuntimeWarning, stacklevel=3,
+        )
 
 
 def resume_preflight(child_root, wid, base="main"):

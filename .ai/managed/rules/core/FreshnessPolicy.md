@@ -25,7 +25,7 @@ sources:                   # опционально: где живой исто�
 
 Отдельная от `stability` ось: `stability` — «как быстро протухает», `read_tier` — «читать ли
 это при старте сессии». Введено, чтобы стартовый контекст не раздувался чтением `context/*`
-целиком (см. `commands/task/ai-session-start.md`, `tools/context_cost.py`).
+целиком (см. `commands/task/ai-session-start.md`, `ai_ops_kit/context/context_cost.py`).
 
 | `read_tier` | Когда читать | Примеры |
 |---|---|---|

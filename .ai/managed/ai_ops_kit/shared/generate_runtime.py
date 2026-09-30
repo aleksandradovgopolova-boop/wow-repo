@@ -6,14 +6,19 @@
 
   claude-code: .ai/generated/claude-code/commands/ai-<workflow>.md   (слэш-команды)
   codex:       .ai/generated/codex/prompts/ai-<workflow>.md          ($-промпты)
+  qwen-code:   .ai/generated/qwen-code/commands/ai-<workflow>.md      (слэш-команды)
+
+Набор рантаймов НЕ захардкожен: берётся из registry/runtimes.yaml — все с
+adapter_depth: generated-commands, у которых есть профиль рендера (_RENDER_PROFILES).
+Новый generated-commands рантайм подключается объявлением в реестре + профилем.
 
 Плюс `.generation.json` — хэши источников, версия пакета: позволяет detect
 устаревшую генерацию (adapter drift) и перегенерировать. Файлы в .ai/generated/
 руками не редактируются.
 
 Использование:
-  generate_runtime.py [child_root]   — сгенерировать (по умолчанию cwd)
-  generate_runtime.py --selftest     — генерация во временную папку + проверки
+  python3 -m ai_ops_kit.shared.generate_runtime [child_root]   — сгенерировать (по умолчанию cwd)
+  python3 -m ai_ops_kit.shared.generate_runtime --selftest     — генерация во временную папку + проверки
 
 Требует pyyaml.
 """
@@ -29,21 +34,47 @@ import yaml
 
 PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is_file()),
             Path(__file__).resolve().parents[1])
-RUNTIMES = ("claude-code", "codex")
+
+# Профиль рендера рантайма: то, чего нет в реестре, — подпапка точки входа, наличие
+# YAML-фронтматтера и префикс вызова (`/` слэш-команда vs `$` codex-промпт). Набор рантаймов,
+# для которых мы генерируем, берётся из реестра (ниже), а НЕ из этого словаря: профиль лишь
+# описывает форму рендера уже отобранного рантайма.
+_RENDER_PROFILES = {
+    "claude-code": {"sub": "commands", "frontmatter": True,  "invoke": "/"},
+    "codex":       {"sub": "prompts",  "frontmatter": False, "invoke": "$"},
+    "qwen-code":   {"sub": "commands", "frontmatter": True,  "invoke": "/"},
+}
 
 
-def sha256_file(p: Path):
+def _load_generated_command_runtimes() -> tuple:
+    """Рантаймы для генерации — из registry/runtimes.yaml: объявленные с
+    adapter_depth: generated-commands И имеющие профиль рендера. Порядок — реестровый.
+    Так новый рантайм подключается ОБЪЯВЛЕНИЕМ в реестре (+ профиль), а не правкой хардкода;
+    'runtime-агностичность' здесь — не проза, а источник набора."""
+    try:
+        rt = yaml.safe_load((PKG / "registry" / "runtimes.yaml").read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return tuple(_RENDER_PROFILES)                # деградация: профили как есть
+    ids = [rid for rid, r in (rt.get("runtimes") or {}).items()
+           if isinstance(r, dict) and r.get("adapter_depth") == "generated-commands"]
+    return tuple(rid for rid in ids if rid in _RENDER_PROFILES) or tuple(_RENDER_PROFILES)
+
+
+RUNTIMES = _load_generated_command_runtimes()
+
+
+def sha256_file(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def load_sources():
+def load_sources() -> tuple:
     wf = yaml.safe_load((PKG / "registry" / "workflows.yaml").read_text(encoding="utf-8"))
     ag = yaml.safe_load((PKG / "registry" / "agents.yaml").read_text(encoding="utf-8"))
     agents = {a["id"]: a for a in ag.get("agents", [])}
     return wf.get("workflows", {}), agents
 
 
-def render_command(wid, w, agents, runtime):
+def render_command(wid: str, w: dict, agents: dict, runtime: str) -> str:
     """Единый human-readable текст команды; фронтматтер зависит от runtime."""
     stages_lines = []
     for s in w.get("stages", []):
@@ -56,11 +87,11 @@ def render_command(wid, w, agents, runtime):
     artifacts = "\n".join(f"- {a}" for a in w.get("required_artifacts", []))
 
     header = (f"---\ndescription: Workflow {wid} — {w.get('purpose','')}\n---\n"
-              if runtime == "claude-code" else "")
+              if _RENDER_PROFILES[runtime]["frontmatter"] else "")
     return f"""{header}# ai-{wid.lower()} — {w.get('purpose', wid)}
 
 Сгенерировано из registry/workflows.yaml — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Проводит задачу по workflow **{wid}** ({w.get('preferred_execution_mode')} / минимум
@@ -84,18 +115,18 @@ def render_command(wid, w, agents, runtime):
 """
 
 
-def render_start_task(runtime, workflows):
+def render_start_task(runtime: str, workflows: dict) -> str:
     """Единая точка входа: пользователь описывает задачу словами, маршрут выбирается сам.
     Команда генерируется (adapter_depth: generated-commands) — раннтайм исполняет шаги по
     реестрам в .ai/managed/ (routing-policy + workflows), вручную workflow выбирать не нужно."""
     wlist = "\n".join(f"- **{wid}** — {w.get('purpose', '')}" for wid, w in workflows.items())
     header = ("---\ndescription: Единая точка входа — опиши задачу словами, маршрут выберется сам\n---\n"
-              if runtime == "claude-code" else "")
-    invoke = "/ai-<workflow>" if runtime == "claude-code" else "$ai-<workflow>"
+              if _RENDER_PROFILES[runtime]["frontmatter"] else "")
+    invoke = f"{_RENDER_PROFILES[runtime]['invoke']}ai-<workflow>"
     return f"""{header}# ai-start-task — единая точка входа
 
 Сгенерировано из registry/ — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 > **Канонический вход — `ai-run`** (3.0-срез 1). `ai-start-task` сохраняется как совместимый
 > алиас той же спины (route→RunPlan→WorkItem→preflight→active-work) и не удаляется (снятие —
@@ -121,15 +152,17 @@ def render_start_task(runtime, workflows):
    - иначе → контракт по `selection_criteria.task_type`;
    - неизвестный task_type → **ENGINEERING** (честный default).
 4. Покажи пользователю выбранный workflow и **причину** (1–3 предложения).
-5. **Concurrency preflight** (пишущие workflow): `tools/concurrency_preflight.py --paths
-   <целевые файлы> --base origin/main` — открытые PR/свежие мержи по этим путям; при
-   collision перепроверь премиссу против актуального main до старта.
-6. **Изоляция**: git worktree под задачу — `tools/worktree.py add <id> --branch
-   <feature/…>` (работа не в main).
-7. **WorkItem** — единая сущность изменения: `tools/workitem.py start <features-dir> <id>
-   --task "…"` (связывает workflow + blueprint + прогон; один статус).
-8. **Реестр активных работ**: `tools/active_work.py register .ai/runtime/active-work.yaml
-   <id> --branch <ветка> --areas <зоны> --session <id> --workitem features/<id>/workitem.yaml`.
+5. **Concurrency preflight** (пишущие workflow): `PYTHONPATH=.ai/managed python3 -m
+   ai_ops_kit.gates.concurrency_preflight --paths <целевые файлы> --base origin/main` — открытые
+   PR/свежие мержи по этим путям; при collision перепроверь премиссу против актуального main до старта.
+6. **Изоляция**: git worktree под задачу — `PYTHONPATH=.ai/managed python3 -m
+   ai_ops_kit.engine.worktree add <id> --branch <feature/…>` (работа не в main).
+7. **WorkItem** — единая сущность изменения: `PYTHONPATH=.ai/managed python3 -m
+   ai_ops_kit.lifecycle.workitem start <features-dir> <id> --task "…"` (связывает workflow +
+   blueprint + прогон; один статус).
+8. **Реестр активных работ**: `PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.active_work
+   register .ai/runtime/active-work.yaml <id> --branch <ветка> --areas <зоны> --session <id>
+   --workitem features/<id>/workitem.yaml`.
 9. Инициализируй TaskState прогона (по WorkItem): `.ai/runtime/workitems/<id>/TaskState.yaml`.
 10. Передай управление команде выбранного маршрута: `{invoke}` (напр. ai-engineering).
     Для CRITICAL — сначала human approval, затем запуск.
@@ -144,17 +177,17 @@ def render_start_task(runtime, workflows):
 """
 
 
-def render_ai_run(runtime, workflows):
+def render_ai_run(runtime: str, workflows: dict) -> str:
     """КАНОНИЧЕСКИЙ вход (3.0-срез 1): задача -> контролируемое исполнение -> отчёт одной
-    транзакцией через контроллер tools/ai_ops_run.py. `ai-start-task` сохраняется как
+    транзакцией через контроллер ai_ops_kit/engine/ai_ops_run.py. `ai-start-task` сохраняется как
     совместимый алиас (та же спина route->RunPlan->WorkItem->preflight->active-work)."""
     header = ("---\ndescription: Канонический вход — задача в контролируемое исполнение и отчёт\n---\n"
-              if runtime == "claude-code" else "")
-    alias = "/ai-start-task" if runtime == "claude-code" else "$ai-start-task"
+              if _RENDER_PROFILES[runtime]["frontmatter"] else "")
+    alias = f"{_RENDER_PROFILES[runtime]['invoke']}ai-start-task"
     return f"""{header}# ai-run — канонический вход (задача → исполнение → отчёт)
 
 Сгенерировано из registry/ — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Единый транзакционный вход: классификация/маршрут → RunPlan (base_workflow + треки +
@@ -164,13 +197,15 @@ def render_ai_run(runtime, workflows):
 
 ## Порядок (исполняет этот раннтайм)
 ```
-tools/ai_ops_run.py run "<задача>" <child_root> --signals '<json сигналов>' \\
+PYTHONPATH=.ai/managed python3 -m ai_ops_kit.engine.ai_ops_run run "<задача>" <child_root> \\
+    --signals '<json сигналов>' \\
     [--feature <имя-фичи>] [--runtime claude-code|generic-orchestrator] [--provider mock] [--execute]
 ```
 0. **Привязка к именованной фиче:** для реальной работы дай `--feature <имя>` — WorkItem
    ляжет на эту фичу, и срезы истории накопятся на неё. Без `--feature` id = `wi-<hash>`,
    и baseline метрик НЕ двигается (finding обкатки). Срез истории в claude-code пишется на
-   стадии `finish` (рантайм исполняет `run_report.py --record`), автозаписи «за стадию» нет.
+   стадии `finish` (рантайм исполняет `python3 -m ai_ops_kit.lifecycle.run_report --record`),
+   автозаписи «за стадию» нет.
 1. Контроллер строит RunPlan по сигналам и создаёт WorkItem (`features/<id>/run-plan.yaml`).
 2. Регистрирует активную работу (ветка/зоны/сессия) — conflict forecast.
 3. Исполнение: **claude-code** — контроллер готовит план и каркас, стадии/патчи/тесты
@@ -188,16 +223,16 @@ SHA, exit codes, структурный reviewer-result), а не факт вы�
 """
 
 
-def render_ai_ops_init(runtime):
+def render_ai_ops_init(runtime: str) -> str:
     """Разговорная установка/онбординг: «подключи AI Ops» → адаптер исполняет установку и
     первичный онбординг репозитория. Реальную установку делает installer/ai_ops.py; онбординг
     (черновики context/*) — скилл repo-onboarding; выбор рантайма/включение — человек."""
     header = ("---\ndescription: Подключить AI Ops и подготовить репозиторий (установка + онбординг)\n---\n"
-              if runtime == "claude-code" else "")
+              if _RENDER_PROFILES[runtime]["frontmatter"] else "")
     return f"""{header}# ai-ops-init — разговорная установка и онбординг
 
 Сгенерировано из registry/ — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Превращает «подключи AI Ops и подготовь репозиторий» в шаги, без ручных python-команд
@@ -223,7 +258,7 @@ def render_ai_ops_init(runtime):
 """
 
 
-def _active_runtimes(runtimes):
+def _active_runtimes(runtimes: list | None) -> tuple:
     """v3.14.0 Startup Context Budget: адаптеры генерируются ТОЛЬКО для настроенных рантаймов
     (не эмитим codex/prompts, если codex не включён). None/пусто -> все известные (back-compat)."""
     if not runtimes:
@@ -232,17 +267,17 @@ def _active_runtimes(runtimes):
     return active or RUNTIMES
 
 
-def _keep_command(name, command_filter):
+def _keep_command(name: str, command_filter: set | None) -> bool:
     """command_filter=None -> экспортировать всё; иначе только имена из набора (выбор репозитория)."""
     return command_filter is None or name in command_filter
 
 
-def generate(child_root: Path, verbose=True, runtimes=None, command_filter=None):
+def generate(child_root: Path, verbose: bool = True, runtimes: list | None = None, command_filter: set | None = None) -> list:
     workflows, agents = load_sources()
     out_files = []
     active = _active_runtimes(runtimes)
     for runtime in active:
-        sub = "commands" if runtime == "claude-code" else "prompts"
+        sub = _RENDER_PROFILES[runtime]["sub"]
         base = child_root / ".ai" / "generated" / runtime / sub
         base.mkdir(parents=True, exist_ok=True)
         for wid, w in workflows.items():
@@ -275,7 +310,7 @@ def generate(child_root: Path, verbose=True, runtimes=None, command_filter=None)
             "registry/agents.yaml": sha256_file(PKG / "registry" / "agents.yaml"),
         },
         "generated": sorted(p.relative_to(child_root).as_posix() for p in out_files),
-        "note": "Do not edit by hand; regenerate with tools/generate_runtime.py",
+        "note": "Do not edit by hand; regenerate with python3 -m ai_ops_kit.shared.generate_runtime",
     }
     (child_root / ".ai" / "generated" / ".generation.json").write_text(
         json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -285,7 +320,7 @@ def generate(child_root: Path, verbose=True, runtimes=None, command_filter=None)
     return out_files
 
 
-def check_drift(child_root: Path):
+def check_drift(child_root: Path) -> bool:
     """True, если генерация устарела относительно источников (adapter drift)."""
     meta_p = child_root / ".ai" / "generated" / ".generation.json"
     if not meta_p.exists():
@@ -297,7 +332,7 @@ def check_drift(child_root: Path):
     return False
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd()
     generate(root)
     return 0

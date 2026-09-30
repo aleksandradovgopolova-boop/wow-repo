@@ -21,134 +21,50 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 import sys
+import uuid
 
 import yaml
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
-
-def _git(root: Path, *args) -> tuple[int, str, str]:
-    """Git command wrapper."""
-    try:
-        result = subprocess.run(
-            ["git", *args],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return result.returncode, result.stdout, result.stderr
-    # Узкий тип (фаза 0, 19.08.2026): запуск может не состояться (нет бинаря, права, битый
-    # симлинк) или не уложиться в timeout. Любое ДРУГОЕ исключение здесь — дефект вызова, и он
-    # обязан всплыть, а не превратиться в «rc=1» и молча стать «команда не сработала».
-    # Тип ошибки НАЗЫВАЕТСЯ в тексте: «не смогли запустить» и «команда вернула ошибку» —
-    # разные ответы, и по голому str(e) их не различить.
-    except (OSError, subprocess.SubprocessError) as e:
-        return 1, "", f"{type(e).__name__}: {e}"
-
-
-def _get_recent_commits(root: Path, since: str | None = None) -> list[dict]:
-    """Get commits since last review (or last 24h)."""
-    if since:
-        range_spec = f"{since}..HEAD"
-    else:
-        # Last 24 hours
-        since_time = (datetime.now() - timedelta(hours=24)).isoformat()
-        range_spec = f"--since={since_time}"
-
-    rc, out, _ = _git(root, "log", range_spec, "--pretty=format:%H|%s|%an|%ai", "--no-merges")
-    if rc != 0 or not out.strip():
-        return []
-
-    commits = []
-    for line in out.strip().split("\n"):
-        parts = line.split("|", 3)
-        if len(parts) == 4:
-            commits.append({
-                "sha": parts[0][:8],
-                "message": parts[1],
-                "author": parts[2],
-                "date": parts[3],
-            })
-    return commits
-
-
-def _get_changed_files(root: Path, since: str | None = None) -> list[str]:
-    """Get list of changed files since last review."""
-    if since:
-        range_spec = f"{since}..HEAD"
-    else:
-        since_time = (datetime.now() - timedelta(hours=24)).isoformat()
-        # Get files from commits in last 24h
-        rc, out, _ = _git(root, "log", f"--since={since_time}", "--name-only", "--pretty=format:")
-        if rc != 0:
-            return []
-        files = set()
-        for line in out.strip().split("\n"):
-            line = line.strip()
-            if line and not line.startswith("|"):
-                files.add(line)
-        return sorted(files)
-
-    rc, out, _ = _git(root, "diff", range_spec, "--name-only")
-    if rc != 0:
-        return []
-    return [f for f in out.strip().split("\n") if f]
-
-
-def _check_plan_status(root: Path) -> dict:
-    """Check plan.yaml for status changes."""
-    plan_path = root / "planning" / "plan.yaml"
-    if not plan_path.exists():
-        return {"exists": False}
-
-    try:
-        with open(plan_path, encoding="utf-8") as f:
-            plan = yaml.safe_load(f)
-        work = plan.get("work", [])
-        by_status = {}
-        for w in work:
-            s = w.get("status", "unknown")
-            by_status[s] = by_status.get(s, 0) + 1
-        return {"exists": True, "total": len(work), "by_status": by_status}
-    # Узкий тип: файл может не читаться, YAML — не разбираться, а пустой документ даёт None и
-    # падает на `.get`. Причина НАЗЫВАЕТСЯ: «план не прочитали» и «работ нет» — разные ответы,
-    # и обзор, который их путает, отчитается о тишине там, где была поломка.
-    except (OSError, yaml.YAMLError, AttributeError) as e:
-        return {"exists": True, "error": f"план не разобран ({type(e).__name__}: {e})"}
-
-
-def _check_ci_status(root: Path) -> dict:
-    """Check if CI workflows exist (actual status requires GitHub API)."""
-    workflows_dir = root / ".github" / "workflows"
-    if not workflows_dir.exists():
-        return {"workflows": 0}
-    workflows = list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml"))
-    return {"workflows": len(workflows)}
-
-
-def _check_open_prs(root: Path) -> dict:
-    """Check for open PRs (requires gh CLI)."""
-    try:
-        result = subprocess.run(
-            ["gh", "pr", "list", "--state", "open", "--json", "number,title"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            prs = json.loads(result.stdout)
-            return {"open_prs": len(prs), "prs": prs[:5]}  # First 5
-        return {"open_prs": None, "unavailable": f"gh вернул код {result.returncode}"}
-    # Узкий тип: gh может отсутствовать, не уложиться в timeout или отдать не-JSON.
-    # Здесь стоял `pass`, и причина исчезала совсем; отсутствие данных выглядело так же, как
-    # «открытых PR нет». `None` вместо `-1` — тот же инвариант, что и у usage: unavailable не
-    # число и не ноль, а отдельное состояние, и оно названо в `unavailable`.
-    except (OSError, subprocess.SubprocessError, ValueError) as e:
-        return {"open_prs": None, "unavailable": f"{type(e).__name__}: {e}"}
+# Read-only сбор сигналов дельты вынесен в сателлит nightly_collectors; ре-экспорт сохраняет
+# доступ `nightly_review.<имя>` для оркестрации (collect_delta/confirm_review) и тестов.
+from ai_ops_kit.intelligence.nightly_collectors import (  # noqa: F401
+    _check_ci_status,
+    _check_open_prs,
+    _check_plan_status,
+    _get_changed_files,
+    _get_recent_commits,
+    _git,
+    run_checks,
+)
+# Расписание и доставка брифа вынесены в сателлит nightly_schedule; run_nightly (оркестрация)
+# остаётся здесь и зовёт deliver_brief отсюда.
+from ai_ops_kit.intelligence.nightly_schedule import (  # noqa: F401
+    SCHEDULE_WORKFLOW_REL,
+    BRIEFS_DIR_REL,
+    deliver_brief,
+    format_schedule_status,
+    install_schedule,
+    schedule_status,
+)
+# Недельный тренд находок (ось времени) вынесен в сателлит nightly_trends; ре-экспорт сохраняет
+# доступ `nightly_review.<имя>` для оркестрации и тестов. Обзор больше не только снимок: история
+# находок копится в собственном файле обзора, а бриф называет направление за неделю.
+from ai_ops_kit.intelligence.nightly_trends import (  # noqa: F401
+    HISTORY_REL,
+    TREND_WINDOW_DAYS,
+    compute_axis_trends,
+    compute_trends,
+    finding_counts,
+    format_trends,
+    read_history,
+    record_history,
+)
+# Оси обзора и ротация фокуса (сателлит): находки по названным осям, фокус round-robin, тренд выше.
+from ai_ops_kit.intelligence import nightly_dimensions as nd
+from ai_ops_kit.intelligence.nightly_hotspots import format_hotspots_section  # noqa: F401
 
 
 # ТОЧКА ОТСЧЁТА — ПОСЛЕДНИЙ ПОДТВЕРЖДЁННЫЙ ОБЗОР, А НЕ «24 ЧАСА» (v0, 20.08.2026).
@@ -179,16 +95,133 @@ def last_confirmed(root: Path) -> dict | None:
     return doc if isinstance(doc, dict) else {"unreadable": "не объект"}
 
 
-def confirm_review(root: Path, sha: str | None = None) -> dict:
-    """Отметить обзор разобранным: следующая дельта пойдёт отсюда."""
+def confirm_review(root: Path, sha: str | None = None, dismissed=None) -> dict:
+    """Отметить обзор разобранным: следующая дельта пойдёт отсюда.
+
+    `dismissed` — флаги (имена проверок) ТЕКУЩЕГО обзора, которые владелец счёл ЛОЖНЫМИ
+    срабатываниями. Они уходят в обратную связь и питают ИЗМЕРЕННУЮ частоту ложных (см. ниже):
+    без обратной связи обзор не вправе называть свою точность числом. Флаги считаются здесь же,
+    ДО сдвига точки отсчёта, — так пометка привязана к реальным находкам, а не к вчерашним.
+    """
     rc, out, _ = _git(root, "rev-parse", "HEAD")
     head = sha or (out.strip() if rc == 0 else None)
     rec = {"schema_version": 1, "kind": "NightlyReviewConfirmation",
            "confirmed_at": datetime.now().isoformat(), "commit_sha": head}
+    flags = review_flags(collect_delta(root))
     p = Path(root) / CONFIRMED_REL
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(rec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    record_feedback(root, flags, dismissed, commit_sha=head, confirmed_at=rec["confirmed_at"])
     return rec
+
+
+# ─── ЧАСТОТА ЛОЖНЫХ СРАБАТЫВАНИЙ: обзор НАЗЫВАЕТ свою точность (или честно молчит) ──────────────
+#
+# Обзор ФЛАГАЕТ расхождения. Но флаг, чья точность не измерена, — тот же ложный green: владелец не
+# знает, чинить по нему или отмахнуться, а сам обзор становится кандидатом в «судит, но свою
+# точность не меряет» (F-002/F-005). Поэтому обзор называет, КАК ЧАСТО его флаги оказываются
+# ложными, — из ОБРАТНОЙ СВЯЗИ, а не из воздуха. Обратная связь берётся при подтверждении: владелец
+# помечает флаги, которые были ложными (`--confirm --dismiss <флаг>`).
+#
+# БЕЗ ФАБРИКАЦИИ. Пока подтверждённых обзоров с флагами меньше порога, частота НЕ ИЗМЕРЕНА — так и
+# говорим, называя порог, а не выдумываем число. Выдуманная точность — ровно тот дефект, что кит
+# ловит везде, и здесь он был бы вдвойне циничен: обзор соврал бы именно о своей правдивости.
+#
+# ХРАНЕНИЕ — ШАРДАМИ (учёт #148). Одна запись на подтверждённый обзор, отдельным файлом: слияние
+# веток объединяет каталог (union), общего конфликтного файла нет. Append-only: записи не
+# переписываются, только добавляются.
+
+FEEDBACK_DIR_REL = ".ai/project/nightly-review/feedback"
+# Порог: сколько подтверждённых обзоров С ФЛАГАМИ нужно, чтобы назвать частоту числом. Меньше —
+# «не измерено». Значение осознанно скромное (v0 обкатывается на ките), поднимается по решению.
+MIN_CONFIRMED_FOR_RATE = 3
+
+
+def review_flags(delta: dict) -> list[str]:
+    """Флаги обзора — доказанные расхождения (`ok is False`). Идентификатор флага = имя проверки.
+
+    «Не проверено» (`ok is None`) флагом НЕ считается: нельзя назвать ложным то, чего обзор не
+    утверждал. В знаменатель частоты идут только вещи, которые обзор действительно заявил.
+    """
+    return [f["check"] for f in delta.get("findings", []) if f.get("ok") is False]
+
+
+def _feedback_dir(root: Path) -> Path:
+    return Path(root) / FEEDBACK_DIR_REL
+
+
+def record_feedback(root: Path, flags, dismissed, *, commit_sha: str | None = None,
+                    confirmed_at: str | None = None) -> dict:
+    """Записать обратную связь по ОДНОМУ подтверждённому обзору отдельным файлом-шардом.
+
+    `flags` — все флаги обзора; `dismissed` — те из них, что владелец пометил ложными (⊆ flags;
+    пометки на несуществующие флаги отбрасываются — нельзя признать ложным то, чего не было).
+    Общего файла нет намеренно (#148): каждый обзор — свой шард, слияние веток = объединение.
+    """
+    flags = list(flags or [])
+    dismissed = [d for d in (dismissed or []) if d in flags]
+    at = confirmed_at or datetime.now().isoformat()
+    rec = {"schema_version": 1, "kind": "NightlyReviewFeedback",
+           "confirmed_at": at, "commit_sha": commit_sha,
+           "flags": flags, "dismissed": dismissed}
+    d = _feedback_dir(root)
+    d.mkdir(parents=True, exist_ok=True)
+    stamp = re.sub(r"[^0-9A-Za-z]", "", at)[:15] or "0"
+    shard = d / f"{stamp}-{(commit_sha or 'nosha')[:8]}-{uuid.uuid4().hex[:8]}.json"
+    shard.write_text(json.dumps(rec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return rec
+
+
+def read_feedback(root: Path) -> list[dict]:
+    """Все шарды обратной связи (union каталога). Битый шард пропускаем, не роняя счёт остальных."""
+    d = _feedback_dir(root)
+    if not d.is_dir():
+        return []
+    out = []
+    for p in sorted(d.glob("*.json")):
+        try:
+            doc = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(doc, dict) and doc.get("kind") == "NightlyReviewFeedback":
+            out.append(doc)
+    return out
+
+
+def false_positive_rate(root: Path) -> dict:
+    """Частота ложных срабатываний обзора — ИЗМЕРЕННАЯ из обратной связи, или честное «не измерено».
+
+    -> {measured, rate, false_flags, total_flags, confirmed_reviews, threshold, reason}.
+    Считается по подтверждённым обзорам, у которых был ≥1 флаг: rate = ложные / все флаги. Пока
+    таких обзоров меньше MIN_CONFIRMED_FOR_RATE (или флагов вовсе не было) — measured=False, число
+    НЕ называется, называется порог. Третье состояние («не измерено») не сворачивается в «0%».
+    """
+    fb = read_feedback(root)
+    with_flags = [r for r in fb if r.get("flags")]
+    total = sum(len(r.get("flags", [])) for r in with_flags)
+    false = sum(len(r.get("dismissed", [])) for r in with_flags)
+    base = {"false_flags": false, "total_flags": total,
+            "confirmed_reviews": len(with_flags), "threshold": MIN_CONFIRMED_FOR_RATE}
+    if len(with_flags) < MIN_CONFIRMED_FOR_RATE or total == 0:
+        return {**base, "measured": False, "rate": None,
+                "reason": (f"не измерено: нужно ≥{MIN_CONFIRMED_FOR_RATE} подтверждённых обзоров "
+                           f"с флагами и пометкой ложных срабатываний "
+                           f"(пока {len(with_flags)})")}
+    return {**base, "measured": True, "rate": false / total,
+            "reason": (f"{false} ложных из {total} флагов "
+                       f"за {len(with_flags)} подтверждённых обзоров")}
+
+
+def format_false_positive_rate(fpr: dict) -> str:
+    """Одна строка о частоте ложных — первоклассно в брифе. «Не измерено» остаётся «не измерено»."""
+    if not fpr.get("measured"):
+        return (f"Частота ложных срабатываний: **не измерено** — {fpr.get('reason')}. "
+                f"Пока обзор не может сказать, насколько часто его флаги ошибочны, — доверять "
+                f"флагам на слово.")
+    pct = round(fpr["rate"] * 100)
+    return (f"Частота ложных срабатываний: **{pct}%** "
+            f"({fpr['false_flags']} ложных из {fpr['total_flags']} флагов "
+            f"за {fpr['confirmed_reviews']} подтверждённых обзоров).")
 
 
 def review_baseline(root: Path) -> dict:
@@ -214,166 +247,15 @@ def review_baseline(root: Path) -> dict:
             "reason": f"дельта с последнего подтверждённого обзора ({rec.get('confirmed_at')})"}
 
 
-# НАХОДКИ, А НЕ КОЛИЧЕСТВА (v0, 20.08.2026).
-#
-# Скелет обзора считал коммиты и файлы. «5 коммитов, 12 файлов» не расхождение: человеку нечего с
-# этим делать, и бриф из таких строк перестают читать через неделю. Работа обещает НАХОДИТЬ
-# расхождения — с документацией, тестами, архитектурой, Storybook, планом.
-#
-# СВОЮ АНАЛИТИКУ НЕ ПИШЕМ. В поставку дочки уже едут 24 валидатора, каждый из которых умеет
-# отвечать на свой вопрос. Обзор — АГРЕГАТОР: он запускает их процессом (так же, как CI дочки) и
-# собирает ответы. Писать вторую реализацию тех же проверок значило бы завести вторую правду —
-# ровно то, что кит запрещает везде.
-#
-# ЧЕГО НЕ СМОГЛИ — НАЗЫВАЕТСЯ. Валидатор, которого нет в поставке или который не запустился,
-# даёт `unknown`, а не «нарушений нет». Третье состояние не сворачивается во второе.
-# КАК ЗВАТЬ КАЖДЫЙ — ОБЪЯВЛЕНО, А НЕ УГАДАНО (замер 20.08.2026).
-#
-# Первая редакция звала все валидаторы одинаково — путём к корню. Пять из восьми ответили
-# `IsADirectoryError` или подсказкой по использованию, и обзор отчитался о них как о РАСХОЖДЕНИЯХ.
-# То есть он выдал СВОЮ ошибку вызова за дефект продукта — худшее, что может сделать проверка:
-# человек пошёл бы чинить то, что не сломано, а настоящие находки утонули бы в шуме.
-#
-# Способ вызова замерен по каждому:
-#   root     — принимает корень репозитория;
-#   none     — без аргумента проверяет пакет целиком;
-#   artifact — принимает путь к КОНКРЕТНОМУ артефакту; нет артефакта -> «не проверено», НЕ находка.
-CHECKS = (
-    {"title": "документация", "name": "validate_freshness", "how": "root",
-     "subject": "документы, у которых истёк срок ревизии"},
-    {"title": "ссылки", "name": "validate_references", "how": "root",
-     "subject": "ссылки, ведущие в никуда"},
-    {"title": "артефакты", "name": "validate_cross_artifacts", "how": "root",
-     "subject": "связность артефактов между собой"},
-    {"title": "заявления", "name": "validate_claims", "how": "none",
-     "subject": "публичные числа против кода"},
-    # РОД ДОКУМЕНТА ОБЪЯВЛЕН, И ЭТО НЕ ПЕДАНТИЗМ (замер 20.08.2026). Здесь стояло
-    # `planning/plan.yaml` — и `validate_plan_artifact` честно ответил «kind должен быть
-    # plan-artifact», потому что проверяет RunPlan ФИЧИ, а не delivery-план репозитория.
-    # Обзор выдал этот ответ за РАСХОЖДЕНИЕ и трижды сообщил владельцу о дефекте, которого нет.
-    # Ошибка вызова второго рода: файл существует, валидатор запускается — и проверяет не то.
-    # Поэтому род документа сверяется ДО запуска: не совпал — «не проверено», а не находка.
-    {"title": "план работы", "name": "validate_plan_artifact", "how": "artifact",
-     "artifact": "features/*/plan.yaml", "kind": "plan-artifact",
-     "subject": "RunPlan фичи и его связность"},
-    {"title": "события", "name": "validate_event_catalog", "how": "artifact",
-     "artifact": "analytics/events.yaml", "kind": None,
-     "subject": "каталог событий аналитики"},
-)
-
-
-def _validation_dir(root: Path) -> Path:
-    """Где лежат валидаторы: в дочке — поставка, в самом ките — свой каталог."""
-    shipped = Path(root) / ".ai" / "managed" / "ai_ops_kit" / "validation"
-    return shipped if shipped.is_dir() else Path(root) / "ai_ops_kit" / "validation"
-
-
-def _artifact_kind(path: Path) -> str | None:
-    """Род документа из его же поля `kind`. -> str | None (не прочитали).
-
-    Нужен, чтобы не звать валидатор на документе другого рода: он честно ответит «не то», а обзор
-    выдаст этот ответ за расхождение продукта. Ровно так 20.08 родилась ложная находка про
-    `write_scope`, о которой владельцу сообщили трижды.
-    """
-    try:
-        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
-        return None
-    return str(doc.get("kind")) if isinstance(doc, dict) and doc.get("kind") else None
-
-
-def run_checks(root: Path, timeout: int = 120) -> list[dict]:
-    """Прогнать шипнутые валидаторы и собрать их ответы. -> список находок.
-
-    `ok`: True — сошлось, False — расхождение, None — НЕ ПРОВЕРЕНО (валидатора нет в поставке,
-    артефакта нет, запуск не состоялся). Третье значение существует намеренно и не сворачивается
-    во второе: «не смотрели» и «нарушений нет» — разные ответы, и второй дороже.
-    """
-    base = _validation_dir(root)
-    out = []
-    for spec in CHECKS:
-        title, name, how = spec["title"], spec["name"], spec["how"]
-        rec = {"check": title, "subject": spec["subject"]}
-        script = base / f"{name}.py"
-        if not script.is_file():
-            out.append({**rec, "ok": None, "detail": "валидатор не поставлен — проверить нечем"})
-            continue
-        if how == "root":
-            argv = [str(root)]
-        elif how == "none":
-            argv = []
-        else:
-            pattern = spec["artifact"]
-            if "*" in pattern:
-                found = sorted(Path(root).glob(pattern))
-                art = found[0] if found else None
-            else:
-                art = Path(root) / pattern
-                art = art if art.is_file() else None
-            if art is None:
-                out.append({**rec, "ok": None,
-                            "detail": f"артефакта {pattern} нет — проверять нечего"})
-                continue
-            want = spec.get("kind")
-            if want:
-                got = _artifact_kind(art)
-                if got != want:
-                    out.append({**rec, "ok": None,
-                                "detail": (f"{art.name}: документ рода '{got or 'неизвестен'}', "
-                                           f"а проверка про '{want}' — проверять нечем")})
-                    continue
-            argv = [str(art)]
-        try:
-            r = subprocess.run([sys.executable, str(script), *argv],
-                               capture_output=True, text=True, timeout=timeout, cwd=str(root))
-        except (OSError, subprocess.SubprocessError) as e:
-            out.append({**rec, "ok": None,
-                        "detail": f"не запустился ({type(e).__name__}: {e})"})
-            continue
-        full = (r.stdout + r.stderr).strip()
-        lines = full.splitlines()
-        # ОШИБКА ВЫЗОВА — НЕ НАХОДКА. Трейсбек или подсказка по использованию означают, что мы
-        # позвали не так, а не что продукт сломан. Выдать одно за другое — послать человека
-        # чинить исправное.
-        #
-        # ИСКАТЬ ОБЯЗАНО ВО ВСЁМ ВЫВОДЕ, А НЕ В ПОСЛЕДНЕЙ СТРОКЕ (замер 20.08.2026 на трёх живых
-        # дочках). Прежде маркер искали в `detail`, а `detail` брал ПОСЛЕДНЮЮ строку. Настоящий
-        # отказ валидатора выглядит так:
-        #     ОШИБКА: ожидался путь к файлу заявлений, получено '<каталог>' — это каталог.
-        #     Использование: validate_claims.py [путь/к/claims.yaml] [--json]
-        #     Без аргумента берётся knowledge/claims.yaml пакета.
-        # Маркер стоит во ВТОРОЙ строке, а последняя — безобидная подсказка. Защита не срабатывала,
-        # и обзор сообщал «расхождение: Без аргумента берётся …» — предложение, из которого человек
-        # не поймёт даже, о чём речь. На трёх дочках из трёх это была ПОЛОВИНА всех находок.
-        wrong_call = "Traceback" in full or re.search(r"(?i)использование:|usage:", full)
-        if wrong_call:
-            # Показываем ПЕРВУЮ строку: в отказе по вызову она и есть суть жалобы, а последняя —
-            # хвост подсказки. Раньше человек получал именно хвост.
-            detail = lines[0][:220] if lines else f"код {r.returncode}, вывод пуст"
-            out.append({**rec, "ok": None, "detail": f"позвали неверно — {detail}"})
-            continue
-        detail = lines[-1][:220] if lines else f"код {r.returncode}, вывод пуст"
-        out.append({**rec, "ok": r.returncode == 0, "detail": detail})
-
-    # ПОСТУПЛЕНИЕ СОБЫТИЙ — ОТДЕЛЬНЫЙ ВОПРОС, И ЕГО НЕ ЗАКРЫВАЕТ КАТАЛОГ. `validate_event_catalog`
-    # отвечает «что мы обещали слать»; доехало ли хоть одно — не знает никто. Цепочка продукта
-    # (Outcome Contract -> Tracking Plan -> реализация -> ПОСТУПЛЕНИЕ -> Product Health) рвётся
-    # ровно здесь и рвётся молча: план выглядит выполненным, дашборд пустой.
-    from ai_ops_kit.intelligence import event_arrival
-    rep = event_arrival.assess(root)
-    out.append({
-        "check": "поступление событий",
-        "subject": "объявленные события доезжают в аналитику",
-        "ok": (None if not rep.get("checked") else not rep.get("missing")),
-        "detail": event_arrival.render(rep).replace("\n", "; ")[:220],
-    })
-    return out
-
-
-def collect_delta(root: Path, since: str | None = None) -> dict:
-    """Collect all delta information."""
+def collect_delta(root: Path, since: str | None = None, *, focus: str | None = None) -> dict:
+    """Collect all delta information. `focus` не задан — заглядываем в курсор ротации, НЕ двигая его
+    (показ/подтверждение); реальный прогон (run_nightly) передаёт уже сдвинутый фокус."""
     baseline = review_baseline(root) if since is None else {
         "since": since, "kind": "explicit", "reason": "точка отсчёта задана вызывающим"}
+    findings = run_checks(root)
+    if focus is None:
+        focus = nd.rotate_focus(root, advance=False)
+    axis_counts = nd.axis_finding_counts(findings)
     return {
         "baseline": baseline,
         "commits": _get_recent_commits(root, baseline["since"]),
@@ -381,7 +263,15 @@ def collect_delta(root: Path, since: str | None = None) -> dict:
         "plan": _check_plan_status(root),
         "ci": _check_ci_status(root),
         "prs": _check_open_prs(root),
-        "findings": run_checks(root),
+        "findings": findings,
+        "focus": focus,
+        "dimensions": nd.group_findings_by_axis(findings),
+        "axis_counts": axis_counts,
+        "false_positive_rate": false_positive_rate(root),
+        # Тренд считаем ДО записи текущего прогона: сравниваем сегодняшние находки с историей,
+        # которая ещё не включает этот обзор (иначе сравнивали бы прогон сам с собой).
+        "trends": compute_trends(read_history(root), findings),
+        "axis_trends": compute_axis_trends(read_history(root), axis_counts),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -409,8 +299,7 @@ def format_brief(delta: dict, root: Path) -> str:
     L = ["# Утренний обзор продукта", ""]
 
     # 1. Что изменилось — и ОТ ЧЕГО считали.
-    L += ["## Что изменилось", ""]
-    L.append(f"Точка отсчёта: {b.get('reason', 'не названа')}.")
+    L += ["## Что изменилось", "", f"Точка отсчёта: {b.get('reason', 'не названа')}."]
     if b.get("kind") in ("fallback", "unreadable"):
         L.append("**Это не подтверждённая точка отсчёта** — часть изменений могла остаться за кадром "
                  "или попасть в обзор второй раз.")
@@ -419,30 +308,38 @@ def format_brief(delta: dict, root: Path) -> str:
     else:
         L.append("С тех пор изменений не зафиксировано.")
 
-    # 2. Что система сделала — НАХОДКИ, а не количества.
-    L += ["", "## Что я проверила", ""]
-    if bad:
-        L.append(f"Расхождений: **{len(bad)}**.")
-        for f in bad:
-            L.append(f"- **{f['check']}** ({f['subject']}): {f['detail']}")
-    elif findings:
-        L.append("Расхождений не найдено ни одной из выполненных проверок.")
-    else:
-        L.append("Проверки не выполнялись.")
+    # 2. Что система сделала — НАХОДКИ ПО ОСЯМ (ротация фокуса; ось без сигнала — «не наблюдается»).
+    groups = delta.get("dimensions") or nd.group_findings_by_axis(findings)
+    L += ["", "## Что я проверил — по осям", "", *nd.format_dimensions(groups, focus=delta.get("focus"))]
     if isinstance(plan.get("by_status"), dict):
         L.append(f"- план: " + ", ".join(f"{k} — {v}" for k, v in sorted(plan["by_status"].items())))
     elif plan.get("error"):
         L.append(f"- план: {plan['error']}")
 
-    # 3. Чего НЕ стала делать и почему.
-    L += ["", "## Чего я не стала делать и почему", ""]
-    L.append("- **Ничего не правила**: v0 работает только на чтение. Это граница выпуска, а не "
+    # 2.7 ТРЕНД ЗА НЕДЕЛЮ — направление, а не только снимок (по проверкам И по осям). Нет истории —
+    # так и говорим, тренд НЕ выдумываем: «нет истории» ≠ «без изменений».
+    trend = delta.get("trends") or compute_trends(read_history(root), findings)
+    L += ["", "## Тренд за неделю", ""]
+    L += [*format_trends(trend), "", *nd.format_axis_trends(delta.get("axis_trends") or {})]
+
+    # 2.8 ГОРЯЧИЕ ТОЧКИ — агрегат ПО ИСТОРИИ: что краснеет ЧАЩЕ всего; мало истории — так и говорим.
+    L += format_hotspots_section(root)
+
+    # 2.5 НАСКОЛЬКО ДОВЕРЯТЬ ФЛАГАМ — частота ложных срабатываний ПЕРВОКЛАССНО. Флаг без измеренной
+    # точности неотличим от гадания; число из обратной связи (`--confirm --dismiss`), нет данных —
+    # «не измерено», не выдуманный процент.
+    fpr = delta.get("false_positive_rate") or false_positive_rate(root)
+    L += ["", "## Насколько можно доверять моим флагам", "", format_false_positive_rate(fpr)]
+
+    # 3. Чего НЕ стал делать и почему.
+    L += ["", "## Чего я не стал делать и почему", ""]
+    L.append("- **Ничего не правил**: v0 работает только на чтение. Это граница выпуска, а не "
              "недоделка: автофикс без измеренного false-positive rate — тот же ложный green, "
              "только теперь он коммитит.")
     for f in unknown:
         L.append(f"- **{f['check']}** не проверена: {f['detail']}")
     if open_prs is None:
-        L.append(f"- Состояние запросов на слияние не узнала: "
+        L.append(f"- Состояние запросов на слияние не узнал: "
                  f"{prs.get('unavailable', 'причина не названа')}.")
     if not unknown and open_prs is not None:
         L.append("- Остальное из объявленного объёма проверено.")
@@ -577,7 +474,7 @@ def enabled_fixers(root: Path, enabled=None) -> list:
 
 def run_autofix(root: Path, *, dry_run: bool = False, enabled=None, date: str | None = None,
                 policy=None, verify=None) -> dict:
-    """Собрать включённые правки класса A в ОДИН черновой PR за ночь (или сказать, почему не собрала).
+    """Собрать включённые правки класса A в ОДИН черновой PR за ночь (или сказать, почему не собрал).
 
     Возврат (AutoFixResult): {status, reason?, branch?, base_sha?, head_sha?, applied, skipped, pr?,
     budget, enabled}. status: disabled | suggest-only | no_changes | prepared | dry_run | rolled_back.
@@ -645,7 +542,7 @@ def format_autofix_report(res: dict) -> str:
     st = res.get("status")
     L = ["# Ночной автофикс (класс A)", ""]
     if st in ("disabled", "suggest-only"):
-        L.append(f"Ничего не правила: {res.get('reason')}.")
+        L.append(f"Ничего не правил: {res.get('reason')}.")
         L.append("Это граница по решению, а не недоделка: класс A открывается по одному пункту.")
         return "\n".join(L)
     if st == "no_changes":
@@ -675,6 +572,26 @@ def format_autofix_report(res: dict) -> str:
     return "\n".join(L)
 
 
+def run_nightly(root: Path, *, since: str | None = None, deliver: bool = True,
+                date: str | None = None) -> dict:
+    """Точка входа расписания: собрать дельту -> бриф -> доставить владельцу.
+
+    -> {"brief", "receipt"|None, "baseline"}. Это ровно то, что зовёт сгенерированный CI-workflow.
+    """
+    root = Path(root)
+    # Ротация фокуса СДВИГАЕТСЯ здесь (реальный прогон), а не при показе брифа: за цикл проходят все
+    # оси. Курсор персистится (своё состояние обзора).
+    focus = nd.rotate_focus(root, advance=True)
+    delta = collect_delta(root, since, focus=focus)
+    brief = format_brief(delta, root)
+    # Записываем находки ПОСЛЕ брифа: он сравнивался с прошлой историей, а теперь текущий обзор —
+    # точка сравнения для следующего. Осевые счётчики ложатся в ТУ ЖЕ запись (оси питают недельный
+    # тренд, не второй журнал). Единственная запись помимо состояния обзора — граница v0 цела.
+    record_history(root, delta.get("findings", []), axis_counts=delta.get("axis_counts"))
+    receipt = deliver_brief(root, brief, date=date) if deliver else None
+    return {"brief": brief, "receipt": receipt, "baseline": delta.get("baseline")}
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="Nightly Product Health Review (v0, read-only)")
@@ -683,10 +600,21 @@ def main():
     ap.add_argument("--json", action="store_true", help="Output delta as JSON")
     ap.add_argument("--confirm", action="store_true",
                     help="отметить обзор разобранным: завтрашняя дельта пойдёт отсюда")
+    ap.add_argument("--dismiss", action="append", default=None, metavar="ФЛАГ",
+                    help="с --confirm: пометить флаг (имя проверки) ложным срабатыванием — "
+                         "питает измеренную частоту ложных; можно указать несколько раз")
     ap.add_argument("--autofix", action="store_true",
                     help="собрать включённые правки класса A в один черновой PR (по умолчанию класс A пуст)")
     ap.add_argument("--dry-run", action="store_true",
                     help="с --autofix: собрать правки в ветку, но НЕ открывать PR")
+    ap.add_argument("--install-schedule", action="store_true",
+                    help="поставить реальный ночной триггер (CI-workflow schedule: cron)")
+    ap.add_argument("--cron", default="0 3 * * *",
+                    help="с --install-schedule: cron ночного запуска (по умолчанию 03:00)")
+    ap.add_argument("--schedule-status", action="store_true",
+                    help="сказать, идёт ли обзор ночью на самом деле (detected/declared/absent)")
+    ap.add_argument("--deliver", action="store_true",
+                    help="ночной прогон: собрать бриф И доставить владельцу (инбокс + receipt)")
     ap.add_argument("--selftest", action="store_true", help="Run self-test")
     args = ap.parse_args()
 
@@ -711,20 +639,50 @@ def main():
         # ПОДТВЕРЖДЕНИЕ — ДЕЙСТВИЕ ЧЕЛОВЕКА, а не факт отправки брифа. Отправленный и разобранный
         # обзор — разные вещи, и точку отсчёта двигает второе. Иначе пропущенная ночь молча
         # теряла бы изменения, а разобранная дважды показывала одни и те же находки.
-        rec = confirm_review(root)
+        rec = confirm_review(root, dismissed=args.dismiss)
         print(f"обзор подтверждён на {rec['commit_sha'] or 'неизвестном коммите'} "
               f"({rec['confirmed_at']}) — завтрашняя дельта пойдёт отсюда")
+        if args.dismiss:
+            print(f"помечено ложных срабатываний: {', '.join(args.dismiss)} — учтено в частоте")
+        fpr = false_positive_rate(root)
+        print(format_false_positive_rate(fpr))
         return 0
 
     if args.autofix:
         # КЛАСС A: детерминированный автофикс в worktree -> один черновой PR. По умолчанию класс A
-        # пуст (fail-closed) — тогда честно скажет, что ничего не правила и почему. Никогда не пишет
+        # пуст (fail-closed) — тогда честно скажет, что ничего не правил и почему. Никогда не пишет
         # в main и не мержит.
         res = run_autofix(root, dry_run=args.dry_run)
         if args.json:
             print(json.dumps(res, indent=2, ensure_ascii=False))
         else:
             print(format_autofix_report(res))
+        return 0
+
+    if args.schedule_status:
+        st = schedule_status(root)
+        print(json.dumps(st, indent=2, ensure_ascii=False) if args.json
+              else format_schedule_status(st))
+        return 0
+
+    if args.install_schedule:
+        res = install_schedule(root, cron=args.cron)
+        if args.json:
+            print(json.dumps(res, indent=2, ensure_ascii=False))
+        else:
+            print(f"ночной триггер {res['status']}: {res['workflow']} по расписанию `{res['cron']}`. "
+                  f"Дальше запускает CI — кит не планировщик.")
+        return 0
+
+    if args.deliver:
+        # НОЧНОЙ ПРОГОН: бриф не в stdout, а ДОСТАВЛЕН владельцу (произведён ≠ доставлен).
+        out = run_nightly(root, since=args.since)
+        if args.json:
+            print(json.dumps(out, indent=2, ensure_ascii=False))
+        else:
+            print(out["brief"])
+            rec = out["receipt"]
+            print(f"\n_Бриф доставлен: {rec['latest']} (и {rec['path']})._")
         return 0
 
     delta = collect_delta(root, args.since)

@@ -125,70 +125,12 @@ def _head_advanced(root, base_sha):
     return (head != str(base_sha).strip() and bool(head)), (head or None)
 
 
+# K5 (2026-09-10): тело резолвера базы переехало в shared/gitio.resolve_base (чистый git-запрос,
+# его звали и engine, и lifecycle через границу пакета). Здесь — алиас: внутренние вызовы engine
+# (execution_pipeline, pipeline_setup, review_branch) не меняются, а lifecycle зовёт shared напрямую.
 def _resolve_base(root, base_ref):
-    """v3.0.2/v3.0.7 (finding аудита P0): разрешение base-ветки. ТОЛЬКО ветка (локальная/origin), не tag/SHA.
-
-    v3.0.7 BaseResolver v3 — два режима:
-    * base_ref=None -> AUTO: текущая ветка -> upstream (@{u}) -> remote default (origin/HEAD).
-      Никакого хардкода 'main'. Порядок «текущая ветка первой» — F-014: работа продолжается с того
-      места, где стоит пользователь, поэтому последовательные задачи строятся друг на друге.
-      Не резолвится только detached HEAD без upstream/origin/HEAD (база обязана быть веткой).
-    * base_ref задан -> EXPLICIT: обязана существовать (refs/heads/<ref> или origin/<ref>); иначе
-      resolved=False (вызывающий обязан заблокировать прогон ДО модели — не выполнять от HEAD).
-    -> {base_ref, base_sha, source, mode, resolved, reason}."""
-    if _git(root, "rev-parse", "--is-inside-work-tree")[0] != 0:
-        return {"base_ref": base_ref, "resolved": False, "mode": "explicit" if base_ref else "auto",
-                "reason": "не git-репозиторий"}
-    if base_ref:   # EXPLICIT — строго ветка
-        rc_l, sha_l, _ = _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{base_ref}")
-        if rc_l == 0 and (sha_l or "").strip():
-            return {"base_ref": base_ref, "base_sha": sha_l.strip(), "source": "explicit-local",
-                    "mode": "explicit", "resolved": True}
-        rc_r, sha_r, _ = _git(root, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{base_ref}")
-        if rc_r == 0 and (sha_r or "").strip():
-            return {"base_ref": base_ref, "base_sha": sha_r.strip(), "source": "explicit-remote",
-                    "mode": "explicit", "resolved": True}
-        return {"base_ref": base_ref, "resolved": False, "mode": "explicit",
-                "reason": f"явная base '{base_ref}' не найдена ни локально (refs/heads), ни в origin"}
-    # AUTO: текущая ветка -> upstream -> remote default.
-    # v3.28.x (F-014, находка живой квалификации на niti): порядок был обратный — upstream/origin/HEAD
-    # шли первыми, и worktree создавался от УСТАРЕВШЕЙ базы. Пользователь стоял на ветке с уже
-    # принятыми задачами, а каждый следующий прогон её не видел: вторая задача правила те же файлы
-    # от старой версии (гарантированный конфликт при слиянии), и приходилось руками делать
-    # `git reset --hard` в managed-worktree. Ветка, на которой стоит пользователь, — это и есть
-    # заявленное намерение; удалённая база нужна для ДОСТАВКИ, и её отдельно проверяет
-    # _verify_remote_base (fail-closed: расхождение с origin PR не откроет).
-    rc_c, cur, _ = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
-    cur = (cur or "").strip()
-    if rc_c == 0 and cur and cur != "HEAD":      # 'HEAD' = detached: имя ветки не получено
-        rc_h, head, _ = _git(root, "rev-parse", "--verify", "--quiet", "HEAD")
-        if rc_h == 0 and (head or "").strip():
-            return {"base_ref": cur, "base_sha": head.strip(), "source": "current-branch",
-                    "mode": "auto", "resolved": True}
-    rc_u, up, _ = _git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-    if rc_u == 0 and (up or "").strip():
-        ref = up.strip()
-        rc_s, sha, _ = _git(root, "rev-parse", "--verify", "--quiet", ref)
-        if rc_s == 0 and (sha or "").strip():
-            br = ref.split("origin/", 1)[1] if ref.startswith("origin/") else ref
-            return {"base_ref": br, "base_sha": sha.strip(), "source": "upstream",
-                    "mode": "auto", "resolved": True}
-    rc_d, dref, _ = _git(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
-    if rc_d == 0 and (dref or "").strip():
-        rc_s, sha, _ = _git(root, "rev-parse", "--verify", "--quiet", dref.strip())
-        if rc_s == 0 and (sha or "").strip():
-            br = dref.strip().split("refs/remotes/origin/", 1)[-1]
-            return {"base_ref": br, "base_sha": sha.strip(), "source": "remote-default",
-                    "mode": "auto", "resolved": True}
-    # сюда попадаем только при detached HEAD без upstream и без origin/HEAD. Прежний код возвращал
-    # здесь base_ref='HEAD' — это не ветка, а контракт резолвера требует именно ветку: дальше по
-    # цепочке такая «база» ищется как refs/heads/HEAD и доставка врёт. Честный отказ.
-    if cur == "HEAD":
-        return {"base_ref": None, "resolved": False, "mode": "auto",
-                "reason": "detached HEAD без upstream и origin/HEAD — база не ветка; "
-                          "переключись на ветку или задай --base <ветка>"}
-    return {"base_ref": None, "resolved": False, "mode": "auto",
-            "reason": "не удалось определить base автоматически (нет текущей ветки/upstream/remote-default)"}
+    from ai_ops_kit.shared import gitio
+    return gitio.resolve_base(root, base_ref)
 
 
 def _verify_remote_base(root, base_ref, base_sha):
@@ -213,6 +155,53 @@ def _verify_remote_base(root, base_ref, base_sha):
     if remote_sha == base_sha:
         return {"verdict": "verified-equal", "remote_sha": remote_sha}
     return {"verdict": "verified-moved", "remote_sha": remote_sha}
+
+
+def _merge_preview_state(root, target_ref, head_ref):
+    """best-effort: чистое ли ДЕРЕВО СЛИЯНИЯ target_ref+head_ref (фордж-нейтрально, чистый git).
+    -> 'clean' | 'conflict' | 'unknown'. Импорт merge_preview локальный: engine -> gates внутри
+    слоя capabilities (разрешено, направление одностороннее). Только ADVISORY: превью не удалось
+    (старый git / нет объекта / ошибка) -> 'unknown', вердикт дрейфа от него НЕ зависит."""
+    if not (target_ref and head_ref):
+        return "unknown"
+    try:
+        from ai_ops_kit.gates.merge_preview import merge_preview_tree
+        prev = merge_preview_tree(root, target_ref, head_ref)
+    except Exception:  # noqa: BLE001 — превью advisory, не роняет ре-верификацию
+        return "unknown"
+    if prev.get("ok"):
+        return "clean"
+    return "conflict" if "конфликт" in (prev.get("reason") or "") else "unknown"
+
+
+def _reverify_against_current_target(root, base_ref, base_sha, head_ref):
+    """Дрейф-безопасная ре-верификация evidence против ТЕКУЩЕЙ цели (фордж-нейтрально, чистый git).
+
+    Доказательство прогона проверок привязано к base_sha — итогу слияния, каким он был на момент
+    прогона. Сдвинулась цель (remote base) с тех пор -> evidence относится к СТАРОМУ итогу, а не к
+    текущему: выдать его за проверенное против фактического merge-состояния нельзя. Ровно это иначе
+    разруливается вручную (BEHIND -> update -> ре-CI -> merge на CLEAN); здесь — СВОЙСТВО доставки.
+
+    -> {"stale": bool, "verdict", "evidence_base", "current_target", "merge_preview", "reason"}:
+      verified-equal -> stale=False: цель не двигалась, доставка идёт как раньше (счастливый путь);
+      unverifiable   -> stale=False ЗДЕСЬ (не «проверено»): цель не сверить, downstream доставляет
+                        fail-closed как unavailable — устаревшее за свежее не выдаётся;
+      verified-moved -> stale=True: цель сдвинулась; PR НЕ открываем/не мержим — нужен ре-прогон
+                        проверок против новой цели. merge_preview подсказывает, чистое ли слияние
+                        с текущей целью (конфликт -> точно ре-прогон; clean -> достаточно ребейза),
+                        но вердикт stale от этого НЕ смягчается."""
+    rv = _verify_remote_base(root, base_ref, base_sha) or {}
+    verdict = rv.get("verdict")
+    if verdict != "verified-moved":
+        return {"stale": False, "verdict": verdict, "reason": rv.get("reason")}
+    target = rv.get("remote_sha")
+    merge_state = _merge_preview_state(root, base_ref, head_ref)
+    return {"stale": True, "verdict": verdict, "evidence_base": base_sha,
+            "current_target": target, "merge_preview": merge_state,
+            "reason": (f"цель сдвинулась: evidence проверено против {(base_sha or '?')[:12]}, а "
+                       f"remote-цель уже {(target or '?')[:12]} — доказательство относится к старому "
+                       f"итогу слияния. Нужен ре-прогон проверок против новой цели; PR не открыт "
+                       f"(слияние с текущей целью: {merge_state})")}
 
 
 def delivery_preflight(root, base_ref, base_sha, open_pr) -> dict | None:
@@ -306,8 +295,8 @@ def _change_context_range(work_root, base_revision, head_revision, max_chars=140
 #
 # Здесь стояло `sys.exit(selftest())`, а сама функция удалена в v3.30 вместе с переносом
 # селфтестов в pytest: любой запуск падал с `NameError`. Просто убрать блок — тоже неверно:
-# `tools/pipeline_git.py` остаётся объявленной точкой входа, и молчаливый выход с кодом 0 — тот
-# самый дефект, который ловит `tests/unit/test_alias_entry_points.py` («ноль и есть симптом»).
+# модуль остаётся запускаемой точкой входа (`python3 -m ai_ops_kit.engine.pipeline_git`), и молчаливый
+# выход с кодом 0 — тот самый дефект «ноль и есть симптом».
 # Поэтому вход делает осмысленную работу — печатает назначение модуля, как `invariants.py`.
 # Проверки модуля — в `tests/unit/`.
 if __name__ == "__main__":

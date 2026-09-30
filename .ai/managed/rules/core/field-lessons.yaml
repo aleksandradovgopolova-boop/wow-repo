@@ -42,7 +42,7 @@ lessons:
     grounding:
       - {file: quality/gates.yaml, contains: "падает на коде ДО правки и проходит"}
       - {file: ai_ops_kit/gates/regression_evidence.py, contains: "тест, который проходит и без исправления, ничего не доказывает"}
-      - {file: CHANGELOG.md, contains: "44 мутанта, 17 выживших"}
+      - {file: history/DEVELOPMENT-HISTORY.md, contains: "44 мутанта, 17 выживших"}
       - {file: pytest.ini, contains: "Мутационное ревью показало цену"}
 
   - id: local-green-is-not-ci-green
@@ -76,8 +76,8 @@ lessons:
       До слов о результате прогона: путь запуска и путь загруженного модуля названы и совпадают с
       деревом правки. Проверка, которая сама себе стелет `PYTHONPATH`, проверяет не то, что обещает.
     grounding:
-      - {file: installer/ai_ops.py, contains: "а не от глобального"}
-      - {file: CHANGELOG.md, contains: "«работает локально» из-за editable-установки"}
+      - {file: installer/asset_ops.py, contains: "а не от глобального"}
+      - {file: history/DEVELOPMENT-HISTORY.md, contains: "«работает локально» из-за editable-установки"}
       - {file: tests/unit/test_validator_runtime_contract.py, contains: "сама себе стелет путь"}
 
   - id: unavailable-is-not-zero
@@ -96,7 +96,7 @@ lessons:
     grounding:
       - {file: ai_ops_kit/gates/economic_preflight.py, contains: "НИКОГДА 0"}
       - {file: ai_ops_kit/planning/contours.py, contains: "не сворачивается в"}
-      - {file: ai_ops_kit/ui/presenter.py, contains: "проверил один контур из восьми"}
+      - {file: ai_ops_kit/ui/presenter_formatters.py, contains: "проверил один контур из восьми"}
       - {file: AGENTS.md, contains: "третье НЕ равно второму"}
 
   - id: name-the-scope-you-checked
@@ -130,6 +130,6 @@ lessons:
       Для каждого значения в evidence: путь, из которого оно прочитано, и пометка о том, что НЕ
       разбиралось. Самоподтверждение (свой артефакт как доказательство продуктового факта) — дефект.
     grounding:
-      - {file: ai_ops_kit/planning/repo_audit.py, contains: "а не из шагов workflow"}
+      - {file: ai_ops_kit/planning/repo_audit_analysis.py, contains: "а не из шагов workflow"}
       - {file: qualification/REAL-PRODUCT-SEVERNAYA-2026-08-12.md, contains: "источник значений назван"}
       - {file: planning/plan.yaml, contains: "evidence называет источник значений"}

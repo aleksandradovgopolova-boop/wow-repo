@@ -32,14 +32,29 @@ import argparse
 import os
 import contextlib
 import json
-import socket
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
 from ai_ops_kit.shared import lifecycle_store as _ls   # v3.0.12: durable запись + fail-closed чтение общего реестра
+from ai_ops_kit.lifecycle import role_handoff as _handoff  # #639: named-переход owner_role роль->роль
+# Соседи-сателлиты этого пакета (вынесены из монолита без изменения поведения): носитель заявок
+# (публикация/копии/team_view) и измерение git (личность держателя, его живость, сверка с базой).
+# active_work остаётся тонким: локальный реестр, команды CLI и классификация пересечений. Имена
+# ре-экспортируются, поэтому `active_work.<имя>` и прежние импорты продолжают работать — внешних
+# потребителей на новый путь переводить не нужно.
+from ai_ops_kit.lifecycle.work_claims import (          # noqa: F401 — ре-экспорт для совместимости
+    CLAIMS_DIR_REL, PUBLISHED_FIELDS, COPIES_CLAIMS_REL, COPY_CLAIM_FIELDS,
+    _claim_slug, publish_claim, unpublish_claim, load_published_claims,
+    _git_common_dir, copies_claims_dir, working_copies, copies_reach_note,
+    _copies_line, claim_to_copies, withdraw_claim_from_copies, load_copy_claims,
+    team_view,
+)
+from ai_ops_kit.lifecycle.work_reconcile import (        # noqa: F401 — ре-экспорт для совместимости
+    _machine, _now_iso, _CLAIM_STALE_HOURS, _claim_age_hours, _pid_is_dead,
+    holder_is_gone, _divergence, _same_ref, reconcile_with_base,
+)
 
 STATUS = {"in-progress", "review", "blocked", "done", "superseded"}
 # `superseded` (18.08.2026, заявка #137): работа, изменения которой УЖЕ В БАЗЕ. Это не «done»
@@ -84,280 +99,6 @@ def reach_note(published: bool) -> str:
     return ("Это заявки ТОЛЬКО этой машины: работу других участников кит здесь не видит — публикация "
             "выключена (team_coordination.publish в .ai-ops.yaml). Пересечения, если они ниже есть, — "
             "про параллельные сессии на этой машине, а не про команду.")
-
-
-def _machine() -> str:
-    """Имя машины — часть заявки: «кто держит» без «где» не разобрать при инциденте."""
-    try:
-        return socket.gethostname() or "unknown"
-    except OSError:
-        return "unknown"
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-# ── публикация заявки: файл на работу в git (ep-2026-08-18-published-carrier-file-per-work) ──────
-CLAIMS_DIR_REL = Path(".ai") / "claims"
-
-# ТОЛЬКО эти поля уезжают при публикации (условие 4 гибридного решения). Содержимое файлов и
-# что-либо сверх списка сюда не попадает — публикация это явная отправка данных, а не «всё, что есть».
-PUBLISHED_FIELDS = ("id", "branch", "machine", "owner_session", "started_at", "status")
-
-
-def _claim_slug(machine: str, wid: str) -> str:
-    """Имя файла заявки. Файл на ПАРУ (машина, работа) — потому не пересекается с чужим (в отличие
-    от одного общего файла, отклонённого решением). Небезопасные для пути символы заменяются."""
-    def safe(s):
-        return "".join(c if (c.isalnum() or c in "-_.") else "-" for c in str(s or "unknown"))
-    return f"{safe(machine)}__{safe(wid)}.yaml"
-
-
-def publish_claim(child_root, entry: dict) -> Path | None:
-    """Записать опубликованную копию заявки отдельным отслеживаемым файлом. -> путь или None.
-
-    Только объявленные поля (`PUBLISHED_FIELDS`). Идемпотентно: своя пара (машина, работа)
-    перезаписывается, чужие не трогаются. Каталог `.ai/claims/` НЕ в .gitignore — он и есть носитель,
-    который доезжает к команде через git."""
-    if child_root is None:
-        return None
-    d = Path(child_root) / CLAIMS_DIR_REL
-    d.mkdir(parents=True, exist_ok=True)
-    payload = {k: entry.get(k) for k in PUBLISHED_FIELDS if entry.get(k) is not None}
-    payload["schema_version"] = 1
-    payload["kind"] = "published-claim"
-    p = d / _claim_slug(entry.get("machine"), entry.get("id"))
-    p.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=True), encoding="utf-8")
-    return p
-
-
-def unpublish_claim(child_root, machine: str, wid: str) -> bool:
-    """Снять опубликованную заявку (работа закрыта). -> True если файл был и удалён."""
-    if child_root is None:
-        return False
-    p = Path(child_root) / CLAIMS_DIR_REL / _claim_slug(machine, wid)
-    if p.is_file():
-        p.unlink()
-        return True
-    return False
-
-
-def load_published_claims(child_root, exclude_machine: str | None = None) -> list:
-    """Прочитать заявки, опубликованные (в т.ч. другими машинами и доехавшие через git). -> список.
-
-    Битый файл заявки ПРОПУСКАЕТСЯ, а не роняет чтение: чужая недокачанная заявка не должна делать
-    невидимой всю карту (то же соображение fail-safe, что у локального реестра — но здесь мягче:
-    источник внешний). exclude_machine — чтобы не считать свою же опубликованную копию дважды."""
-    out = []
-    if child_root is None:
-        return out
-    d = Path(child_root) / CLAIMS_DIR_REL
-    if not d.is_dir():
-        return out
-    for p in sorted(d.glob("*.yaml")):
-        try:
-            rec = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        except (yaml.YAMLError, OSError):
-            continue
-        if not isinstance(rec, dict) or not rec.get("id"):
-            continue
-        if exclude_machine and rec.get("machine") == exclude_machine:
-            continue
-        rec["_published"] = True   # пометка происхождения: это заявка с носителя, не локальная
-        out.append(rec)
-    return out
-
-
-# ── вторая досягаемость заявки: рабочие копии ОДНОГО репозитория ─────────────────────────────────
-#
-# ЗАМЕР 20.08.2026 на двух копиях одного репозитория, ДО правки: копия A регистрирует работу — в
-# копии B `next` предлагает ТУ ЖЕ работу, а `register` возвращает 0 без отказа. Реестр
-# `.ai/runtime/active-work.yaml` лежит ВНУТРИ рабочего дерева: у каждого worktree свой, и
-# `.gitignore` его скрывает. `shared_registry_path` (12.08.2026) написана против этого и не
-# вызывалась нигде, кроме тестов — «механизм есть, вызова нет».
-#
-# РЕЕСТР НЕ ПЕРЕЕЗЖАЕТ: его путь объявлен в манифесте, переезд был бы breaking change по раскладке
-# `.ai/` (AGENTS.md). Подключён НОСИТЕЛЬ — тот же формат заявки во второй транспорт; оба сходятся в
-# `team_view`, поэтому третьего источника «что идёт» не появляется.
-#
-# НЕ ГАТИТСЯ `team_coordination.publish`: флаг стоит против ОТПРАВКИ наружу
-# (`ep-2026-08-18-claim-medium-hybrid`), а этот носитель лежит внутри `.git/` одной машины, не
-# коммитится и в историю не попадает. Гатить его флагом отправки значило бы выключать координацию
-# там, где отправки нет. Подробности и протокол — `docs/parallel-sessions.md`.
-
-COPIES_CLAIMS_REL = Path("ai-ops") / "claims"
-
-# На одно поле больше: `worktree` — в какой копии держатель. Без него отказ на одной машине звучит
-# «держит сессия X на машине Y», где Y — та же машина. В `PUBLISHED_FIELDS` его нет: абсолютный путь
-# другим машинам не уезжает.
-COPY_CLAIM_FIELDS = PUBLISHED_FIELDS + ("worktree",)
-
-
-def _git_common_dir(start=None):
-    """Каталог `.git`, ОБЩИЙ для всех рабочих копий репозитория. -> Path или None.
-
-    None — «не измерили» (не git, git не установлен), и вызывающие говорят это, а не «заявок нет»."""
-    import subprocess
-
-    cwd = str(start or Path.cwd())
-    try:
-        r = subprocess.run(["git", "rev-parse", "--git-common-dir"],
-                           cwd=cwd, capture_output=True, text=True, check=False)
-    except OSError:
-        return None
-    if r.returncode != 0:
-        return None
-    common = Path((r.stdout or "").strip())
-    if not str(common):
-        return None
-    # `--git-common-dir` из корня репозитория отдаёт ОТНОСИТЕЛЬНЫЙ `.git` — разрешаем от cwd, иначе
-    # путь из разных worktree указывал бы в разные места, то есть ровно на тот дефект, против
-    # которого носитель и делается.
-    if not common.is_absolute():
-        common = (Path(cwd) / common).resolve()
-    return common
-
-
-def copies_claims_dir(start=None):
-    """Каталог заявок, общий для всех рабочих копий одного репозитория. -> Path или None.
-
-    КОРЕНЬ ОБЯЗАТЕЛЕН, `None` НЕ ЗНАЧИТ «текущий каталог» (найдено своим прогоном 20.08.2026: cwd по
-    умолчанию заставлял вызовы без корня координировать тот репозиторий, где стоял процесс, — то
-    есть называть держателя не той работы)."""
-    if start is None:
-        return None
-    common = _git_common_dir(start)
-    return None if common is None else common / COPIES_CLAIMS_REL
-
-
-def working_copies(start=None):
-    """Сколько рабочих копий у этого репозитория ЗНАЕТ git. -> int или None (не измерено).
-
-    Считается по `<git-common-dir>/worktrees` плюс основная. Это ЗАМЕР git, а не факт о диске:
-    удалённую без `git worktree prune` копию git ещё помнит. Корень обязателен — см.
-    `copies_claims_dir`."""
-    common = _git_common_dir(start) if start is not None else None
-    if common is None:
-        return None
-    d = common / "worktrees"
-    try:
-        linked = len([x for x in d.iterdir() if x.is_dir()]) if d.is_dir() else 0
-    except OSError:
-        return None
-    return linked + 1
-
-
-def copies_reach_note(copies) -> str:
-    """Строка о досягаемости носителя копий. «Не измерили» — не «соседних заявок нет»."""
-    if copies is None:
-        return ("Рабочие копии этого репозитория не измерены (git недоступен): заявки соседних копий "
-                "здесь не видны, и это «не знаю», а не «их нет».")
-    if copies <= 1:
-        return "У репозитория одна рабочая копия — соседних заявок здесь быть не может."
-    return (f"Видны заявки всех рабочих копий этого репозитория на этой машине (копий: {copies}) — "
-            f"носитель лежит в общем каталоге git, коммит и push для этого не нужны.")
-
-
-def _copies_line(start):
-    """Строка о носителе копий человеку — или None, когда она ничего не добавляет.
-
-    Печатаем только при НЕСКОЛЬКИХ копиях: при одной досягаемость совпадает с локальной. «Не
-    измерили» молчит не как «ничего нет» — `reach_note` рядом уже говорит про одну машину."""
-    n = working_copies(start)
-    return copies_reach_note(n) if (n is not None and n > 1) else None
-
-
-def claim_to_copies(start, entry: dict):
-    """Положить заявку на носитель копий. -> путь или None. Идемпотентно по паре (машина, работа),
-    как и публикация; чужие файлы не трогаются."""
-    d = copies_claims_dir(start)
-    if d is None or yaml is None:
-        return None
-    payload = {k: entry.get(k) for k in COPY_CLAIM_FIELDS if entry.get(k) is not None}
-    payload["schema_version"] = 1
-    payload["kind"] = "copy-claim"
-    try:
-        d.mkdir(parents=True, exist_ok=True)
-        p = d / _claim_slug(entry.get("machine"), entry.get("id"))
-        p.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=True), encoding="utf-8")
-    except OSError:
-        return None      # носитель не записался: координация между копиями беднее, но регистрация цела
-    return p
-
-
-def withdraw_claim_from_copies(start, machine: str, wid: str) -> bool:
-    """Снять свою заявку с носителя копий (работа закрыта). -> True если файл был и удалён."""
-    d = copies_claims_dir(start)
-    if d is None:
-        return False
-    p = d / _claim_slug(machine, wid)
-    try:
-        if p.is_file():
-            p.unlink()
-            return True
-    except OSError:
-        return False
-    return False
-
-
-def load_copy_claims(start=None) -> list:
-    """Заявки соседних рабочих копий этого репозитория. -> список записей.
-
-    Битый файл ПРОПУСКАЕТСЯ: недописанная заявка соседа не делает невидимой всю карту."""
-    out = []
-    d = copies_claims_dir(start)
-    if d is None or yaml is None or not d.is_dir():
-        return out
-    for p in sorted(d.glob("*.yaml")):
-        try:
-            rec = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        except (yaml.YAMLError, OSError):
-            continue
-        if not isinstance(rec, dict) or not rec.get("id"):
-            continue
-        # РАБОЧЕЙ КОПИИ БОЛЬШЕ НЕТ — держать работу некому. `git worktree remove` заявку с носителя
-        # не снимает, и без этой проверки удалённая копия держала бы работу вечно во всех остальных
-        # (#137, «список страшилок»). ГРАНИЦА: это проверка КОПИИ, а не сессии — живость `pid:`
-        # смотрит `holder_is_gone`, измеренную личность рантайма не смотрит никто. Поля нет ->
-        # запись остаётся: «не знаю, где держат» ≠ «не держат».
-        wt = rec.get("worktree")
-        if wt and not Path(wt).is_dir():
-            continue
-        rec["_from_copy"] = True    # пометка происхождения: заявка с носителя копий, не локальная
-        out.append(rec)
-    return out
-
-
-def team_view(child_root, local_active: list, published: bool) -> list:
-    """Общая карта «кто что держит»: заявки этого дерева + заявки соседних рабочих копий + при
-    включённой публикации заявки других машин, которых нет локально. При выключенной публикации
-    чужих машин в карте нет — честно, их и неоткуда взять. -> список записей.
-
-    ДЕДУП ПО ПАРЕ (машина, работа), А НЕ ПО ИМЕНИ МАШИНЫ. Замер 18.08.2026 на живом прогоне: два
-    клона на ОДНОМ физическом хосте имеют одинаковое имя машины, и дедуп «исключить свою машину»
-    прятал заявку соседнего клона целиком. Своя опубликованная копия — это ровно (машина, id) моих
-    локальных заявок; её и вычитаем, а чужие работы того же хоста остаются видны.
-
-    ТРИ ИСТОЧНИКА, ОДНА КАРТА (20.08.2026): локальный реестр — одно рабочее дерево; носитель
-    `.git/ai-ops/claims/` — весь репозиторий на этой машине (читается ВСЕГДА, он ничего не
-    отправляет); `.ai/claims/` — команда через git (только при публикации). Один формат заявки и
-    один дедуп по паре, поэтому третьего места, где живёт «что идёт», не появляется."""
-    view = list(local_active)
-    seen = {(w.get("machine"), w.get("id")) for w in view}
-    sources = [load_copy_claims(child_root)]
-    if published:   # заявки других МАШИН — только по явному включению публикации
-        sources.append(load_published_claims(child_root))
-    for src in sources:
-        for r in src:
-            key = (r.get("machine"), r.get("id"))
-            if key in seen:
-                continue    # моя же заявка, приехавшая вторым транспортом — не второй держатель
-            seen.add(key)
-            view.append(r)
-    return view
-
-
 
 
 def shared_registry_path(start=None):
@@ -444,146 +185,8 @@ def _locked(path: Path):
 _CLOSED_STATUSES = ("done", "superseded")   # #137: снятое сверкой — не идущая работа
 
 
-def holder_is_gone(entry, machine=None) -> bool:
-    """Держатель заявки уже не существует? -> True только когда это ДОКАЗАНО.
-
-    Личность сессии бывает двух видов. Измеренный идентификатор рантайма (`session:ab12cd34`) живёт
-    дольше процесса — по нему «жив ли держатель» не проверить, и мы НЕ угадываем. Личность вида
-    `pid:1234` — это конкретный процесс на конкретной машине: если его нет, заявку держать некому.
-    Без этой проверки честный отказ второй сессии превратился бы в помеху одиночной работе: обычный
-    повторный прогон той же работы получал бы «её держит другой» от процесса, которого нет.
-    """
-    holder = str(entry.get("owner_session") or "")
-    if not holder.startswith("pid:"):
-        return False
-    if (entry.get("machine") or "") != (machine or _machine()):
-        return False           # чужая машина: её процессы отсюда не видны, значит не знаем
-    try:
-        pid = int(holder.split(":", 1)[1])
-    except (ValueError, IndexError):
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
-    except PermissionError:
-        return False           # процесс есть, просто чужой
-    except OSError:
-        return False
-    return False
-
-
 def _active_others(active, exclude_id):
     return [w for w in active if w.get("status") not in _CLOSED_STATUSES and w.get("id") != exclude_id]
-
-
-def _divergence(child_root, branch, base):
-    """Расхождение ветки и базы В ОБЕ СТОРОНЫ. -> (ahead, behind) или (None, None), если не измерено.
-
-    ПОЛЕ 17.08.2026: в дочке нашлась ветка ВПЕРЕДИ base на 1 коммит и ПОЗАДИ на 241 — проверка
-    «содержится в base» по ОДНОМУ направлению давала «не влито» на давно закрытой задаче. Поэтому
-    оба числа считаются и оба показываются: одно из них без другого вводит в заблуждение."""
-    import subprocess
-    r = subprocess.run(["git", "-C", str(child_root), "rev-list", "--left-right", "--count",
-                        f"{base}...{branch}"], capture_output=True, text=True)
-    if r.returncode != 0:
-        return None, None
-    parts = (r.stdout or "").split()
-    if len(parts) != 2:
-        return None, None
-    try:
-        behind, ahead = int(parts[0]), int(parts[1])
-    except ValueError:
-        return None, None
-    return ahead, behind
-
-
-def _same_ref(child_root, a, b) -> bool:
-    """Указывают ли два имени на ОДНУ И ТУ ЖЕ ветку. -> bool (не разобрали — False, не угадываем)."""
-    import subprocess
-    if not a or not b:
-        return False
-    if str(a) == str(b):
-        return True
-    def full(name):
-        r = subprocess.run(["git", "-C", str(child_root), "rev-parse", "--symbolic-full-name",
-                            str(name)], capture_output=True, text=True)
-        return (r.stdout or "").strip() if r.returncode == 0 else None
-    fa, fb = full(a), full(b)
-    return bool(fa) and fa == fb
-
-
-def reconcile_with_base(entries, child_root, base=None):
-    """Сверить записи реестра с базой. -> новый список записей (исходные НЕ мутируются).
-
-    ЗАЯВКА #137, поле 17.08.2026 (дочка ИИ-Среда): реестр держал четыре записи незакрытыми, и ТРИ ИЗ
-    ЧЕТЫРЁХ относились к работе, давно влитой в main. Настоящий хвост был один. Подтверждено замером
-    на 3.36.12: ветка работы влита обычным merge, запись оставлена `blocked`, и `ai-ops status`
-    отвечает «Работа идёт» и советует не трогать те же файлы. Сверки с базой не было НИКАКОЙ: ни
-    `merged`, ни `is-ancestor`, ни `superseded`.
-
-    ЦЕНА, НАЗВАННАЯ ПОЛЕМ: реестр превращается в список страшилок — либо переделываешь готовое (в
-    дочке почти начали доделывать задачу, закрытую месяц назад), либо перестаёшь ему верить, и тогда
-    он не нужен.
-
-    ЧТО ЗДЕСЬ. Для каждой записи с веткой: база берётся тем же резолвером, что у `run`/`review`
-    (`pipeline_git._resolve_base` — автоподбор, а не хардкод `main`); считаются ОБА числа
-    расхождения; если коммиты ветки уже содержатся в базе (`merge-base --is-ancestor`), запись
-    помечается `superseded` с названной причиной и ДАТОЙ замера. Не измерили — говорим `None` и
-    называем почему; отсутствие сверки не выдаётся за «не влито»."""
-    import subprocess
-    out = []
-    src = list(entries or [])
-    if not src:
-        return out
-    _pg = __import__("ai_ops_kit.engine.pipeline_git", fromlist=["_resolve_base"])
-    resolved = _pg._resolve_base(child_root, base)
-    base_ref = resolved.get("base_ref") if resolved.get("resolved") else None
-    note = None if base_ref else (resolved.get("reason") or "база не определена")
-    at = _now_iso()
-    for w in src:
-        e = dict(w)
-        branch = e.get("branch")
-        if not branch or e.get("status") == "done":
-            out.append(e)
-            continue
-        if not base_ref:
-            e["reconcile_note"] = f"сверка с базой не выполнена: {note}"
-            e["merged_into_base"] = None
-            out.append(e)
-            continue
-        e["base_ref"] = base_ref
-        # БАЗА, СОВПАДАЮЩАЯ С САМОЙ ВЕТКОЙ, НИЧЕГО НЕ ДОКАЗЫВАЕТ (замер 20.08.2026). В рабочей копии
-        # прогона HEAD — это и есть заявленная ветка, и `_resolve_base` отдаёт её же: сверка
-        # получалась `ai-ops/w` против `ai-ops/w` («впереди 0, позади 0»), любая заявка объявлялась
-        # влитой, отказ второй сессии не срабатывал, а `status` говорил, что работа не идёт. Кит сам
-        # ставит дочку в такую копию (`worktree.add` -> `.ai/worktrees/<работа>`), так что место
-        # штатное. Третье состояние: это «не измерили», а не «не влито» и не «влито».
-        if _same_ref(child_root, branch, base_ref):
-            e["merged_into_base"] = None
-            e["reconcile_note"] = (f"база совпадает с самой веткой '{branch}' (рабочая копия этой "
-                                   f"работы) — сверка невозможна, заявка остаётся как есть")
-            out.append(e)
-            continue
-        if subprocess.run(["git", "-C", str(child_root), "rev-parse", "--verify", "--quiet", branch],
-                          capture_output=True, text=True).returncode != 0:
-            # ветки нет локально: сказать это, а не молча считать работу идущей
-            e["merged_into_base"] = None
-            e["reconcile_note"] = f"ветки '{branch}' нет в этом репозитории — сверка невозможна"
-            out.append(e)
-            continue
-        ahead, behind = _divergence(child_root, branch, base_ref)
-        e["ahead"], e["behind"] = ahead, behind
-        merged = subprocess.run(["git", "-C", str(child_root), "merge-base", "--is-ancestor",
-                                 branch, base_ref], capture_output=True, text=True).returncode == 0
-        e["merged_into_base"] = merged
-        if merged:
-            e["status"] = "superseded"
-            e["status_reason"] = (f"изменения ветки '{branch}' уже в базе '{base_ref}' "
-                                  f"(впереди {ahead}, позади {behind}) — запись сняла сверка")
-            e["status_reason_at"] = at
-        out.append(e)
-    return out
 
 
 def persist_reconciliation(path, reconciled):
@@ -626,7 +229,7 @@ def classify(active, entry):
     branch и same-work добавлены 18.08.2026 — это ровно два случая из заявки #150, которые ломали
     команду: двойная работа на ОДНОЙ ветке и двойная работа над ОДНОЙ работой из разных сессий. Они
     видны и МЕЖДУ машинами, потому что опубликованная заявка несёт branch и id (team_view их подаёт)."""
-    _work_areas = __import__("ai_ops_kit.engine.work_areas", fromlist=["check_conflict"])
+    from ai_ops_kit.shared import work_areas as _work_areas   # foundation (K5): зоны — чистая утилита
     wid = entry.get("id")
     areas = list(entry.get("affected_areas") or [])
     deps = set(entry.get("depends_on") or [])
@@ -729,7 +332,7 @@ def _forecast_lines(confs):
 
 def register(path, wid, branch, areas, session, workitem=None, status="in-progress",
              depends=None, contracts=None, at=None, published=False, child_root=None,
-             takeover=False, takeover_reason=None):
+             takeover=False, takeover_reason=None, owner_role=None, audience="technical"):
     if branch in (None, "", "main", "master"):
         print("ОШИБКА: работа не должна вестись в main/master — задайте ветку/worktree.")
         return 1
@@ -739,6 +342,12 @@ def register(path, wid, branch, areas, session, workitem=None, status="in-progre
     if not areas:
         print("ОШИБКА: нужны affected_areas (основа conflict forecast).")
         return 1
+    # #639: начальная роль-владелец, если задана, обязана быть из словаря модели (роль, не исполнитель).
+    if owner_role is not None:
+        ok, err = _handoff.validate_role(owner_role)
+        if not ok:
+            print(f"ОШИБКА: {err}")
+            return 1
     # v3.0.12: весь read-modify-write под межпроцессной блокировкой (иначе конкурентная сессия могла
     # перезаписать нашу регистрацию — last-writer-wins — и concurrency-forecast увидел бы неполную карту).
     with _locked(path):
@@ -746,13 +355,22 @@ def register(path, wid, branch, areas, session, workitem=None, status="in-progre
         # Заявка = кто (сессия) + где (машина) + когда (время) + что (ветка/зоны). Машина и время
         # добавлены 18.08.2026: без «где» и «когда» инцидент параллельных сессий не разобрать
         # (заявка #150: атрибуция была невозможна). Поля аддитивны — прежние записи без них валидны.
+        # `owner_pid` — pid ЭТОГО процесса прогона, держащего заявку. По нему `holder_is_gone`
+        # доказывает смерть session-заявки сразу (процесс мёртв), не дожидаясь возрастного порога.
+        # Наружу поле НЕ уезжает (нет в PUBLISHED_FIELDS/COPY_CLAIM_FIELDS): pid значим только на
+        # своей машине, где liveness и проверяется.
         entry = {"id": wid, "branch": branch, "status": status,
                  "affected_areas": list(areas), "owner_session": session,
-                 "machine": _machine(), "started_at": at or _now_iso()}
+                 "machine": _machine(), "started_at": at or _now_iso(),
+                 "owner_pid": os.getpid()}
         # В КАКОЙ копии сидит держатель: без этого отказ называл бы «машину», то есть саму себя.
         # Наружу поле НЕ уезжает — `PUBLISHED_FIELDS` его не содержит.
         if child_root is not None:
             entry["worktree"] = str(Path(child_root).resolve())
+        # #639: роль-владелец на записи Work (закрывает дрейф модель↔код — domain_model заявляет,
+        # что Work несёт owner_role, а active_work его провайдит). Меняется потом через handoff_cmd.
+        if owner_role is not None:
+            entry["owner_role"] = owner_role
         if workitem:
             entry["workitem"] = workitem
         if depends:
@@ -825,16 +443,26 @@ def register(path, wid, branch, areas, session, workitem=None, status="in-progre
         # Носитель копий — ВСЕГДА, когда его есть где разместить: он не отправляет данные с машины,
         # поэтому флагом публикации не гатится (замер 20.08.2026).
         claim_to_copies(child_root, entry)
-    print(f"ACTIVE-WORK: зарегистрирована работа '{wid}' "
-          f"(ветка {branch}, сессия {session}, машина {entry['machine']}).")
+    # #708: на product-аудитории человеку не нужны wi-…/сессия/машина/ветка — это внутренние
+    # идентификаторы координации. Суть одна: работа началась в отдельной копии, main не тронут.
+    # Заметку о досягаемости в соло-случае опускаем как шум про выключенную фичу. Прогноз-пересечения
+    # (реальный сигнал) и публикацию (данные УХОДЯТ с машины) — сохраняем на ЛЮБОЙ аудитории:
+    # `if published:` намеренно ОДИН на оба пути (это же место стережёт mutation-проба
+    # publish-off-writes-nothing — дубль анкера сделал бы её неоднозначной).
+    if audience == "product":
+        print("  Начал работу в отдельной копии проекта — main не трогаю.")
+    else:
+        print(f"ACTIVE-WORK: зарегистрирована работа '{wid}' "
+              f"(ветка {branch}, сессия {session}, машина {entry['machine']}).")
     for line in _forecast_lines(confs):
         print(line)
-    # Честная фраза о досягаемости — ВСЕГДА, а не только при пересечениях: иначе «пересечений нет»
-    # на локальном реестре читается как «команда свободна», хотя других машин кит не видит.
-    print("  " + reach_note(published))
-    _cl = _copies_line(child_root)
-    if _cl:
-        print("  " + _cl)
+    if audience != "product":
+        # Честная фраза о досягаемости — ВСЕГДА, а не только при пересечениях: иначе «пересечений нет»
+        # на локальном реестре читается как «команда свободна», хотя других машин кит не видит.
+        print("  " + reach_note(published))
+        _cl = _copies_line(child_root)
+        if _cl:
+            print("  " + _cl)
     if published:
         # Условие 4 гибридного решения: включённая публикация ОТПРАВЛЯЕТ данные — назвать какие,
         # в момент отправки, а не только в общем пояснении.
@@ -905,7 +533,8 @@ def check_cmd(path, areas, depends=None, contracts=None, exclude_id=None, as_jso
     return 0
 
 
-def finish_cmd(path, wid, status="done", reason=None, child_root=None, published=False):
+def finish_cmd(path, wid, status="done", reason=None, child_root=None, published=False,
+               audience="technical"):
     """Снять работу с учёта. status — из STATUS; 'done' ТОЛЬКО когда работа действительно закончена.
 
     v3.28.x (F-012, находка живой квалификации на niti): прогон помечал работу `done` независимо
@@ -933,16 +562,49 @@ def finish_cmd(path, wid, status="done", reason=None, child_root=None, published
             return 1
         entry = next((w for w in data["active"] if w.get("id") == wid), None)
         save(path, data)
-        # Закрытая работа снимается и с носителя — иначе опубликованная заявка «висит» у команды
-        # после завершения. Снимаем только СВОЮ пару (машина, работа).
-        if status == "done" and entry is not None:
+        if entry is not None:
             _m = entry.get("machine") or _machine()
-            unpublish_claim(child_root, _m, wid)
-            # С ОБОИХ носителей: оставленная заявка держала бы работу для соседней копии после её
-            # закрытия — тот же «список страшилок» (#137).
+            # #695: носитель копий координирует ТОЛЬКО идущий прогон — снимаем на ВЫХОДЕ любым исходом
+            # (done/blocked/прерван). Заявка там без `owner_pid` → `holder_is_gone` судила её лишь по
+            # возрасту (12ч) и блокировала следующую команду (замер 01.09); локальный реестр сохраняется.
             withdraw_claim_from_copies(child_root, _m, wid)
+            if status == "done":                      # опубликованную (наружу) — только на завершении
+                unpublish_claim(child_root, _m, wid)
+    if audience == "product":
+        # #708: на product человеку не нужны wi-…/жаргон «ACTIVE-WORK». Итог прогона он уже видит в
+        # отчёте; здесь важна лишь ПРИЧИНА остановки, если она есть (реальный сигнал). Успех без
+        # причины — молчим, чтобы не дублировать «готово» отчёта.
+        _human = {"blocked": "приостановлена", "done": "завершена"}.get(status, status)
+        if reason:
+            print(f"  Работа {_human}: {reason}.")
+        return 0
     print(f"ACTIVE-WORK: работа '{wid}' помечена {status}"
           f"{' — ' + reason if reason else ''}.")
+    return 0
+
+
+def handoff_cmd(path, wid, to_role, reason, session, at=None):
+    """Передать работу другой роли-владельцу — named-переход owner_role (#639). Роль→роль.
+
+    Тонкая проводка: locked read-modify-write реестра, сам переход считает `role_handoff.apply_handoff`
+    (валидация роли по словарю модели, запись перехода с брифом, атрибуция прежнего владельца). Логика
+    вынесена в донор `lifecycle/role_handoff.py`, здесь — только чтение/запись общего реестра.
+    """
+    # v3.0.12: под блокировкой (симметрично register/finish — общий реестр, чужая сессия параллельна).
+    with _locked(path):
+        data = load(path)
+        entry = next((w for w in data["active"] if w.get("id") == wid), None)
+        if entry is None:
+            print(f"ACTIVE-WORK: работа '{wid}' не найдена.")
+            return 1
+        new_entry, err = _handoff.apply_handoff(entry, to_role, reason, session, at=at)
+        if err:
+            print(f"ОШИБКА: {err}")
+            return 1
+        entry.update(new_entry)                      # тот же объект в data["active"] — сохранится ниже
+        save(path, data)
+    frm = new_entry["handoffs"][-1]["from"]
+    print(f"ACTIVE-WORK: работа '{wid}' передана {frm or '—'} → {to_role} ({reason}).")
     return 0
 
 
@@ -967,6 +629,7 @@ def main(argv):
     r.add_argument("--repo", help="корень репозитория для чтения team_coordination (по умолчанию cwd)")
     # Перенять чужую заявку можно только СЛОВАМИ, а не молчанием: флаг + причина. Прежний держатель
     # записывается в заявку, иначе перенос выглядел бы как «работу никто не держал».
+    r.add_argument("--owner-role", help="начальная роль-владелец из словаря модели (#639)")
     r.add_argument("--takeover", action="store_true",
                    help="перенять заявку, которую держит другая сессия (осознанно)")
     r.add_argument("--takeover-reason", help="почему заявка перенимается (уходит в запись)")
@@ -985,6 +648,13 @@ def main(argv):
     f.add_argument("file"); f.add_argument("id")
     f.add_argument("--status", default="done"); f.add_argument("--repo")
 
+    h = sub.add_parser("handoff", help="передать работу другой роли-владельцу (#639)")
+    h.add_argument("file"); h.add_argument("id")
+    h.add_argument("--to-role", required=True, help="роль-владелец, которой передаётся работа")
+    h.add_argument("--reason", required=True, help="бриф для следующего владельца: что передаётся")
+    h.add_argument("--session", required=True)
+    h.add_argument("--at")
+
     a = ap.parse_args(argv)
     if a.cmd == "register":
         repo = getattr(a, "repo", None) or Path.cwd()
@@ -993,7 +663,8 @@ def main(argv):
                         a.workitem, a.status, _split(a.depends), _split(a.contracts), a.at,
                         published=pub, child_root=repo,
                         takeover=getattr(a, "takeover", False),
-                        takeover_reason=getattr(a, "takeover_reason", None))
+                        takeover_reason=getattr(a, "takeover_reason", None),
+                        owner_role=getattr(a, "owner_role", None))
     if a.cmd == "list":
         repo = getattr(a, "repo", None) or Path.cwd()
         return list_cmd(Path(a.file), a.json, published=publication_enabled(repo), child_root=repo)
@@ -1007,6 +678,9 @@ def main(argv):
         repo = getattr(a, "repo", None) or Path.cwd()
         return finish_cmd(Path(a.file), a.id, status=getattr(a, "status", "done"),
                           child_root=repo, published=publication_enabled(repo))
+    if a.cmd == "handoff":
+        return handoff_cmd(Path(a.file), a.id, a.to_role, a.reason, a.session,
+                           at=getattr(a, "at", None))
     return 1
 
 

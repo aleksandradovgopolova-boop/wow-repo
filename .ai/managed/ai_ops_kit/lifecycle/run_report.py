@@ -15,11 +15,12 @@
 ревьюеры (gates), не скрипт.
 
 Использование:  run_report.py <feature-dir> [--graph <graph.yaml>] [--json]
-                           [--record [dir]]   — дописать срез отчёта в историю
+                           [--record [dir]]   — записать срез отчёта в историю
                                                 (по умолчанию <child>/.ai/project/report-history/)
                 run_report.py --selftest
-История (JSONL, по файлу на фичу) коммитится с PR и служит сырьём для
-tools/effect_metrics.py («метрики эффекта»). Требует pyyaml.
+История (JSONL, файл на ПРОГОН — report-history/<feature>/<run-id>.jsonl, #148)
+коммитится с PR и служит сырьём для ai_ops_kit/intelligence/effect_metrics.py
+(«метрики эффекта»). Требует pyyaml.
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from secrets import token_hex
 
 import yaml
 
@@ -41,7 +43,7 @@ STAGES = ["discovery", "definition", "ux", "architecture", "delivery",
           "analytics", "documentation", "release", "monitoring", "adoption", "retrospective"]
 
 # v3.30: загрузка ПО ПУТИ К ФАЙЛУ заменена обычным импортом. После переезда кода в пакеты
-# tools/generate_artifacts.py стал тонким алиасом, и spec_from_file_location поднимал пустую
+# ai_ops_kit/shared/generate_artifacts.py стал тонким алиасом, и spec_from_file_location поднимал пустую
 # оболочку: подмену sys.modules внутри алиаса такая загрузка обходит, и модуль оставался без
 # своих функций (AttributeError: module 'ga' has no attribute 'cmd_new'). Обычный импорт даёт
 # настоящий модуль независимо от того, где физически лежит файл.
@@ -171,14 +173,34 @@ def find_child_root(feature_dir: Path):
 
 
 def record_report(r, feature_dir: Path, hist_dir: Path | None):
-    """Дописать компактный срез отчёта в историю (JSONL, файл на фичу)."""
+    """Записать компактный срез отчёта в историю — файл на прогон (JSONL).
+
+    ШАРДИРОВАНИЕ ПО ПРОГОНУ (#148). Раньше все срезы фичи дописывались в общий
+    `report-history/<feature>.jsonl` через `open("a")`. Этот файл коммитится с PR,
+    поэтому два параллельных PR, дописавших строки, давали git-merge-конфликт
+    (ровно known-conflict #148). Теперь каждый прогон пишется ОТДЕЛЬНЫМ файлом
+    `report-history/<feature>/<run-id>.jsonl` (как уже сделано для claim-носителя):
+    параллельные прогоны пишут в РАЗНЫЕ файлы -> их коммиты не конфликтуют.
+    Читатели (`effect_metrics.load_history`) агрегируют все шарды каталога фичи и
+    по-прежнему понимают старый плоский `<feature>.jsonl`, если он есть в дочке.
+    """
     if hist_dir is None:
         base = find_child_root(feature_dir) or feature_dir.parent.parent
         hist_dir = base / ".ai" / "project" / "report-history"
-    hist_dir.mkdir(parents=True, exist_ok=True)
     fid = Path(r["feature_dir"]).name
+    shard_dir = hist_dir / fid
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    # run-id: сортируемая метка времени + случайный суффикс, чтобы два прогона в одну
+    # секунду (в т.ч. на разных машинах) писали в разные файлы и не затирали друг друга.
+    run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{token_hex(4)}"
     entry = {
         "schema_version": 1,
+        # run_id ЕДЕТ В САМ СРЕЗ: `ts` имеет секундную точность, поэтому два разных прогона в
+        # одну секунду с одинаковым состоянием давали бы байт-идентичные строки — и дедуп
+        # читателя (снимающий склейку merge=union плоского файла) ошибочно счёл бы их одним
+        # прогоном. С run_id разные прогоны различимы, а настоящий дубль строки (копия одного
+        # среза) по-прежнему совпадает целиком и снимается.
+        "run_id": run_id,
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "feature": fid,
         "verdict": r["verdict"],
@@ -187,9 +209,8 @@ def record_report(r, feature_dir: Path, hist_dir: Path | None):
         "problems": sum(1 for lvl, _ in r["findings"] if lvl == "PROBLEM"),
         "warns": sum(1 for lvl, _ in r["findings"] if lvl == "WARN"),
     }
-    out = hist_dir / f"{fid}.jsonl"
-    with out.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    out = shard_dir / f"{run_id}.jsonl"
+    out.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"срез записан: {out}")
     return out
 

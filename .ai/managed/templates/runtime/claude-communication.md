@@ -30,8 +30,14 @@
 
 ```yaml
 communication:
+  mode: product            # founder | product | design | delivery | engineering — ЛИНЗА
   audience: product        # product | technical | debug
   detail_level: concise
   explain_jargon: true
   technical_details: on_request
 ```
+
+**Режим работы (`mode`) — это линза, а не отдельный продукт.** Один kernel обслуживает разные роли,
+не заводя новых продуктов и не вводя нового словаря: режим лишь выбирает уровень по умолчанию из тех
+же трёх аудиторий — `founder`/`product`/`design`/`delivery` → `product`, `engineering` → `technical`.
+Явно заданный `audience` **всегда** сильнее режима; неизвестный режим откатывается к `product`.

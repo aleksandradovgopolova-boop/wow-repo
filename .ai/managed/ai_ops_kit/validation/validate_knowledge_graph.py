@@ -81,6 +81,34 @@ def validate_graph(graph_path: Path, types, rels):
     return errors
 
 
+# Стабильные подстроки, которые печатает `validate_graph` для разных классов ошибок. По ним
+# различаем ошибку СЛОВАРЯ ТИПОВ (тип/связь, которых реестр ещё не знает — признак того, что
+# установленный registry/entities.yaml отстал от сборщика графа) и порчу данных проекта (ссылка на
+# несуществующий узел). Классификатор — чистые строки, без импортов вверх: слой validation остаётся
+# stdlib+pyyaml. Подстроки берём ровно из формулировок выше (fail(...)); менять их — менять и здесь.
+_ERR_UNKNOWN_NODE_TYPE = "вне registry/entities.yaml"      # узел '<id>': тип '<t>' вне registry/…
+_ERR_DISALLOWED_TRIPLE = "не разрешена registry/entities.yaml"  # связь A -r-> B не разрешена registry/…
+_ERR_DANGLING = "не существует"                            # ребро …: узел '<id>' не существует
+
+
+def classify_errors(errors):
+    """Разложить ошибки `validate_graph` на классы для диагностики (без изменения самих ошибок).
+
+    -> dict:
+      has_type_vocab_error — есть узел с неизвестным типом ИЛИ запрещённая (from,rel,to)-связь:
+        типичный признак того, что установленный registry/entities.yaml устарел относительно
+        сборщика графа (version/update-skew) либо граф правили вручную мимо реестра;
+      has_dangling_error — есть ссылка на несуществующий узел/blueprint: порча данных проекта, а не
+        рассинхрон словаря — для неё подсказка «обнови кит» была бы ложным диагнозом.
+    """
+    items = errors or []
+    has_type_vocab = any(
+        (_ERR_UNKNOWN_NODE_TYPE in e) or (_ERR_DISALLOWED_TRIPLE in e) for e in items
+    )
+    has_dangling = any(_ERR_DANGLING in e for e in items)
+    return {"has_type_vocab_error": has_type_vocab, "has_dangling_error": has_dangling}
+
+
 def make_demo(root: Path, *, dangling=False, bad_relation=False):
     p = root / "graph.yaml"
     g = {

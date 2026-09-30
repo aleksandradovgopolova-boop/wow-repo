@@ -58,7 +58,7 @@ def _branch_exists(root, branch):
     return rc == 0
 
 
-def add(root, wid, branch, base="HEAD", wt_dir=".ai/worktrees", as_json=False):
+def add(root, wid, branch, base="HEAD", wt_dir=".ai/worktrees", as_json=False, quiet=False):
     root = Path(root).resolve()
     target, err = _safe_target(root, wt_dir, wid)
     if err:
@@ -84,8 +84,10 @@ def add(root, wid, branch, base="HEAD", wt_dir=".ai/worktrees", as_json=False):
     rel = target.relative_to(root)
     if as_json:
         print(json.dumps({"id": wid, "branch": branch, "path": str(rel)}, ensure_ascii=False))
-    else:
+    elif not quiet:
         # операционный прогресс -> stderr, чтобы --json оставался машиночитаемым (stdout = только данные)
+        # #708: quiet — на product-аудитории строку про копию/ветку даёт register одной человеческой
+        # фразой; здесь id-насыщенный дубль только шумит.
         print(f"WORKTREE: '{wid}' -> {rel} (ветка {branch}). "
               f"Работайте в этом каталоге; main не трогается.", file=sys.stderr)
     return 0

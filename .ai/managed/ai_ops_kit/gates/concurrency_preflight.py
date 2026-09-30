@@ -5,7 +5,7 @@
 одну поверхность; позже — merge-конфликт и переделки. Хуже — работа на устаревшей
 посылке: удаляешь «мёртвый» контрол, а параллельный PR ровно его оживляет.
 
-Реестр активных работ (tools/active_work.py) ловит это, только если оба потока в нём
+Реестр активных работ (ai_ops_kit/lifecycle/active_work.py) ловит это, только если оба потока в нём
 зарегистрированы. Этот preflight смотрит на ФАКТИЧЕСКОЕ состояние репозитория:
 
   1. base_changes — коммиты в базовой ветке (origin/main), затронувшие целевые пути
@@ -38,6 +38,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -47,8 +48,22 @@ def _git(repo, *args):
     return gitio.git(repo, *args)   # v3.0.13 (блок C): единый git-хелпер с таймаутом
 
 
+# Допустимый сегмент owner/repo GitHub: буквы/цифры/точка/подчёркивание/дефис. Всё прочее
+# (в т.ч. '?', '/', '#', '@', ':' и пробелы) — потенциальная инъекция квери/сегмента в URL API.
+_OWNER_REPO_SEG = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _valid_owner_repo_seg(seg):
+    """Сегмент безопасен для подстановки в путь GitHub API: разрешённый набор символов и
+    не чистый '.'/'..' (иначе — обход сегмента /repos/{owner}/../…)."""
+    return bool(seg) and seg not in (".", "..") and _OWNER_REPO_SEG.match(seg) is not None
+
+
 def _parse_owner_repo(remote_url):
-    """owner/repo из git remote URL (https, ssh, с .git и без). None, если не GitHub-подобный."""
+    """owner/repo из git remote URL (https, ssh, с .git и без). None, если не GitHub-подобный
+    ИЛИ owner/repo содержит символы вне [A-Za-z0-9._-] (fail-closed: имя из remote идёт в URL
+    GitHub API, а '?'/'..'/'/' в нём подмешивают квери или сегмент — не даём выдать инъекцию
+    за валидный repo)."""
     if not remote_url:
         return None
     u = remote_url.strip()
@@ -56,7 +71,10 @@ def _parse_owner_repo(remote_url):
     m = re.search(r"[:/]([^/:]+)/([^/]+?)(?:\.git)?$", u)
     if not m:
         return None
-    return m.group(1), m.group(2)
+    owner, name = m.group(1), m.group(2)
+    if not (_valid_owner_repo_seg(owner) and _valid_owner_repo_seg(name)):
+        return None
+    return owner, name
 
 
 def _prs_overlap(pr_records, paths):
@@ -73,8 +91,19 @@ def _prs_overlap(pr_records, paths):
 
 
 def _github_token():
-    """Токен только из env (GITHUB_TOKEN / GH_TOKEN). В логи/вывод не попадает."""
-    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    """Токен из env (GITHUB_TOKEN / GH_TOKEN); при их отсутствии — fallback на `gh auth token`
+    (#402: gh и так зависимость кита, и на машине он обычно авторизован — иначе доставка молча
+    деградировала до «нет токена» при живой gh-авторизации). В логи/вывод не попадает."""
+    tok = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if tok:
+        return tok
+    try:
+        r = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
 
 
 def _gh_api_get(path, token):
@@ -90,8 +119,33 @@ def _gh_api_get(path, token):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _gh_api_get_all(path, token, per_page=100, max_items=None, max_pages=100):
+    """Все страницы list-эндпоинта GitHub через page-based пагинацию. Возвращает
+    (items, truncated). truncated=True, если остановились по лимиту (max_items или max_pages)
+    при ПОЛНОЙ последней странице — значит есть ещё, и «полнота» не гарантирована: усечение
+    честнее выдать за partial, чем за checked. Без этого PR с >100 файлами отдавал только
+    первые 100 → пересекающийся 101-й путь невидим → ложное «пересечений нет»."""
+    sep = "&" if "?" in path else "?"
+    items = []
+    page = 1
+    while page <= max_pages:
+        chunk = _gh_api_get(f"{path}{sep}per_page={per_page}&page={page}", token)
+        if not isinstance(chunk, list):
+            break  # неожиданная форма ответа — не притворяемся, что дочитали
+        items.extend(chunk)
+        if max_items is not None and len(items) >= max_items:
+            # ещё могло остаться за пределами лимита, если последняя страница была полной
+            return items[:max_items], len(chunk) == per_page
+        if len(chunk) < per_page:
+            return items, False  # короткая страница => это был конец
+        page += 1
+    return items, True  # выбрали max_pages при полной странице => усечение
+
+
 def open_prs_via_rest(repo, paths, max_prs=30):
-    """REST-фоллбэк (без gh): открытые PR, трогающие paths. Токен — из env; иначе unavailable."""
+    """REST-фоллбэк (без gh): открытые PR, трогающие paths. Токен — из env; иначе unavailable.
+    Список PR и файлы каждого PR пагинируются до конца; если пришлось усечь (лимит max_prs
+    или страховочный потолок страниц) — статус partial, а не checked."""
     token = _github_token()
     if not token:
         return {"status": "unavailable", "note": "нет gh и нет GITHUB_TOKEN/GH_TOKEN — открытые PR не проверены", "prs": []}
@@ -100,15 +154,28 @@ def open_prs_via_rest(repo, paths, max_prs=30):
     if not owner_repo:
         return {"status": "unavailable", "note": "не удалось определить owner/repo из origin", "prs": []}
     owner, name = owner_repo
+    # defense-in-depth: даже после валидации сегмента прогоняем через quote(safe="")
+    owner_q = urllib.parse.quote(owner, safe="")
+    name_q = urllib.parse.quote(name, safe="")
     try:
-        prs = _gh_api_get(f"/repos/{owner}/{name}/pulls?state=open&per_page={max_prs}", token)
+        prs, prs_truncated = _gh_api_get_all(
+            f"/repos/{owner_q}/{name_q}/pulls?state=open", token, max_items=max_prs)
         records = []
-        for pr in prs[:max_prs]:
+        files_truncated = False
+        for pr in prs:
             num = pr.get("number")
-            files = _gh_api_get(f"/repos/{owner}/{name}/pulls/{num}/files?per_page=100", token)
+            files, tr = _gh_api_get_all(
+                f"/repos/{owner_q}/{name_q}/pulls/{num}/files", token)
+            files_truncated = files_truncated or tr
             records.append({"number": num, "title": pr.get("title"),
                             "files": [f.get("filename") for f in files]})
-        return {"status": "checked", "via": "rest", "prs": _prs_overlap(records, paths)}
+        truncated = prs_truncated or files_truncated
+        out = {"status": "partial" if truncated else "checked", "via": "rest",
+               "prs": _prs_overlap(records, paths)}
+        if truncated:
+            out["note"] = ("список PR или файлов усечён (пагинация не завершена) — "
+                           "«пересечений нет» здесь не факт, а неполная проверка")
+        return out
     except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
         # не раскрываем токен: сообщаем класс ошибки, не тело запроса
         return {"status": "unavailable", "note": f"GitHub API недоступен ({type(e).__name__})", "prs": []}
@@ -139,14 +206,24 @@ def open_prs_via_gh(repo, paths):
     if probe.returncode != 0:
         return None
     try:
-        r = subprocess.run(["gh", "pr", "list", "--state", "open", "--json", "number,title,files"],
+        r = subprocess.run(["gh", "pr", "list", "--state", "open", "--limit", "100",
+                            "--json", "number,title,files"],
                            cwd=str(repo), capture_output=True, text=True)
         if r.returncode != 0:
             return None
+        raw = json.loads(r.stdout or "[]")
         records = [{"number": pr.get("number"), "title": pr.get("title"),
                     "files": [f.get("path") for f in (pr.get("files") or [])]}
-                   for pr in json.loads(r.stdout or "[]")]
-        return {"status": "checked", "via": "gh", "prs": _prs_overlap(records, paths)}
+                   for pr in raw]
+        # gh отдаёт максимум 100 файлов на PR и обрезает список PR по --limit; ровно 100 в любом
+        # из них неотличимо от усечения → честнее partial, чем checked с «пересечений нет».
+        truncated = len(records) >= 100 or any(len(rec["files"]) >= 100 for rec in records)
+        out = {"status": "partial" if truncated else "checked", "via": "gh",
+               "prs": _prs_overlap(records, paths)}
+        if truncated:
+            out["note"] = ("gh усёк список PR или файлов (потолок 100) — "
+                           "«пересечений нет» здесь неполная проверка")
+        return out
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -212,12 +289,17 @@ def print_human(r):
         for c in bc[:5]:
             print(f"     {c['sha']} {c['subject']}")
     prs = r["open_prs"]
-    if prs.get("status") == "unavailable":
+    status = prs.get("status")
+    if status == "unavailable":
         print(f"  · открытые PR: не проверены ({prs.get('note')})")
     elif prs.get("prs"):
-        print(f"  ⚠ открытые PR по тем же путям (via {prs.get('via', '?')}): " +
+        suffix = " [частично: возможны непоказанные]" if status == "partial" else ""
+        print(f"  ⚠ открытые PR по тем же путям (via {prs.get('via', '?')}){suffix}: " +
               ", ".join(f"#{p['number']}" for p in prs["prs"]))
-    elif prs.get("status") == "checked":
+    elif status == "partial":
+        print(f"  · открытые PR проверены частично (via {prs.get('via', '?')}): "
+              "в проверенной части пересечений нет — усечение, «чисто» не гарантировано")
+    elif status == "checked":
         print(f"  · открытые PR проверены (via {prs.get('via', '?')}): пересечений нет")
     for a in r["active_work_overlap"]:
         print(f"  ⚠ активная работа '{a['id']}' (ветка {a['branch']}): зоны {', '.join(a['shared_areas'])}")

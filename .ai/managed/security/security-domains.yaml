@@ -165,7 +165,14 @@ domains:
   - id: data_isolation
     applicability:
       signals: [multi_tenant]
-      file_patterns: ["(?i)tenant|org_id|account_id|workspace|isolation|scope.*query"]
+      # `workspace` УБРАН из паттерна (finding живого прогона на ai-ops-cockpit): слово матчило
+      # UI-концепт «рабочее место» (напр. `src/config/workspaces.ts`, `makeWorkspaceId`) в
+      # НЕ-мультиарендном продукте и поднимало домен severity:critical -> обязательный человеческий
+      # ApprovalRecord на безобидное UI-изменение. Здесь «over-trigger = лишний needs_review» НЕ
+      # безопасен: домен строгий (человек-судья), и ложное срабатывание = жёсткий блок. Остаются
+      # ОДНОЗНАЧНЫЕ маркеры мультиарендности; workspace-as-tenant продукт поднимает домен либо
+      # сигналом multi_tenant, либо своими tenant/org_id/account_id/scope-запросами.
+      file_patterns: ["(?i)tenant|org_id|account_id|isolation|scope.*query"]
     deterministic_checks: []
     reviewer_checklist: ["запросы фильтруются по tenant/scope", "нет утечки между арендаторами",
                          "тесты на изоляцию данных"]

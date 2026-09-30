@@ -12,7 +12,7 @@
   6. providers из .ai-ops.yaml известны реестру registry/providers.yaml;
   7. blocking gates из .ai-ops.yaml известны quality/gates.yaml.
 
-Использование:  python3 02_tools/ci/validate_ai_ops_child.py
+Использование:  python3 -m ai_ops_kit.validation.validate_ai_ops_child
 Возврат 0 — чисто, 1 — есть ошибки; пропуск, если .ai-ops.yaml нет (репо не child).
 Требует pyyaml.
 """

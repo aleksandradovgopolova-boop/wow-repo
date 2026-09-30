@@ -1,8 +1,10 @@
-# Release Notes
+# Описание выпуска — шаблон переехал
 
-## What changed
-## User impact
-## Required actions
-## Compatibility
-## Known limitations
-## Rollback / support information
+Шаблон описания выпуска теперь один: [`templates/release/ReleaseNotes.md`](../release/ReleaseNotes.md)
+(в дочке — `.ai/managed/templates/release/ReleaseNotes.md`). В нём два слоя — короткое сообщение
+владельцу и пользователям и полный журнал, — подсказки, примеры и самопроверка.
+
+Правила описания выпуска — в `registry/communication-policy.yaml -> release_notes`.
+
+Этот файл оставлен указателем, чтобы прежние ссылки на него не вели в пустоту. Вторую копию
+шаблона здесь не держим: две копии разойдутся.

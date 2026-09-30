@@ -11,7 +11,7 @@ tool-calling петле — чтобы «дал задачу» не превра
 (объявлено, не выдаётся за enforced).
 
 Использование (программно):
-  from budget import Budget, BudgetExceeded
+  from ai_ops_kit.shared.budget import Budget, BudgetExceeded
   b = Budget(max_model_calls=20)
   b.charge_call()          # перед каждым вызовом модели; бросит BudgetExceeded при превышении
 
@@ -27,7 +27,7 @@ class BudgetExceeded(Exception):
 
 
 class Budget:
-    def __init__(self, max_model_calls=None, max_cost=None, max_duration=None):
+    def __init__(self, max_model_calls: int | None = None, max_cost: float | None = None, max_duration: float | None = None) -> None:
         self.max_model_calls = max_model_calls
         self.max_cost = max_cost
         self.max_duration = max_duration       # хранится для отчёта; enforcement — на рантайме
@@ -35,12 +35,12 @@ class Budget:
         self.cost = 0.0
 
     @classmethod
-    def from_dict(cls, d):
+    def from_dict(cls, d: dict | None) -> "Budget":
         d = d or {}
         return cls(max_model_calls=d.get("max_model_calls"),
                    max_cost=d.get("max_cost"), max_duration=d.get("max_duration"))
 
-    def charge_call(self, cost=0.0):
+    def charge_call(self, cost: float = 0.0) -> None:
         """Проверяет ДО инкремента — потолок никогда не превышается, вызов не делается."""
         if self.max_model_calls is not None and self.model_calls + 1 > self.max_model_calls:
             raise BudgetExceeded(f"max_model_calls={self.max_model_calls} превышен "
@@ -50,16 +50,16 @@ class Budget:
         self.model_calls += 1
         self.cost += cost or 0.0
 
-    def remaining_calls(self):
+    def remaining_calls(self) -> int | None:
         return None if self.max_model_calls is None else max(0, self.max_model_calls - self.model_calls)
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {"max_model_calls": self.max_model_calls, "model_calls": self.model_calls,
                 "max_cost": self.max_cost, "cost": self.cost,
                 "remaining_calls": self.remaining_calls()}
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     print(__doc__)
     return 0
 

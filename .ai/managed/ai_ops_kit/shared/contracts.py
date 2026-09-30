@@ -17,7 +17,7 @@ IDE и mypy получают навигацию и проверку; стары�
   WorkItemState      — состояние WorkItem
 
 Только аннотации, без runtime-логики. Импортируется как:
-  from contracts import UsageRecord, PreflightResult
+  from ai_ops_kit.shared.contracts import UsageRecord, PreflightResult
 """
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ class PreflightCheck(TypedDict):
 
 
 class PreflightResult(TypedDict):
-    """Результат preflight-проверок (tools/preflight.py assess()).
+    """Результат preflight-проверок (ai_ops_kit/gates/preflight.py assess()).
 
     ok=True -> можно запускать tool loop.
     blocked=True -> модель НЕ запускается, правки/коммит НЕ создаются.
@@ -241,7 +241,7 @@ class DeliveryReceipt(TypedDict, total=False):
 # ============================================================================
 
 class ContextBundle(TypedDict, total=False):
-    """Пакет контекста для WorkItem (tools/context_compiler.py).
+    """Пакет контекста для WorkItem (ai_ops_kit/context/context_compiler.py).
 
     included: источники, включённые в контекст (с причиной).
     excluded: источники, исключённые (с причиной).

@@ -4,7 +4,7 @@ description: Канонический вход — задача в контро�
 # ai-run — канонический вход (задача → исполнение → отчёт)
 
 Сгенерировано из registry/ — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Единый транзакционный вход: классификация/маршрут → RunPlan (base_workflow + треки +
@@ -14,13 +14,15 @@ description: Канонический вход — задача в контро�
 
 ## Порядок (исполняет этот раннтайм)
 ```
-tools/ai_ops_run.py run "<задача>" <child_root> --signals '<json сигналов>' \
+PYTHONPATH=.ai/managed python3 -m ai_ops_kit.engine.ai_ops_run run "<задача>" <child_root> \
+    --signals '<json сигналов>' \
     [--feature <имя-фичи>] [--runtime claude-code|generic-orchestrator] [--provider mock] [--execute]
 ```
 0. **Привязка к именованной фиче:** для реальной работы дай `--feature <имя>` — WorkItem
    ляжет на эту фичу, и срезы истории накопятся на неё. Без `--feature` id = `wi-<hash>`,
    и baseline метрик НЕ двигается (finding обкатки). Срез истории в claude-code пишется на
-   стадии `finish` (рантайм исполняет `run_report.py --record`), автозаписи «за стадию» нет.
+   стадии `finish` (рантайм исполняет `python3 -m ai_ops_kit.lifecycle.run_report --record`),
+   автозаписи «за стадию» нет.
 1. Контроллер строит RunPlan по сигналам и создаёт WorkItem (`features/<id>/run-plan.yaml`).
 2. Регистрирует активную работу (ветка/зоны/сессия) — conflict forecast.
 3. Исполнение: **claude-code** — контроллер готовит план и каркас, стадии/патчи/тесты

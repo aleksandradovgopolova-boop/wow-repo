@@ -31,7 +31,10 @@
         "initiative": {"type": "string"},
         "epic": {"type": "string"},
         "stories": {"type": "array", "items": {"type": "string"}},
-        "experiments": {"type": "array", "items": {"type": "string"}}
+        "experiments": {"type": "array", "items": {"type": "string"}},
+        "decision": {"type": "string", "description": "id решения (эпизод ep-* или принцип dp-*) из decisions/registry.yaml: ЗАЧЕМ появилась функция. Ссылка на несуществующее решение отвергается validate_knowledge_graph."},
+        "decisions": {"type": "array", "items": {"type": "string"}, "description": "Несколько решений, из которых появилась функция (форма множественного числа поля decision)."},
+        "built_by": {"type": ["string", "array"], "items": {"type": "string"}, "description": "id работы или № PR из history/plan-history.yaml: ЧТО построило функцию и где. Строка или список. Ссылка на несуществующую работу отвергается validate_knowledge_graph."}
       },
       "additionalProperties": true
     },

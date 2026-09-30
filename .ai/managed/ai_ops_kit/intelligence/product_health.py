@@ -78,7 +78,7 @@ def compute(inp: dict) -> dict:
         "health_score": {"value": score, "band": band,
                          "weights_used": {k: out_metrics[k]["weight"] for k in out_metrics}},
         "findings": findings,
-        "generated_by": "tools/product_health.py",
+        "generated_by": "ai_ops_kit/intelligence/product_health.py",
     }
 
 

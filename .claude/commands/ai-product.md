@@ -4,7 +4,7 @@ description: Workflow PRODUCT — Продуктовая задача от пр�
 # ai-product — Продуктовая задача от проблемы к ценности и валидации.
 
 Сгенерировано из registry/workflows.yaml — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Проводит задачу по workflow **PRODUCT** (orchestrated / минимум

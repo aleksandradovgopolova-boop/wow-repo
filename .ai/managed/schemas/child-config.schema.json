@@ -39,6 +39,20 @@
             "manual"
           ]
         },
+        "update_strategy": {
+          "type": "string",
+          "description": "Выбор из НАЗВАННОГО меню стратегий обновления (registry/release-claims.yaml -> update_strategies): pr (дефолт) | manual | scheduled-batch | auto-stable. Необязательное: отсутствие читается как 'pr'. auto-stable требует канал stable И update_strategy_opt_in: true. Это выбор владельца, кит его лишь называет — обновление к репозиторию сам не применяет.",
+          "enum": [
+            "pr",
+            "manual",
+            "scheduled-batch",
+            "auto-stable"
+          ]
+        },
+        "update_strategy_opt_in": {
+          "type": "boolean",
+          "description": "Явное включение стратегии, объявленной выключенной (auto-stable, enabled: false). Без него такая стратегия резолвится как недоступная."
+        },
         "auto_update": {
           "type": "boolean"
         }
@@ -50,6 +64,36 @@
         "update_policy"
       ],
       "additionalProperties": false
+    },
+    "standard": {
+      "type": "object",
+      "description": "Версия стандарта репозитория, ОТДЕЛЬНАЯ от версии пакета (SR-4), и override требований (SR-21..23).",
+      "properties": {
+        "version": {"type": "integer", "description": "какой версии стандарта соответствует репозиторий"},
+        "profile": {"type": "string", "description": "профиль требований (пока один: ai-product)"},
+        "invariants": {"type": "array", "items": {"type": "string"},
+          "description": "включённые инварианты сверх профиля (пусто = профиль по умолчанию)"},
+        "overrides": {
+          "type": "array",
+          "description": "Отключённые требования стандарта. Каждый override ОБЯЗАН нести причину (SR-21: пустая не проходит) и срок/условие снятия (SR-22: review_by или remove_when — просроченный становится находкой). Виден в каждом governance-отчёте (SR-23).",
+          "items": {
+            "type": "object",
+            "required": ["requirement", "reason"],
+            "properties": {
+              "requirement": {"type": "string",
+                "description": "что отключено: путь артефакта или 'путь::Секция'"},
+              "reason": {"type": "string", "minLength": 1,
+                "description": "почему требование неприменимо в этом репозитории (SR-21)"},
+              "review_by": {"type": "string",
+                "description": "дата пересмотра (ISO YYYY-MM-DD); наступила -> override становится находкой (SR-22)"},
+              "remove_when": {"type": "string",
+                "description": "названное условие снятия вместо даты (SR-22)"}
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
     },
     "project": {
       "type": "object",
@@ -432,6 +476,16 @@
             "debug"
           ],
           "description": "по умолчанию product: кит говорит с владельцем продукта, а не с отладчиком"
+        },
+        "mode": {
+          "enum": [
+            "founder",
+            "product",
+            "design",
+            "delivery",
+            "engineering"
+          ],
+          "description": "режим работы — ЛИНЗА поверх audience, не новый продукт и не новый словарь: выбирает уровень по умолчанию из тех же трёх аудиторий (см. operating_modes в registry/communication-policy.yaml). Явно заданный audience всегда сильнее режима."
         },
         "detail_level": {
           "enum": [

@@ -24,17 +24,50 @@ import re
 import sys
 from pathlib import Path
 
+from ai_ops_kit.shared.gitio import git
 from ai_ops_kit.planning import artifact_registry as AR
 from ai_ops_kit.planning import repo_audit
 
 VERIFIED, INFERRED, UNKNOWN = "verified", "inferred", "unknown"
 
+# Разделы, которые генератор из кода достоверно НЕ выводит: их заполняет владелец (grounded в
+# VISION/AGENTS), и перегенерация обязана их СОХРАНИТЬ, а не затереть на «неизвестно». Остальные
+# разделы — машинные снимки (версия, здоровье, статус…), их перегенерируют на релизе/вехе.
+OWNER_SECTIONS = ("Название и описание", "Аудитория и проблема", "Owner и команда")
+
 _H = re.compile(r"^#{1,6}\s+(.*\S)\s*$", re.MULTILINE)
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_L2 = re.compile(r"(?m)^## (.+?)[ \t]*$")  # заголовок раздела паспорта (level-2)
 
 
 def _repo_name(root: Path) -> str:
-    """Имя репозитория. resolve() — иначе `Path('.').name` пусто, и паспорт печатал «Репозиторий ``»."""
+    """Имя репозитория — как называется ПРОДУКТ, а не каталог, из которого его собирают.
+
+    `Path(root).name` подводит в git-worktree: там это имя каталога worktree
+    (`whale-status-dashboard-02f8c3`), а не продукта — паспорт печатал бы служебное имя. Спрашиваем
+    git: сперва basename origin (имя продукта на форже), затем каталог главного репозитория
+    (`--git-common-dir` -> родитель `.git`). Нет git/remote — падаем на `resolve().name`, как раньше.
+    """
+    import subprocess
+    try:
+        rc, out, _ = git(root, "remote", "get-url", "origin", timeout=10)
+        if rc == 0 and out.strip():
+            name = out.strip().rstrip("/").rsplit("/", 1)[-1]
+            name = name[:-4] if name.endswith(".git") else name
+            if name:
+                return name
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        rc, out, _ = git(root, "rev-parse", "--git-common-dir", timeout=10)
+        if rc == 0 and out.strip():
+            common = Path(out.strip())
+            if not common.is_absolute():
+                common = (Path(root) / common).resolve()
+            if common.name == ".git" and common.parent.name:
+                return common.parent.name
+    except (OSError, subprocess.SubprocessError):
+        pass
     return Path(root).resolve().name
 
 
@@ -44,14 +77,14 @@ def _latest_tag(root: Path) -> str | None:
     `release_history` из repo_audit — это `git tag --list` в лексикографическом порядке, где `v0.8.0`
     идёт раньше `3.36.12`. Называть первый «последним релизом» — фактическая ошибка; берём по дате.
     """
+    # Единый вход к git с таймаутом (см. shared/gitio). OSError (нет git) по-прежнему -> None.
     import subprocess
     try:
-        r = subprocess.run(["git", "-C", str(root), "for-each-ref", "--sort=-creatordate",
-                            "--format=%(refname:short)", "--count=1", "refs/tags"],
-                           capture_output=True, text=True, timeout=10, check=False)
+        rc, out, _ = git(root, "for-each-ref", "--sort=-creatordate",
+                         "--format=%(refname:short)", "--count=1", "refs/tags", timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
-    tag = (r.stdout or "").strip().splitlines()
+    tag = out.splitlines() if rc == 0 else []
     return tag[0] if tag else None
 
 
@@ -153,8 +186,8 @@ def sections(repo_root: Path, evidence: dict | None = None) -> dict:
     tech = _tech_health(ev)
     out["Здоровье (продукт / технологии / delivery)"] = {
         "state": INFERRED if tech["state"] != UNKNOWN else UNKNOWN,
-        "source": "CI/тесты (tech); метрики (product); релизы (delivery)",
-        "value": f"Продукт: _неизвестно (нет метрик — контур analytics)_. "
+        "source": "CI/тесты (tech); метрики и наблюдения (product); релизы (delivery)",
+        "value": f"Продукт: {_product_health(root)}. "
                  f"Технологии: **{tech['band']}** — {tech['reason']}. "
                  f"Delivery: {_delivery_health(ev)}."}
 
@@ -195,6 +228,69 @@ def _tech_health(ev: dict) -> dict:
     return {"state": INFERRED, "band": "Red", "reason": "ни CI, ни тестов не найдено"}
 
 
+def _product_metrics_defined(root: Path) -> bool:
+    """Заведён ли контракт метрик продукта — `ProductMetrics.md` заполнен СВЕРХ шаблона.
+
+    Логику «шаблон vs заполнено» повторяем минимально (как `dashboard/build_data.py ->
+    product_metrics_status`), НО без импорта dashboard: срезаем front-matter и заголовки — если
+    остаётся содержательный текст, контракт метрик заведён, а не пустой каркас.
+    """
+    text = _read(root, "context/product/ProductMetrics.md")
+    if not text:
+        return False
+    body = re.sub(r"^---.*?---", "", text, flags=re.DOTALL)   # front-matter
+    body = re.sub(r"^#.*$", "", body, flags=re.MULTILINE)      # заголовки
+    return bool(body.strip())
+
+
+def _product_metric_observations(root: Path) -> int:
+    """Сколько наблюдений продуктовых метрик снято. Устойчиво: нет файла/нет pyyaml -> 0.
+
+    Берём `aggregate.n`, а если его нет — длину списка `observations`. Ничего не выдумываем: любой
+    сбой чтения означает «наблюдений нет» (0), а не правдоподобное число.
+    """
+    text = _read(root, "context/product/metric-observations.yaml")
+    if not text:
+        return 0
+    try:
+        import yaml
+    except ImportError:
+        return 0
+    try:
+        data = yaml.safe_load(text) or {}
+    except Exception:  # noqa: BLE001 — битый yaml: считаем «наблюдений нет», а не падаем
+        return 0
+    if not isinstance(data, dict):
+        return 0
+    n = (data.get("aggregate") or {}).get("n")
+    if isinstance(n, int) and n >= 0:
+        return n
+    return len(data.get("observations") or [])
+
+
+def _product_health(root: Path) -> str:
+    """Строка продуктового здоровья ИЗ СОСТОЯНИЯ репозитория — без завышения вердикта.
+
+    Ранее здесь стоял зашитый текст «неизвестно (нет метрик — контур analytics)», не смотревший,
+    заведены ли метрики. Теперь три честных состояния (Green из этого раннего слоя НЕ ставим —
+    скорингового экспорта `.ai-ops/product-metrics.yaml` у кита нет, а выборка мала):
+
+      1. метрик нет и наблюдений нет -> «неизвестно — метрики продукта ещё не заведены»;
+      2. метрики заведены + есть первые наблюдения (n>=1) -> «недостаточно данных для вердикта…
+         (n=<n>) …, выборка мала, окна guardrail открыты»;
+      3. метрики заведены, но наблюдений ещё нет -> «недостаточно данных — наблюдений ещё нет».
+    """
+    defined = _product_metrics_defined(root)
+    n = _product_metric_observations(root)
+    if not defined and n == 0:
+        return "_неизвестно — метрики продукта ещё не заведены_"
+    if n >= 1:
+        return (f"_недостаточно данных для вердикта — метрики TTVO заведены, есть первые "
+                f"наблюдения (n={n}), но выборка мала и окна guardrail ещё открыты_")
+    return ("_недостаточно данных для вердикта — метрики TTVO заведены, "
+            "но наблюдений ещё нет_")
+
+
 def _delivery_health(ev: dict) -> str:
     rel = ev.get("release_history")
     if rel:
@@ -203,19 +299,57 @@ def _delivery_health(ev: dict) -> str:
 
 
 def _milestone(root: Path) -> dict:
-    """Текущий milestone из ROADMAP.md (раздел Now) или плана. Иначе честный пробел."""
-    roadmap = _read(root, "ROADMAP.md") or _read(root, ".ai-ops/ROADMAP.md")
-    if roadmap:
-        headers = {m.group(1).strip().lower(): m.start() for m in _H.finditer(roadmap)}
-        if "now" in headers:
-            start = headers["now"]
-            tail = roadmap[start:].split("\n", 1)[1] if "\n" in roadmap[start:] else ""
-            body = tail.split("\n#", 1)[0].strip()
-            body = _HTML_COMMENT.sub("", body).strip()
+    """Текущий milestone: сперва ИМЕНОВАННЫЙ из плана, иначе прокси из горизонта «Сейчас» ROADMAP.
+
+    Прежде здесь был ТОЛЬКО прокси — первый пункт горизонта «Сейчас» из ROADMAP.md (INFERRED,
+    «Из ROADMAP (Сейчас): …»): направление, а не названный результат. Теперь если план объявляет
+    первоклассный `current_milestone` (`planning/plan.yaml`), паспорт печатает ИМЕННО его — имя,
+    цель для пользователя и связанные направления. Ключа нет — откат к прежнему прокси целиком
+    сохранён (молодой репозиторий без плана видит то же, что раньше).
+    """
+    # 1. ИМЕНОВАННЫЙ текущий milestone плана. Читаем через штатный загрузчик (он же резолвит путь
+    #    плана в монорепо и падает PlanCorrupt на битом файле — на который откат к прокси честнее
+    #    выдумывания вехи). Импорт локальный: планировщик тянут только когда паспорт правда строят.
+    from ai_ops_kit.planning import delivery_plan as _plan
+    try:
+        plan = _plan.load(root)
+    except _plan.PlanCorrupt:
+        plan = None
+    if plan:
+        m = _plan.current_milestone(plan)
+        if m and (str(m.get("name") or "").strip() or str(m.get("goal") or "").strip()):
+            name = str(m.get("name") or "").strip() or str(m.get("id") or "").strip()
+            goal = str(m.get("goal") or "").strip()
+            linked = [str(g).strip() for g in (m.get("linked_goals") or []) if str(g).strip()]
+            value = f"**{name}**" + (f" — {goal}" if goal else "")
+            if linked:
+                value += f" Связанные направления: {', '.join(linked)}."
+            return {"state": VERIFIED, "source": "planning/plan.yaml -> current_milestone",
+                    "value": value}
+
+    # 2. Откат (прежнее поведение): прокси из горизонта «Сейчас» ROADMAP.
+    # Горизонт читаем НЕ по литералу `Now`: канонический roadmap кита и русскоязычных дочек называет
+    # его «Сейчас» (`ai_ops_kit/planning/roadmap.py -> HORIZONS`, где `now` = «сейчас»|«now»). Прежде
+    # здесь стояло `if "now" in headers`, и на своём же roadmap кит выдавал «milestone неизвестно» —
+    # паспорт не мог прочитать собственное направление. Теперь горизонт находит тот же парсер, что и
+    # контракт roadmap, поэтому и «Сейчас», и «Now» одинаково распознаются.
+    # Единый резолвер направления (SR-2): прежде читали `ROADMAP.md` ИЛИ `.ai-ops/ROADMAP.md` —
+    # два пути в одной строке означали, что канонический источник не определён. Теперь путь решает
+    # одно место (roadmap.resolve_roadmap_path), общее с health/drift/planning.
+    from ai_ops_kit.planning import roadmap as _roadmap
+    rp = _roadmap.resolve_roadmap_path(root)
+    if rp.is_file():
+        now = _roadmap.parse(rp.read_text(encoding="utf-8")).get("now") or {}
+        items = now.get("items") or []
+        if items:
+            # Пункты «Сейчас» — маркированные строки; берём их первые строки (суть направления),
+            # сняв markdown-маркер и inline-комментарии.
+            body = " · ".join(_HTML_COMMENT.sub("", i).lstrip("-*").strip() for i in items)
+            body = body.strip()
             if body:
-                return {"state": INFERRED, "source": "ROADMAP.md -> Now",
-                        "value": f"Из ROADMAP (Now): {body[:200]}"}
-    return _unknown("текущий milestone нечем определить — ни ROADMAP (Now), ни delivery-плана")
+                return {"state": INFERRED, "source": "ROADMAP.md -> Сейчас",
+                        "value": f"Из ROADMAP (Сейчас): {body[:200]}"}
+    return _unknown("текущий milestone нечем определить — ни ROADMAP (Сейчас), ни delivery-плана")
 
 
 def generate(repo_root: Path, evidence: dict | None = None, reg: dict | None = None) -> str:
@@ -239,6 +373,60 @@ def generate(repo_root: Path, evidence: dict | None = None, reg: dict | None = N
             lines.append(f"<!-- источник: {data['source']} · доверие: {data['state']} -->")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _split_sections(text: str) -> tuple[str, list[tuple[str, str]]]:
+    """Разбить паспорт на (шапку, [(заголовок, тело)]).
+
+    Тело — текст ПОСЛЕ строки `## <заголовок>` до следующего `## ` (или конца файла), включая свой
+    источник-комментарий, ДОСЛОВНО (пробелы и переводы строк сохранены). Шапка — всё до первого `##`
+    (маркер версии шаблона + преамбула + `# Product Passport`).
+    """
+    ms = list(_L2.finditer(text))
+    if not ms:
+        return text, []
+    header = text[:ms[0].start()]
+    secs = []
+    for i, m in enumerate(ms):
+        end = ms[i + 1].start() if i + 1 < len(ms) else len(text)
+        secs.append((m.group(1).strip(), text[m.end():end]))
+    return header, secs
+
+
+def _set_template_version(header: str, version) -> str:
+    """Синхронизировать строку `<!-- template-version: N -->` в шапке с реестром (создать, если нет)."""
+    line = f"<!-- template-version: {version} -->"
+    new, n = re.subn(r"(?m)^<!-- template-version: \d+ -->[ \t]*$", line, header, count=1)
+    return new if n else line + "\n" + header
+
+
+def merge_owner_sections(existing: str, generated: str, reg: dict | None = None) -> str:
+    """Свежие МАШИННЫЕ разделы из `generated`, но РАЗДЕЛЫ ВЛАДЕЛЬЦА и шапку-преамбулу — из `existing`.
+
+    Инвариант перегенерации на релизе/вехе (см. `OWNER_SECTIONS`): машинные снимки (версия, здоровье,
+    статус, milestone, риски) не должны отставать, а заполненные человеком разделы (Название,
+    Аудитория и проблема, Owner и команда — grounded в VISION/AGENTS) генератор НЕ затирает на
+    «неизвестно». Маркер версии шаблона синхронизируется с реестром. Порядок и разметку разделов
+    берём из `existing` дословно; раздел, которого в `existing` ещё не было (структура генератора
+    расширилась), дописывается в конце из `generated`.
+    """
+    reg = reg or AR.load()
+    version = ((AR.artifact(reg, "product_passport") or {}).get("template") or {}).get("version", 1)
+    _, gen_secs = _split_sections(generated)
+    gen_body = dict(gen_secs)
+    header, ex_secs = _split_sections(existing)
+    out = [_set_template_version(header, version)]
+    seen = set()
+    for title, body in ex_secs:
+        seen.add(title)
+        # Владельческий раздел — дословно; машинный, известный генератору — свежий снимок; раздел,
+        # который генератор не знает, тоже оставляем как есть (не роняем чужое содержимое).
+        keep = title in OWNER_SECTIONS or title not in gen_body
+        out.append(f"## {title}{body if keep else gen_body[title]}")
+    for title, body in gen_secs:
+        if title not in seen and title not in OWNER_SECTIONS:
+            out.append(f"## {title}{body}")
+    return "".join(out)
 
 
 def is_filled(text: str, required_sections: list) -> tuple[bool, list]:

@@ -242,8 +242,11 @@ def integration_gate(expected_packages, package_results, shared_contracts=None, 
     if not isinstance(aggregate, dict):
         return {"proceed": True, "integration_sha_required": True, "open_pr": False, "errors": [],
                 "reason": "aggregate не РЕАЛЬНЫЙ GateReport (голый bool/None) -> integration-SHA есть, PR НЕ открывается"}
-    # aggregate evidence обязан относиться к integration-SHA
-    rev_ok = integration_sha is None or aggregate.get("tested_revision") == integration_sha
+    # aggregate evidence обязан относиться к integration-SHA. Легаси-путь без aggregate ушёл выше
+    # (bare bool/None), так что здесь aggregate — РЕАЛЬНЫЙ dict: отсутствующий integration_sha больше
+    # НЕ короткозамыкается в rev_ok=True (это была fail-open дыра — evidence могло быть привязано к
+    # не-интеграционной ревизии). Требуем и реальный SHA, и совпадение tested_revision.
+    rev_ok = integration_sha is not None and aggregate.get("tested_revision") == integration_sha
     agg_ok = aggregate.get("all_pass") is True and rev_ok
     if not rev_ok:
         return {"proceed": True, "integration_sha_required": True, "open_pr": False, "errors": [],

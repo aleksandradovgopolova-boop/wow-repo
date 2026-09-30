@@ -3,7 +3,7 @@
 ```text
 Intake (какая функция/период, есть ли данные)
 → data collection (источники — tracking plan и monitoring-spec функции)
-→ product health report (детерминированно: tools/product_health.py, не LLM)
+→ product health report (детерминированно: ai_ops_kit/intelligence/product_health.py, не LLM)
 → insight synthesis (что данные говорят; каждый вывод привязан к данным)
 → insight review (product-reviewer, read-only)
 → hypotheses for next discovery (experiment-designer)

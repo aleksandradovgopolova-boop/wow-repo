@@ -12,7 +12,7 @@
 4. Добавить тесты.
 5. Запустить доступные проверки.
 6. Подготовить TaskHandoff и evidence.
-7. **Записать срез эффекта**: `tools/run_report.py features/<id> --record` (автонакопление истории).
+7. **Записать срез эффекта**: `PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.run_report features/<id> --record` (автонакопление истории).
 
 ## Результат
 

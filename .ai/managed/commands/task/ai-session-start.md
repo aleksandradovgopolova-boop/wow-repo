@@ -26,7 +26,7 @@
 3. **Ярус 2 — читать ПО ТЕМЕ задачи** — из `context/*` (read_tier: 2) прочитать только
    релевантное текущей задаче: UI-задача → `product/DesignSystem.md`; данные/интеграции →
    `system/*`; бизнес-правила → `product/BusinessRules.md` и т.д. **Не** читать `context/*`
-   целиком: это раздувает стартовый контекст (см. `tools/context_cost.py` и бюджет
+   целиком: это раздувает стартовый контекст (см. `ai_ops_kit/context/context_cost.py` и бюджет
    `context_budget.session_start_tokens` в `.ai-ops.yaml`).
    **Ярус 3 — только по ЯВНОЙ необходимости** — крупные контракты и архивы
    (`read_tier: 3`, напр. `product/MetricCatalog.md`) читать лишь когда задача прямо их
@@ -34,11 +34,11 @@
 4. **Свежие решения** — последние эпизоды из `decisions/registry.yaml` (что уже решено и
    почему; необратимые решения).
 5. **Текущая ветка и WorkItem** — определить активную ветку; если ей соответствует
-   `features/<id>/workitem.yaml` — прочитать статус (`tools/workitem.py status`).
+   `features/<id>/workitem.yaml` — прочитать статус (`PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.workitem status`).
 6. **Параллельные работы** — прочитать реестр активных работ
-   (`tools/active_work.py list .ai/runtime/active-work.yaml`). Если текущая задача уже
+   (`PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.active_work list .ai/runtime/active-work.yaml`). Если текущая задача уже
    ясна — прогнать conflict forecast по её зонам
-   (`tools/active_work.py check … --areas …`): предупредить о пересечении с другими
+   (`PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.active_work check … --areas …`): предупредить о пересечении с другими
    сессиями ДО начала работы.
 7. **Незавершённые проверки** — заглянуть в `.ai/runtime/` текущего прогона: открытые
    гейты/evidence.

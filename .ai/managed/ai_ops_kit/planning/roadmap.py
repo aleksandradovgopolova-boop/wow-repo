@@ -71,6 +71,31 @@ def roadmap_path(child_root) -> Path:
     return Path(child_root) / roadmap_rel(child_root)
 
 
+# Уходящий путь направления из Product Operating Layer. Прежде health/drift читали ЕГО, а
+# planning/passport — корневой `ROADMAP.md`: один и тот же артефакт жил под двумя путями, и части
+# кита расходились в том, где направление (SR-2, свод реестров к одному источнику). Оставлен ТОЛЬКО
+# как fallback для дочек, установленных до свода: новые репозитории ведут направление в каноническом
+# `roadmap_rel`, а этот путь уходит через окно вывода.
+LEGACY_ROADMAP_REL = ".ai-ops/ROADMAP.md"
+
+
+def resolve_roadmap_path(child_root) -> Path:
+    """ЕДИНЫЙ резолвер направления для ВСЕХ читателей (planning, health, drift, passport).
+
+    Одно место решает «где направление», чтобы части кита не читали разные файлы и не расходились.
+    Порядок: канонический `roadmap_rel` (declared-or-root `ROADMAP.md`); если его нет, но лежит
+    уходящий `.ai-ops/ROADMAP.md` — читаем его (совместимость с дочками до свода путей); иначе
+    возвращаем канонический, чтобы «отсутствует» указывало на правильное место.
+    """
+    canonical = roadmap_path(child_root)
+    if canonical.is_file():
+        return canonical
+    legacy = Path(child_root) / LEGACY_ROADMAP_REL
+    if legacy.is_file():
+        return legacy
+    return canonical
+
+
 def parse(text: str) -> dict:
     """Разбор ROADMAP.md по горизонтам. -> {horizon: {"heading": str, "items": [str], "goals": [str]}}
 

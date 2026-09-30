@@ -7,14 +7,6 @@ security verdict validation, environment symptom detection.
 from __future__ import annotations
 
 import re
-import sys
-from pathlib import Path
-
-PKG = next((_p for _p in Path(__file__).resolve().parents if (_p / "VERSION").is_file()),
-            Path(__file__).resolve().parents[1])
-for _p in (PKG / "tools", PKG / "validation"):
-    if str(_p) not in sys.path:
-        sys.path.insert(0, str(_p))
 
 
 _ENV_SYMPTOMS = ("command not found", "not found", "no such file", "no module named",
@@ -50,6 +42,44 @@ def _env_proven_ok(checks):
 def _env_unqualified(checks):
     """Обратная форма для совместимости/наглядности: окружение НЕ квалифицировано доказательно."""
     return not _env_proven_ok(checks)
+
+
+def _env_skipped_checks(checks):
+    """Проверки, НЕ выполнившиеся ИЗ-ЗА среды (нет инструмента: exit 127 / `command not found` /
+    `no module named`), а НЕ из-за кода. -> [(name, короткая_причина)], в порядке имён.
+
+    Нужно для ЧЕСТНОГО вердикта: когда pytest прошёл, а ruff/typecheck недоступны, гейт остаётся
+    незакрытым — но это дефицит СРЕДЫ, не кода. Без явного названия «гейт не закрыт» читается как
+    «код плохой». Здесь среда называется средой."""
+    out = []
+    for name in sorted((checks or {}).keys()):
+        c = (checks or {}).get(name) or {}
+        if c.get("status") != "fail" or not _check_has_env_symptom(c):
+            continue
+        reason = "инструмент недоступен"
+        for run in (c.get("runs") or []):
+            if run.get("ok"):
+                continue
+            tail = [ln for ln in (run.get("output_tail") or "").strip().splitlines() if ln.strip()]
+            if run.get("exit_code") == 127 or tail:
+                reason = (tail[-1].strip()[:80] if tail else f"exit {run.get('exit_code')}")
+                break
+        out.append((name, reason))
+    return out
+
+
+def _env_degraded_note(checks):
+    """Человеко-читаемая строка вердикта про env-дефицит — или None, если таких проверок нет.
+
+    Формулировка честная в обе стороны: детерминированные проверки, которые ОТРАБОТАЛИ, зелены; эти
+    ворота ПРОПУЩЕНЫ (среда), а не провалены (код). Не выдаёт незакрытый гейт за дефект правки."""
+    skipped = _env_skipped_checks(checks)
+    if not skipped:
+        return None
+    named = "; ".join(f"{n} ({why})" for n, why in skipped)
+    return ("инструменты недоступны в среде прогона (дефицит среды, не дефект кода): " + named
+            + " — детерминированные проверки, которые отработали, зелены; эти ворота ПРОПУЩЕНЫ, "
+              "не провалены. Полный вердикт требует чистой среды (CI) или установки инструментов.")
 
 
 def _baseline_failure_summary(checks, tail=500):
@@ -138,6 +168,28 @@ def _diff_checks(baseline, after):
         elif b_status in real and a_status not in real:
             regressions.append(name)
     return regressions, fixed
+
+
+def _baseline_status_flips(baseline, after):
+    """Проверки, чей статус pass<->fail РАЗЛИЧАЕТСЯ между базой и правкой (#405).
+
+    Это ровно те проверки, из-за которых baseline-diff (и производный `_iv_baseline_exempt`)
+    способен ПЕРЕВЕРНУТЬ вердикт readiness между двумя прогонами: date-зависимый/flaky тест,
+    оказавшийся `pass` при захвате базы и `fail` после (или наоборот), молча снимает или выдаёт
+    освобождение implementation_verification. Функция НЕ судит, регресс это или починка — она
+    только НАЗЫВАЕТ нестабильную проверку, чтобы флип вердикта был атрибутирован, а не безмолвен.
+
+    Детерминированна на одном входе: -> отсортированный список имён проверок.
+    """
+    baseline, after = baseline or {}, after or {}
+    real = ("pass", "fail")
+    flips = []
+    for name, a in after.items():
+        b = baseline.get(name) or {}
+        b_status, a_status = b.get("status"), a.get("status")
+        if b_status in real and a_status in real and b_status != a_status:
+            flips.append(name)
+    return sorted(flips)
 
 
 def _evidence_ref_errors(dom, ev_items, reviewer_reads=None):
@@ -254,8 +306,8 @@ def _security_verdict_errors(res, revision, applicable_domains, vrr, reviewer_re
 #
 # Здесь стояло `sys.exit(selftest())`, а сама функция удалена в v3.30 вместе с переносом
 # селфтестов в pytest: любой запуск падал с `NameError`. Просто убрать блок — тоже неверно:
-# `tools/pipeline_failure.py` остаётся объявленной точкой входа, и молчаливый выход с кодом 0 — тот
-# самый дефект, который ловит `tests/unit/test_alias_entry_points.py` («ноль и есть симптом»).
+# модуль остаётся запускаемой точкой входа (`python3 -m ai_ops_kit.engine.pipeline_failure`), и молчаливый
+# выход с кодом 0 — тот самый дефект «ноль и есть симптом».
 # Поэтому вход делает осмысленную работу — печатает назначение модуля, как `invariants.py`.
 # Проверки модуля — в `tests/unit/`.
 if __name__ == "__main__":

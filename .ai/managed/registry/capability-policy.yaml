@@ -1,0 +1,79 @@
+# registry/capability-policy.yaml — настройки как capability policy (#644, вторая половина #632).
+#
+# Настройки задаются intent-level ВЫБОРОМ НАМЕРЕНИЯ по оси, а не набором внутренних флагов: человек
+# выбирает «что хочу», кит раскладывает это на внутренние флаги (resolver — ai_ops_kit/checks/
+# capability_policy.py). Семь осей.
+#
+# ЧЕСТНОСТЬ (инвариант деклараций, §26 «не плодить moat про запас»): у каждого ВЫБОРА свой
+# `status ∈ implemented | planned`. Механизм под ось есть в разной степени готовности; planned-выбор
+# НЕ выдаётся за готовый — резолвер по нему возвращает `planned`, а не фальшивый флаг. `default`
+# ОБЯЗАН быть implemented-выбором: нельзя по умолчанию включать непостроенный переключатель.
+# Проверяет validate_capability_policy.py (+ tests/contracts/test_capability_policy.py):
+# 7 осей, статусы валидны, default implemented, mechanism-файл резолвится.
+#
+# Достройка недостающих switch'ей (watch continuous, quality strict, design auto/external,
+# cost economy/quality-first) идёт ПО МЕРЕ ПОЛЯ, не впрок (границы issue #644).
+schema_version: 1
+kind: capability-policy
+
+axes:
+  communication:
+    resolves_to: communication.audience
+    default: product
+    mechanism: registry/communication-policy.yaml
+    choices:
+      product:   {status: implemented}
+      technical: {status: implemented}
+      debug:     {status: implemented}
+
+  autonomy:
+    resolves_to: autonomy.level
+    default: collaborative
+    mechanism: registry/decision-boundary.yaml
+    choices:
+      assisted:      {status: implemented}
+      collaborative: {status: implemented}
+      autonomous:    {status: implemented}
+
+  team:
+    resolves_to: team.coordination
+    default: solo
+    mechanism: ai_ops_kit/lifecycle/active_work.py
+    choices:
+      solo: {status: implemented}
+      team: {status: implemented}   # active_work.team_coordination.publish (opt-in)
+
+  watch:
+    resolves_to: watch.mode
+    default: nightly
+    mechanism: ai_ops_kit/intelligence/nightly_review.py
+    choices:
+      "off":      {status: implemented}
+      nightly:    {status: implemented}
+      continuous: {status: planned, note: "непрерывный обзор не построен; есть nightly"}
+
+  quality:
+    resolves_to: quality.level
+    default: standard
+    mechanism: quality/gates.yaml
+    choices:
+      standard: {status: implemented}
+      strict:   {status: planned, note: "глобального switch standard/strict нет; гейты есть, но intent-переключателя нет"}
+
+  design:
+    resolves_to: design.mode
+    default: storybook
+    mechanism: ai_ops_kit/ui/storybook_query.py
+    choices:
+      storybook: {status: implemented}   # storybook_query (in-process)
+      auto:      {status: planned, note: "автовыбор режима дизайна не проведён"}
+      external:  {status: planned, note: "внешний дизайн-контур не проведён"}
+
+  cost:
+    resolves_to: cost.tier
+    default: balanced
+    mechanism: registry/model-roles.yaml
+    choices:
+      balanced:      {status: implemented}   # статус-кво: cost-routing model-roles/cost_method/model_router
+      economy:       {status: planned, note: "intent-switch economy не проведён (маршрутизация есть, переключателя нет)"}
+      quality-first: {status: planned, note: "intent-switch quality-first не проведён"}

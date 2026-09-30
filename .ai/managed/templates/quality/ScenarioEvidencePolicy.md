@@ -35,7 +35,7 @@
 
 Пока **ADVISORY** (warn, не блок — `gate_executor` добавляет warning при отсутствии, `blocked` не
 меняется): не ломает живые зелёные пути, но делает пробел видимым в отчёте. Проверяет
-`validation/validate_scenario_evidence.py` (`check` + `selftest` с негативами).
+`ai_ops_kit/validation/validate_scenario_evidence.py` (`check` + `selftest` с негативами).
 
 ## Graduation (advisory → blocking)
 

@@ -69,7 +69,11 @@ def _now():
 
 
 def _git(root, *args):
-    """git без падения: нет git/не репозиторий -> None, и это «не знаю», а не «изменений нет»."""
+    """git без падения: нет git/не репозиторий -> None, и это «не знаю», а не «изменений нет».
+
+    RAW, а не gitio.git: отдаёт stdout ДОСЛОВНО — вызыватель `_changed_files` разбирает
+    `git status --porcelain`, где значима ведущая колонка XY, а gitio.git стянул бы её через .strip().
+    timeout= задан явно — тот же инвариант против зависаний, что держит gitio."""
     try:
         r = subprocess.run(["git", "-C", str(root), *args],
                            capture_output=True, text=True, timeout=20, check=False)

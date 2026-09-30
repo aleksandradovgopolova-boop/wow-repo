@@ -301,12 +301,18 @@ def build_bundle(child_root, commit_sha=None, changed_files=None) -> dict:
     # что владелец описал сам. Контракта нет — работает прежнее поведение, ничего не ужесточая:
     # требовать по контракту, которого не существует, значило бы придумать требование.
     required = list(REQUIRED_STATES) if affected_stories else []
+    # #452 wired: покрытие обязательных stories (экран×состояние) из контракта против СОБРАННОГО
+    # Storybook-индекса. Контракта нет -> complete=True (не ужесточаем: требовать по несуществующему
+    # контракту значило бы придумать требование — та же логика, что у state_coverage выше).
+    required_stories = {"required": [], "present": [], "missing": [], "complete": True}
     if affected_stories:
         _contract = _load_experience_contract(root)
         if _contract:
-            from ai_ops_kit.ui.experience_contract import generate_stories as _gen
+            from ai_ops_kit.ui.experience_contract import (
+                generate_stories as _gen, required_stories_coverage as _rsc)
             _from_contract = {str(st.get("state")) for st in _gen(_contract) if st.get("state")}
             required = sorted(set(required) | {s for s in _from_contract if s in ALL_STATES})
+            required_stories = _rsc(_contract, stories)
     missing = [st for st in required if not covered.get(st)]
     state_coverage = {"required": required, "states": covered, "missing": missing,
                       "complete": not missing}
@@ -329,6 +335,7 @@ def build_bundle(child_root, commit_sha=None, changed_files=None) -> dict:
             "affected_components": affected_components, "affected_stories": affected_stories,
             "component_catalog": component_catalog,
             "storybook": storybook, "state_coverage": state_coverage,
+            "required_stories": required_stories,
             "interaction_tests": interaction, "accessibility": a11y,
             "visual_regression": visual, "design_system": design_system}
 
@@ -367,7 +374,11 @@ def evidence_for_gate(bundle: dict, expected_sha=None) -> dict:
     # v3.1.9: покрытие состояний доказано ТОЛЬКО если есть затронутые истории. Пустой affected при
     # UI-правке = у изменённого компонента нет историй -> complete «вакуумно True» НЕ считается pass.
     has_affected = bool(bundle.get("affected_stories"))
-    ux_pass = has_affected and sc.get("complete") and inter.get("status") == "pass"
+    # #452 wired: контракт объявил обязательные stories, а в собранном Storybook их НЕТ -> опыт не
+    # доказан, ux_review не может быть pass и краснеет детерминированно (не молчит).
+    rs = bundle.get("required_stories") or {}
+    rs_missing = bool(rs.get("missing"))
+    ux_pass = has_affected and sc.get("complete") and inter.get("status") == "pass" and not rs_missing
     return {
         "visual_regression": {
             "deterministic_status": vis.get("status", "not_run"),
@@ -383,10 +394,12 @@ def evidence_for_gate(bundle: dict, expected_sha=None) -> dict:
             "basis": ["accessibility.blocking_violations"]},
         "ux_review": {
             "deterministic_status": ("pass" if ux_pass
-                                     else ("fail" if (inter.get("status") == "fail" or sc.get("missing"))
+                                     else ("fail" if (inter.get("status") == "fail"
+                                                      or sc.get("missing") or rs_missing)
                                            else "not_run")),
             "residual_review": True,              # flow/copy/tone — за ревьюером (hybrid)
-            "basis": ["affected_stories", "state_coverage.complete", "interaction_tests.status"]},
+            "basis": ["affected_stories", "state_coverage.complete", "interaction_tests.status",
+                      "required_stories.missing"]},
     }
 
 

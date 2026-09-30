@@ -71,7 +71,7 @@ jobs:
           for fid in $CHANGED; do
             [ -f "features/$fid/blueprint.yaml" ] || { echo "features/$fid: нет blueprint — пропуск"; continue; }
             echo "срез: features/$fid"
-            python3 "$RUNNER_TEMP"/ai-ops-kit/tools/run_report.py "features/$fid" --record || echo "features/$fid: run_report не смог — пропуск"
+            PYTHONPATH="$RUNNER_TEMP/ai-ops-kit" python3 -m ai_ops_kit.lifecycle.run_report "features/$fid" --record || echo "features/$fid: run_report не смог — пропуск"
           done
       - name: Закоммитить снимки
         run: |

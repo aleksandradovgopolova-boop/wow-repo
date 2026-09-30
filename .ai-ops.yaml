@@ -3,8 +3,8 @@ schema_version: 1
 kind: ai-ops-child-config
 parent:
   source: git+https://github.com/aleksandradovgopolova-boop/ai-ops-kit.git
-  installed_version: 3.39.0
-  allowed_version_range: ">=3.0.0 <4.0.0"
+  installed_version: 4.9.2
+  allowed_version_range: ">=4.0.0 <5.0.0"
   # РАННИЙ ПОЛУЧАТЕЛЬ, 01.09.2026. Стоял `stable` (дефолт от init) — и `qualification`-версии сюда
   # не приезжали, поэтому репозиторий застрял на 3.36.8. wow-repo — наш полигон, а не продуктовая
   # дочка заказчика: он осознанно берёт роль второго раннего получателя (рядом с ai-ops-cockpit) и

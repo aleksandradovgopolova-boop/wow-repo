@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "architecture-invariants",
+  "description": "Объявление архитектурных инвариантов дочки как ДАННЫХ (SR-9..13, срез 3 инженерного стандарта docs/engineering-standard-requirements.md). Форма взята с packages/layering.yaml, которым кит проверяет СЕБЯ: зоны глобами, запреты между зонами с причиной, поимённые исключения и реестр known_violations, который вправе только СОКРАЩАТЬСЯ. Дочка кладёт объявление в architecture-invariants.yaml в корне ИЛИ в .ai-ops.yaml -> standard.architecture (зона объявлена в ОДНОМ месте, SR-10). Читает и проверяет ai_ops_kit/planning/architecture_invariants.py; нарушение — находка с адресом файл:строка -> ребро (SR-11), а не факт. Инвариант поверх JS/TS-графа (regex, §5.2) рождается advisory и повышается до блокирующего только замером ложных на живом репозитории.",
+  "type": "object",
+  "required": ["zones", "rules"],
+  "properties": {
+    "kind": {"const": "architecture-invariants"},
+    "schema_version": {"type": "integer"},
+    "zones": {
+      "type": "object",
+      "description": "Зона -> список глоб-путей (SR-10). Глоб `**` пересекает сегменты, как у сигнальных путей контуров. zone_of() — единственный резолвер путь->зона.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string"}
+      },
+      "minProperties": 1
+    },
+    "aliases": {
+      "type": "object",
+      "description": "Алиасы путей сборщика (`@/` -> `src/`): объявляются, потому что regex-разбор их не выводит (§5.2). Без объявленного алиаса импорт по нему — пропуск, не ложная тревога.",
+      "additionalProperties": {"type": "string"}
+    },
+    "rules": {
+      "type": "array",
+      "description": "Запреты между зонами. Ребро from_zone -> to_zone запрещено, если правило это объявило (SR-9). У каждого правила ОБЯЗАТЕЛЬНА причина (reason).",
+      "items": {
+        "type": "object",
+        "required": ["id", "forbid", "reason"],
+        "properties": {
+          "id": {"type": "string"},
+          "forbid": {
+            "type": "object",
+            "description": "запрещённое ребро; хотя бы одно из from/to задано (открытая сторона = любая зона)",
+            "properties": {
+              "from": {"type": "string", "description": "зона-источник (пусто = любая)"},
+              "to": {"type": "string", "description": "зона-цель (пусто = любая)"}
+            },
+            "anyOf": [{"required": ["from"]}, {"required": ["to"]}],
+            "additionalProperties": false
+          },
+          "reason": {"type": "string", "minLength": 1,
+            "description": "почему ребро запрещено — причина у каждого правила (SR-9)"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "exceptions": {
+      "type": "array",
+      "description": "Поимённые исключения `file -> zone` или `zone -> zone` (SR-9): точечно снимают находку с известного места, не отключая правило целиком.",
+      "items": {"type": "string"}
+    },
+    "known_violations": {
+      "type": "array",
+      "description": "Замороженные рёбра `from_zone -> to_zone: причина` (SR-9). Реестр вправе только СОКРАЩАТЬСЯ: исчезнувшее из кода нарушение обязано быть снято отсюда, иначе список разрешает несуществующее.",
+      "items": {"type": "string"}
+    },
+    "strength": {"const": "advisory",
+      "description": "сила инварианта поверх JS/TS-графа (§5.2): advisory до замера ложных на живом репозитории"}
+  },
+  "additionalProperties": true
+}

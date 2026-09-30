@@ -42,3 +42,19 @@ vendor_neutral: true
 ## Compatibility risks
 ## Что сделано хорошо
 ```
+
+## Машиночитаемый вердикт (обязателен)
+
+Заключение ОБЯЗАНО заканчиваться разбираемым вердиктом — иначе гейт не закрывается ни на какой
+правке. Заверши ответ РОВНО ОДНИМ блоком `reviewer-result` (schemas/reviewer-result.schema.json):
+
+```json
+{"schema_version":1,"kind":"reviewer-result","gate":"code_review","status":"pass|warn|fail",
+ "checks":[{"id":"...","status":"pass|warn|fail","evidence":[{"file":"<изменённый файл>","lines":"<диапазон>"}]}],
+ "blockers":["..."]}
+```
+
+Правила: этот блок — ПОСЛЕДНИЙ в ответе; всё выше (цитаты кода, примеры со скобками) вердиктом не
+считается. `status=fail` и `status=warn` требуют непустой `blockers` с конкретикой (`warn` на
+блокирующем гейте тоже блокирует). У каждого `check` — хотя бы одна `evidence`-ссылка на файл из
+этого изменения.

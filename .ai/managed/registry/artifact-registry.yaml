@@ -38,13 +38,53 @@ autonomy_levels: [suggest, prepare, execute, require_approval]
 # ЧЕТЫРЕ СОСТОЯНИЯ, А НЕ ДВА. `is_file()` != «заполнен»: артефакт может лежать на диске и при этом
 # быть пустым (Invalid) или отставшим от кода (Outdated). Порядок — лестница ухудшения; валидация
 # (PR-5) обязана различать все четыре, а не сворачивать «есть/нет».
-# Отдельно от `artifact_states` модели контуров (то — про доверие к реконструкции, семь состояний);
-# здесь — про пригодность конкретного документа слоя, четыре состояния.
+# Отдельно от `artifact_states` модели контуров (то — про доверие к реконструкции, восемь состояний,
+# включая CONFLICTING — источники спорят); здесь — про пригодность конкретного документа слоя, четыре состояния.
 lifecycle_states:
   - {id: missing,  order: 0, means: "артефакта нет на объявленном пути"}
   - {id: invalid,  order: 1, means: "артефакт есть, но структура/обязательные поля нарушены"}
   - {id: outdated, order: 2, means: "артефакт валиден, но отстал: версия шаблона старее или данные устарели"}
   - {id: valid,    order: 3, means: "артефакт есть, структура полна, версия и данные актуальны"}
+
+# ── Ярусы обязательности артефактов (#609) ──────────────────────────────────────────────────────
+# ЯВНАЯ ТАКСОНОМИЯ ПОВЕРХ КОНТУРОВ. Контуры (product-operating-model) отвечают на вопрос «где живёт
+# правда», `gap_tiers` — «насколько срочно достроить пробел». Ни то, ни другое не отвечает на вопрос
+# «какой стандарт репозитория применим ЗДЕСЬ»: библиотеке не нужен runbook инцидента, а AI-native
+# репозиторию он нужен раньше, чем первый релиз. Ярусы — этот недостающий ответ: набор обязательных
+# артефактов зависит не от одного продукта, а от КЛАССА репозитория, и класс выбирает профиль дочки.
+# Замкнутый словарь: `tier` каждого элемента `standard_catalog` обязан быть отсюда (проверяется).
+# `applies_when` — условие, при котором ярус применим (always | production | ai_native).
+obligation_tiers:
+  - id: tier1
+    title: Base
+    applies_when: always
+    means: "обязателен всегда, независимо от зрелости и типа репозитория"
+  - id: tier2
+    title: Production
+    applies_when: production
+    means: "обязателен, когда продукт выходит в production (есть окружение prod или релизы наружу)"
+  - id: tier3
+    title: AI-native
+    applies_when: ai_native
+    means: "обязателен для AI-native репозитория: код пишут и/или исполняют AI-агенты"
+
+# ── Профили: какой набор ярусов применим к дочке (#609) ─────────────────────────────────────────
+# Профиль дочки (`.ai-ops.yaml -> standard.profile`; по умолчанию — `default_profile` из
+# registry/standard.yaml) ВЫБИРАЕТ применимые ярусы. Так один стандарт обслуживает разные классы
+# репозиториев без «трёх стандартов по три версии»: состав ярусов общий, различается только их
+# применимость. `ai-product` (default) — AI-native продукт в production, все три яруса. Остальные
+# профили предобъявлены ДАННЫМИ и активируются, когда дочка их выберет, а не вводятся кодом.
+# `includes_tiers` каждого профиля обязан ссылаться на существующие ярусы (проверяется).
+profiles:
+  ai-product:
+    means: "AI-native продукт в production — применимы все три яруса"
+    includes_tiers: [tier1, tier2, tier3]
+  service:
+    means: "production-сервис без AI-разработчиков в контуре — базовый и production-ярусы"
+    includes_tiers: [tier1, tier2]
+  library:
+    means: "библиотека или инструмент без выката в production — только базовый ярус"
+    includes_tiers: [tier1]
 
 # ── Артефакты Product Operating Layer ───────────────────────────────────────────────────────────
 # Поля каждого артефакта (PR-4):
@@ -62,6 +102,10 @@ lifecycle_states:
 #   update                    — правила обновления: mode (auto|ai_assisted|human), regenerate, on;
 #   source                    — источник ДАННЫХ для наполнения (откуда кит берёт содержимое);
 #   ai_actions                — что AI Ops вправе делать с артефактом и с какой автономией (PR-19).
+#   ai_check                  — ЧТО ПРОВЕРЯЕТ AI-АГЕНТ по этому артефакту (#609): контракт между
+#                               репозиторием и AI-разработчиком рядом с required_sections (SR-5).
+#                               Не «есть ли файл» (это lifecycle), а какое утверждение о продукте
+#                               артефакт обязан держать истинным. Обязателен у required-артефактов.
 artifacts:
   - id: product_passport
     title: Product Passport
@@ -87,6 +131,10 @@ artifacts:
         - Текущий milestone и прогресс
         - Риски и зависимости
     validation: [sections_present, non_empty_sections, template_version_current, freshness]
+    ai_check: >-
+      Факты паспорта не отстали от репозитория: версия и последний релиз совпадают с VERSION и
+      CHANGELOG; текущий milestone и прогресс сходятся с delivery-планом; перечисленные риски ещё
+      открыты, а не закрыты давно.
     update: {mode: ai_assisted, regenerate: true, on: [release, milestone_change, weekly_audit]}
     source: [repo_state, delivery_plan, product_health, git_history]
     ai_actions:
@@ -94,27 +142,12 @@ artifacts:
       - {action: update,   autonomy: execute}        # актуализация фактов (версия, прогресс)
       - {action: migrate,  autonomy: require_approval}
 
-  - id: roadmap
-    title: Roadmap
-    purpose: >-
-      Направления и ожидаемые результаты (Now/Next/Later), а не дубль backlog. ФОРМУ создаёт этот
-      слой; ведение (декомпозиция, связь с milestones/backlog) — забота ленты roadmap.
-    required: true
-    kind: document
-    format: markdown
-    path: ".ai-ops/ROADMAP.md"
-    template: {path: "templates/product-layer/ROADMAP.md", version: 1}
-    owner_role: product
-    source_contour: product_strategy
-    structure:
-      required_sections: [Now, Next, Later]
-    validation: [sections_present, template_version_current, roadmap_contract]
-    update: {mode: ai_assisted, regenerate: false, on: [replanning, insight]}
-    source: [planning_plan, strategy]
-    ai_actions:
-      - {action: generate, autonomy: prepare}
-      - {action: update,   autonomy: prepare}        # roadmap — территория стратегии: не execute молча
-      - {action: migrate,  autonomy: require_approval}
+  # roadmap СНЯТ из этого слоя (SR-2, свод к одному источнику). Направление продукта — обязательный
+  # артефакт контура product_strategy в registry/product-operating-model.yaml по каноническому пути
+  # `ROADMAP.md` в корне (declared-or-root). Прежде он дублировался здесь как `.ai-ops/ROADMAP.md` с
+  # другим шаблоном/горизонтами/валидаторами — две правды об одном направлении (validate_own_medicine
+  # прямо называл это дублем). Читатели теперь идут через roadmap.resolve_roadmap_path; уходящий путь
+  # мигрируется в корень при установке/обновлении (_migrate_legacy_roadmap).
 
   - id: delivery
     title: Delivery
@@ -131,6 +164,9 @@ artifacts:
     structure:
       required_sections: [Текущий milestone, Ближайшие релизы, Блокеры, Delivery health]
     validation: [sections_present, template_version_current, freshness]
+    ai_check: >-
+      Витрина поставки сходится с фактом: заявленный milestone совпадает с планом; перечисленные
+      блокеры ещё не закрыты; delivery health выведен из состояния CI и релизов, а не вписан вручную.
     update: {mode: ai_assisted, regenerate: true, on: [pr_merged, release, weekly_audit]}
     source: [delivery_plan, ci_state, release_history]
     ai_actions:
@@ -153,6 +189,9 @@ artifacts:
     structure:
       required_fields: [schema_version, autonomy, protected_paths, approvals]
     validation: [fields_present, autonomy_values_known, template_version_current]
+    ai_check: >-
+      Границы автономии в POLICY.yaml не шире, чем разрешает .ai-ops.yaml; каждый protected_path
+      указывает на существующий путь; объявленные уровни автономии — из известного словаря.
     update: {mode: human, regenerate: false, on: []}
     source: [human, ai_ops_yaml]
     ai_actions:
@@ -172,8 +211,77 @@ artifacts:
     owner_role: engineer
     source_contour: engineering_quality_security
     validation: [directory_present]
+    ai_check: >-
+      Зеркало шаблонов не отстало от кита: версии файлов в .ai-ops/templates/ совпадают с версиями
+      в реестре — иначе Outdated не отличить от Valid и миграция разложит не ту версию.
     update: {mode: auto, regenerate: true, on: [kit_update]}
     source: [kit_templates]
     ai_actions:
       - {action: generate, autonomy: execute}        # раскладка шаблонов — механическая, из кита
       - {action: update,   autonomy: execute}
+
+# ── Каталог стандарта репозитория по ярусам (#609) ──────────────────────────────────────────────
+# ТАКСОНОМИЯ ОБЯЗАТЕЛЬНОСТИ КАК ДАННЫЕ, А НЕ ПЯТОЕ ДЕРЕВО. Каталог не заводит собственных копий
+# артефактов (SR-2): где артефакт уже описан реестром, элемент каталога ССЫЛАЕТСЯ на него и лишь
+# приписывает ярус и AI-check; где артефакта в реестрах ещё нет — объявляет канонический путь.
+# Большинство Tier-2/3 у кита УЖЕ есть шаблонами (ADR, Runbook, SecurityReview, TestPlan,
+# AIFeatureEvalPlan, GoldenDataset, AgentTemplate) — здесь они поднимаются до ЯРУСНО обязательных,
+# а не заводятся с нуля.
+#
+# Локатор элемента — РОВНО ОДИН из трёх (проверяется):
+#   ref     — id артефакта в `artifacts` этого реестра (форма и секции живут там);
+#   contour — id контура в product-operating-model.yaml (правда артефакта — в его source_of_truth);
+#   path    — канонический путь в дочернем репозитории для ещё не зарегистрированного артефакта.
+# Присутствие и секции ярусно-обязательного артефакта проверяются ТЕМ ЖЕ механизмом, что и у цели
+# ссылки: элемент с `ref`/`contour` наследует проверки artifact-registry/контура, элемент с `path`
+# объявляет ожидание стандарта. `ai_check` обязателен у каждого элемента (#609, п. 2).
+standard_catalog:
+  # ── Tier 1 — всегда ──
+  - {id: readme,        name: README,        tier: tier1, path: README.md,
+     ai_check: "Есть назначение продукта и способ запуска; это не пустой плейсхолдер шаблона."}
+  - {id: architecture,  name: ARCHITECTURE,  tier: tier1, contour: system_architecture,
+     ai_check: "ARCHITECTURE.md отражает фактический состав системы: перечисленные компоненты существуют в дереве, разделы Components/Data Flows не отстали от кода."}
+  - {id: security,      name: SECURITY,      tier: tier1, path: SECURITY.md,
+     ai_check: "SECURITY.md описывает АРХИТЕКТУРУ безопасности продукта: объявлены границы доверия/модель угроз, аутентификация, авторизация и классификация данных (для AI-продукта — и защиты вокруг модели). Разделы отражают реальные защиты в коде, а не общие слова; неприменимое помечено явно. Проверять по СМЫСЛУ и по связанным файлам (документам, на которые SECURITY.md ссылается), а не по точным заголовкам."}
+  - {id: security_policy, name: SECURITY POLICY, tier: tier1, path: security/security-policy.md,
+     ai_check: "Внешняя политика раскрытия: объявлены канал приёма уязвимостей и поддерживаемые версии; путь раскрытия ведёт к живому адресату. Засчитывать содержимое под любыми разумными заголовками и в файле, на который ссылается корневой SECURITY.md, — по смыслу, не по точным названиям разделов."}
+  - {id: contributing,  name: CONTRIBUTING,  tier: tier1, path: CONTRIBUTING.md,
+     ai_check: "Описан процесс изменения: как запустить проверки и что обязано пройти до merge — команды совпадают с реальными в репозитории."}
+  - {id: codeowners,    name: CODEOWNERS,    tier: tier1, path: CODEOWNERS,
+     ai_check: "Каждый шаблон путей соответствует существующим путям; на защищённые зоны назначены владельцы."}
+  - {id: ci,            name: CI,            tier: tier1, contour: delivery_operations,
+     ai_check: "Конвейер запускает объявленные обязательные проверки; обязательная джоба качества присутствует и не отключена."}
+  - {id: testing,       name: TESTING,       tier: tier1, contour: engineering_quality_security,
+     ai_check: "Описана тестовая стратегия и команда запуска; заявленный способ прогонов существует в репозитории."}
+  - {id: adr,           name: ADR,           tier: tier1, contour: research_decisions,
+     ai_check: "Значимые решения записаны как ADR; решение, видимое в истории кода, имеет соответствующую запись."}
+  # ── Tier 2 — для production ──
+  - {id: operations,    name: OPERATIONS,    tier: tier2, path: docs/OPERATIONS.md,
+     ai_check: "Описаны эксплуатационные процедуры; названные сервисы и окружения существуют."}
+  - {id: threat_model,  name: THREAT_MODEL,  tier: tier2, path: security/THREAT_MODEL.md,
+     ai_check: "Перечислены активы, границы доверия и угрозы; для каждой угрозы есть мера или явно принятый риск."}
+  - {id: deployment,    name: DEPLOYMENT,    tier: tier2, path: docs/DEPLOYMENT.md,
+     ai_check: "Шаги выката соответствуют CI и деплой-конфигам; окружения совпадают с объявленными."}
+  - {id: runbooks,      name: RUNBOOKS,      tier: tier2, contour: delivery_operations,
+     ai_check: "Для типовых инцидентов есть исполнимый runbook; шаги ссылаются на существующие команды и дашборды."}
+  - {id: changelog,     name: CHANGELOG,     tier: tier2, contour: delivery_operations,
+     ai_check: "Есть раздел под текущую версию; версия совпадает с VERSION и последним релизом."}
+  - {id: dr,            name: DR,            tier: tier2, path: docs/DR.md,
+     ai_check: "Объявлены RPO/RTO и процедура восстановления; названные резервные копии и хранилища существуют."}
+  - {id: observability, name: OBSERVABILITY, tier: tier2, path: docs/OBSERVABILITY.md,
+     ai_check: "Объявлены метрики, логи и алерты; названные сигналы соответствуют трекингу в коде."}
+  # ── Tier 3 — для AI-native ──
+  - {id: agents,        name: AGENTS.md,     tier: tier3, path: AGENTS.md,
+     ai_check: "Инструкции агенту соответствуют репозиторию: команды проверок, карта каталогов и инварианты не устарели."}
+  - {id: ai_security,   name: AI SECURITY,   tier: tier3, path: security/AI_SECURITY.md,
+     ai_check: "Описаны риски prompt-injection и утечки данных внешним AI-провайдерам; объявлены запреты и меры."}
+  - {id: evals,         name: EVALS,         tier: tier3, path: evaluations/,
+     ai_check: "У AI-функций есть eval-набор с золотыми данными; заявленные кейсы существуют и запускаются."}
+  - {id: agent_policies, name: agent/tool/data policies, tier: tier3, ref: policy,
+     ai_check: "Объявлены разрешённые агенты, инструменты и классы данных; фактические интеграции не выходят за политику."}
+  - {id: prompt_model_versioning, name: prompt/model versioning, tier: tier3, path: registry/prompts.yaml,
+     ai_check: "Промпты и версии моделей зафиксированы и версионируются; исполняемая версия совпадает с объявленной."}
+  - {id: ai_incident_runbooks, name: AI incident runbooks, tier: tier3, path: docs/runbooks/ai/,
+     ai_check: "Для AI-инцидентов (галлюцинация, утечка, деградация качества) есть runbook с шагами остановки и отката."}
+  - {id: issue_template, name: ISSUE TEMPLATE, tier: tier3, path: .github/ISSUE_TEMPLATE/,
+     ai_check: "Есть шаблон issue с заголовком «<slug>: <исход>» и секциями Что / Зачем / Проверяемо / Границы; задачи оформлены единообразно, чтобы ориентироваться в них как в истории коммитов. Культура, не блокирующий гейт."}

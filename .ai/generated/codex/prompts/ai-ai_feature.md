@@ -1,7 +1,7 @@
 # ai-ai_feature — AI-возможность продукта — качество, скорость и стоимость ИИ-части в целевом сценарии, eval-driven.
 
 Сгенерировано из registry/workflows.yaml — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Проводит задачу по workflow **AI_FEATURE** (native / минимум

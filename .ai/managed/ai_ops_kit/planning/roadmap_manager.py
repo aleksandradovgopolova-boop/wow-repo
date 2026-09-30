@@ -55,6 +55,27 @@ _RANK = {SHIPPED: -1, NOW: 0, NEXT: 1, LATER: 2}
 # «Дальше» и «Later»; для сверки горизонта оба — это «не сейчас», ранг 2.
 _AUTHORED_TO_RANK = {"now": 0, "next_outcome": 1, "later_major": 2, "someday": 2}
 
+# Человеческие имена горизонтов. Для не-разработчика слаги now/next/later ничего не значат, поэтому
+# в тексте для человека горизонт называется словами. Слаг остаётся техническим ключом в данных
+# (as_dict, --json), словами он подаётся только в печати.
+HORIZON_HUMAN = {
+    NOW: "в работе сейчас",
+    NEXT: "запланировано следующим",
+    LATER: "пока не взято в работу",
+    SHIPPED: "уже достигнуто",
+}
+
+
+def humanize_outcomes(reached: int, total: int) -> str:
+    """«исходы 2/3» человеческим языком: сколько результатов направления уже достигнуто.
+
+    Голый счётчик «0/2» не говорит человеку, что считается. Разворачиваем в предложение, а при
+    отсутствии заданных результатов честно так и пишем, а не показываем «0/0».
+    """
+    if not total:
+        return "результаты пока не заданы"
+    return f"достигнуто {reached} из {total} результатов"
+
 
 @dataclass
 class Outcome:
@@ -215,8 +236,9 @@ def deviations(roadmap: Roadmap, authored) -> list:
         if d.horizon == SHIPPED:
             if a_rank is not None and a_rank >= 0:
                 out.append(
-                    f"'{d.goal_id}': все исходы достигнуты ({d.reached}/{d.total}), "
-                    f"но направление всё ещё стоит в roadmap как незавершённое"
+                    f"«{d.goal_id}»: все результаты уже достигнуты "
+                    f"({d.reached} из {d.total}), но в roadmap оно всё ещё показано "
+                    f"как незавершённое"
                 )
             continue
         if a_rank is None:
@@ -225,15 +247,15 @@ def deviations(roadmap: Roadmap, authored) -> list:
             continue
         if d_rank < a_rank:
             out.append(
-                f"'{d.goal_id}': по плану горизонт '{d.horizon}' "
-                f"(исходов {d.reached}/{d.total}, активной работы {d.active_work}), "
-                f"а в roadmap стоит позже — направление опережает свой горизонт"
+                f"«{d.goal_id}»: по плану это направление {HORIZON_HUMAN[d.horizon]} "
+                f"({humanize_outcomes(d.reached, d.total)}, активных работ {d.active_work}), "
+                f"а в roadmap оно показано позже — опережает своё место в плане"
             )
         elif d_rank > a_rank:
             out.append(
-                f"'{d.goal_id}': в roadmap обещан горизонт ближе, "
-                f"а по плану '{d.horizon}' (активной работы {d.active_work}) — "
-                f"обещание раньше, чем движется работа"
+                f"«{d.goal_id}»: в roadmap оно обещано раньше, а по плану пока "
+                f"{HORIZON_HUMAN[d.horizon]} (активных работ {d.active_work}) — "
+                f"обещано раньше, чем под него движется работа"
             )
     return out
 
@@ -309,8 +331,8 @@ def _print_build(rm: Roadmap) -> None:
             print("  (пусто)")
         for d in block:
             tail = f" — {d.note}" if d.note else ""
-            print(f"  • {d.goal_id}: исходы {d.reached}/{d.total}, "
-                  f"работа активна/ждёт {d.active_work}/{d.blocked_work}{tail}")
+            print(f"  • {d.goal_id}: {humanize_outcomes(d.reached, d.total)}; "
+                  f"работа: в деле {d.active_work}, ждёт очереди {d.blocked_work}{tail}")
 
 
 def main(argv=None):

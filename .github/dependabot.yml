@@ -1,0 +1,41 @@
+# dependabot.yml — supply-chain дочки: автообновление зависимостей (OpenSSF Scorecard: Dependency-Update-Tool).
+# Ставится `ai-ops init` в .github/dependabot.yml (или скопируйте вручную). Опт-аут: удалить этот файл.
+#
+# ЧТО ЭТО ДАЁТ. Dependabot сам открывает PR'ы, когда у зависимости выходит новая версия или закрывается
+# уязвимость. Это НЕ блокирующая проверка: PR'ы приходят на ревью, ничего не мержится само. Начинать
+# советуем именно с неё — она видима, обратима и не роняет ни один прогон.
+#
+# ГРАНИЦА С ИНВАРИАНТОМ КИТА. «Никаких новых рантайм-зависимостей у инструментов» относится к КОДУ кита
+# (stdlib + pyyaml). Здесь речь о ФОРДЖ-КОНФИГУРАЦИИ вашего репозитория — GitHub-нативный механизм,
+# который кит только предлагает как шаблон, а состав экосистем вы правите под свой стек.
+#
+# github-actions НУЖЕН ОСОБО. Он обновляет версии действий в ваших workflow'ах. Если вы закрепите
+# действия на commit SHA (OpenSSF Pinned-Dependencies — см. SUPPLY-CHAIN.md), Dependabot будет двигать
+# именно SHA, оставляя в PR комментарий с человекочитаемой версией. Так «закреплено на SHA» перестаёт
+# означать «навсегда устарело».
+version: 2
+updates:
+  # Действия в .github/workflows/** — самый важный блок для supply-chain: их пины и двигает Dependabot.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "github-actions"]
+    commit-message:
+      prefix: "chore(ci)"
+
+  # Python-зависимости. Уберите или замените блок, если ваш стек другой (npm, gomod, cargo, maven, …):
+  # Dependabot поддерживает многие экосистемы — состав под ваш проект решаете вы.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python"]
+    commit-message:
+      prefix: "chore(deps)"
+    # Группируем патч/минор в один PR, чтобы не плодить шум; мажор приходит отдельным PR на ревью.
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
