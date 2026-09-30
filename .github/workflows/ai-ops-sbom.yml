@@ -65,7 +65,7 @@ jobs:
       # ← ЗАМЕНИТЕ subject-path на реальный артефакт вашего релиза (например, dist/*.whl).
       - name: Build provenance для артефактов релиза
         if: hashFiles('dist/**') != ''
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: "dist/**"
 
