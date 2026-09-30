@@ -45,7 +45,7 @@ jobs:
       # Python ставим ТОЛЬКО на раннерах GitHub. На своей машине `setup-python` уходит в tool cache
       # по пути раннеров GitHub, которого там нет, а `pip install` в системный python Ubuntu 24.04
       # запрещён (PEP 668). На своём раннере предустановку не молчим, а ПРОВЕРЯЕМ (см. ai-ops-validate).
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: ${{ !vars.CI_RUNNER_LINUX }}
         with: {python-version: "3.12"}
       - run: pip install pyyaml

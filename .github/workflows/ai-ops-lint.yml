@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Python ставим ТОЛЬКО на раннерах GitHub (на своей машине setup-python уходит в чужой tool cache).
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: ${{ !vars.CI_RUNNER_LINUX }}
         with: {python-version: "3.12"}
       - run: pip install pyyaml
