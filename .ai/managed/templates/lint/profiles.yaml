@@ -1,0 +1,102 @@
+# templates/lint/profiles.yaml — шаблоны фрагментов профиля стиля кода (#1183).
+#
+# Каждый ключ — текст одного файла, который `./ai-ops lint-profile --apply` кладёт в дочку;
+# `{{KEY}}` подставляет ai_ops_kit/checks/lint_profile*.py (не string.Template: в шаблонах
+# живут `$` регулярок и JS). Один файл вместо пяти: бюджет поставки считает файлы.
+schema_version: 1
+kind: ai-ops-lint-templates
+templates:
+  eslint: |
+    // eslint.ai-ops.config.mjs — профиль стиля кода от AI Ops Kit. СОБРАН МАШИНОЙ: руками не правьте,
+    // пересоберите командой `./ai-ops lint-profile --apply` (ручная правка пропадёт при сборке).
+    //
+    // СЛОЙ ПОВЕРХ ВАШЕГО КОНФИГА, А НЕ ЗАМЕНА. {{BASE_NOTE}}
+    // Правила профиля зарегистрированы под своим именем `ai-ops/…` — это те же встроенные правила
+    // ESLint (и typescript-eslint, если он у вас стоит), новых пакетов профиль не требует. Своё имя
+    // нужно затем, что ESLint не складывает настройки одного правила из двух мест, а заменяет: ваш
+    // `no-restricted-imports` и граница слоёв профиля иначе затирали бы друг друга. Отключить правило
+    // профиля можно у себя явной строкой — например "ai-ops/id-match": "off".
+    //
+    // ЧТО ЗАМОРОЖЕНО. Расхождения, которые уже есть в коде, записаны в базовую линию
+    // `.ai/project/lint/eslint-suppressions.json` — родной механизм ESLint (счётчик на файл и правило).
+    // Новое расхождение сверх счётчика краснеет; исправленное сокращает линию командой
+    // `./ai-ops lint-profile check --apply` (под ней `--prune-suppressions`). Вырасти линия не может:
+    // рост — это и есть новое расхождение.
+    //
+    // Запуск руками:
+    //   npx eslint -c eslint.ai-ops.config.mjs --suppressions-location .ai/project/lint/eslint-suppressions.json .
+    import { builtinRules } from "eslint/use-at-your-own-risk";
+    {{IMPORTS}}
+    const aiOps = {
+      meta: { name: "ai-ops-lint-profile" },
+      rules: {
+        "id-match": builtinRules.get("id-match"),
+        "no-restricted-imports": builtinRules.get("no-restricted-imports"),{{EXTRA_RULES}}
+      },
+    };
+
+    // Объявление профиля — данные: собраны из `.ai-ops.yaml` (standard.identifiers) и объявленной
+    // архитектуры (architecture-invariants.yaml или .ai-ops.yaml -> standard.architecture).
+    export const profile = {{PROFILE}}.map((c) => ({ ...c, plugins: { "ai-ops": aiOps } }));
+
+    export default [...{{BASE_EXPR}}, ...profile];
+  ruff: |
+    # .ai/project/lint/ruff.toml — профиль стиля Python от AI Ops Kit. СОБРАН МАШИНОЙ: руками не
+    # правьте, пересоберите `./ai-ops lint-profile --apply`.
+    #
+    # СЛОЙ ПОВЕРХ ВАШЕГО КОНФИГА: профиль только ДОБАВЛЯЕТ правила (`extend-select`), ваш набор и
+    # исключения остаются в силе.
+    # {{BASE_NOTE}}
+    #
+    # ЧТО ЗАМОРОЖЕНО. Уже существующие находки профиля записаны в `.ai/project/lint/baseline.json`
+    # (счётчик на файл и правило). Новая находка сверх счётчика краснеет в `./ai-ops lint-profile check`;
+    # исправленная сокращает линию той же командой с `--apply`. Вырасти линия не может.
+    #
+    # Запуск руками: ruff check --config .ai/project/lint/ruff.toml .
+    {{EXTEND}}
+    # Поставка кита (.ai/managed/) — не ваш код: её стиль держит сам кит.
+    extend-exclude = [".ai"]
+
+    [lint]
+    extend-select = {{SELECT}}
+  importlinter: |
+    # .ai/project/lint/importlinter.ini — границы слоёв Python от AI Ops Kit. СОБРАН МАШИНОЙ из
+    # объявленной архитектуры (architecture-invariants.yaml или .ai-ops.yaml -> standard.architecture):
+    # руками не правьте, меняйте объявление и пересоберите `./ai-ops lint-profile --apply`.
+    #
+    # Уже существующие нарушения заморожены в `.ai/project/lint/baseline.json`; новое краснеет.
+    # Запуск руками: lint-imports --config .ai/project/lint/importlinter.ini
+    [importlinter]
+    root_packages =
+    {{ROOTS}}
+    {{CONTRACTS}}
+  golangci: |
+    # .ai/project/lint/golangci.yml — профиль стиля Go от AI Ops Kit (golangci-lint v2). СОБРАН МАШИНОЙ:
+    # руками не правьте, пересоберите `./ai-ops lint-profile --apply`.
+    #
+    # СЛОЙ РЯДОМ С ВАШИМ КОНФИГОМ, А НЕ ЗАМЕНА: этот файл запускает ТОЛЬКО правила профиля
+    # (`default: none`), ваш .golangci.yml продолжает работать как прежде.
+    #
+    # ЧТО ЗАМОРОЖЕНО. Уже существующие находки записаны в `.ai/project/lint/baseline.json`; новая
+    # краснеет в `./ai-ops lint-profile check`, исправленная сокращает линию той же командой с `--apply`.
+    #
+    # Запуск руками: golangci-lint run -c .ai/project/lint/golangci.yml ./...
+    version: "2"
+    linters:
+      default: none
+      enable:
+    {{ENABLE}}
+      settings:
+        revive:
+          rules:
+            - name: var-naming
+    {{DEPGUARD}}
+  ast_grep: |
+    # .ai/project/lint/ast-grep-identifiers.yml — имена только латиницей для языков, у которых в ките
+    # нет своего профиля. СОБРАН МАШИНОЙ: руками не правьте, пересоберите `./ai-ops lint-profile --apply`.
+    #
+    # Правило ловит в ИМЕНИ любой символ вне ASCII (кириллица — частный случай). Строки и комментарии
+    # не трогаются: это данные и пояснения, а не имена.
+    # Уже существующие находки заморожены в `.ai/project/lint/baseline.json`; новая краснеет.
+    # Запуск руками: ast-grep scan --rule .ai/project/lint/ast-grep-identifiers.yml
+    {{RULES}}

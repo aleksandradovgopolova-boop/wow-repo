@@ -36,6 +36,7 @@ from pathlib import Path
 import yaml
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
+from ai_ops_kit.shared.gitio import git   # noqa: E402
 from ai_ops_kit.context import context_retrieval as cr   # noqa: E402
 from ai_ops_kit.context import repo_graph                # noqa: E402
 from ai_ops_kit.context import semantic_lite             # noqa: E402
@@ -53,9 +54,10 @@ def _hidden(rel: str) -> bool:
 
 
 def _git(root, *args):
+    # Единый вход к git с таймаутом (см. shared/gitio). OSError (нет git/битый репозиторий)
+    # по-прежнему глушим в «git unavailable»; таймаут gitio сам вернёт как rc!=0.
     try:
-        p = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=20)
-        return p.returncode, p.stdout.strip(), p.stderr.strip()
+        return git(root, *args, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return 1, "", "git unavailable"
 

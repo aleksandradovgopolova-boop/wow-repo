@@ -47,7 +47,6 @@ _CODE_REF = re.compile(r"`([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:py|js|ts|tsx|jsx))`"
 
 # где лежат стороны пар, которые поставят соседние ленты
 PASSPORT_REL = ".ai-ops/PRODUCT_PASSPORT.md"
-ROADMAP_REL = ".ai-ops/ROADMAP.md"
 
 
 @dataclass
@@ -128,7 +127,10 @@ def _pending_pair(pair: str, sides: str) -> DriftResult:
 
 
 def roadmap_vs_backlog(root: Path) -> DriftResult:
-    if not (root / ROADMAP_REL).is_file():
+    # Единый резолвер направления (SR-2): путь решает одно место, общее с planning/health/passport,
+    # а не захардкоженный `.ai-ops/ROADMAP.md`.
+    from ai_ops_kit.planning import roadmap as _roadmap
+    if not _roadmap.resolve_roadmap_path(root).is_file():
         return _pending_pair("roadmap↔backlog", "roadmap — лента 2, backlog — лента 3")
     # roadmap появился (лента 2), но компаратор с backlog (лента 3) ещё не построен — честно unknown
     return DriftResult("roadmap↔backlog", UNKNOWN,

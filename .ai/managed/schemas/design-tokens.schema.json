@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-ops.dev/schemas/design-tokens.schema.json",
+  "title": "UI/UX design tokens file",
+  "description": "Файл дизайн-токенов (машиночитаемое зеркало Части II UI_CONSTITUTION.md, волна 2). Каждый токен имеет стабильный id-путь (spacing.4, color.text.primary). Согласованность с Конституцией проверяет scripts/validate-registries.py.",
+  "type": "object",
+  "required": [
+    "$id"
+  ],
+  "properties": {
+    "$id": {
+      "type": "string",
+      "description": "имя файла-домена токенов (spacing, colors, ...)"
+    },
+    "note": {
+      "type": "string"
+    },
+    "constitution_section": {
+      "type": "integer"
+    }
+  },
+  "definitions": {
+    "token": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(\\.[A-Za-z0-9]+)*$"
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

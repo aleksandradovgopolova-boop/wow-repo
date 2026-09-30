@@ -1,0 +1,117 @@
+# rules.yaml — машинный реестр Продуктовой конституции
+# Генерируется из PRODUCT_CONSTITUTION.md (scripts/build-rules.py). Не редактировать вручную.
+# level/category/severity/gate/enforced_in — явные поля источника, не эвристика.
+# validation.automated = (gate ∉ {none, meta}); manual = не automated или severity high/critical.
+version: "1.0"
+rules_total: 10
+rules:
+  - id: PROD-001
+    title: "У фичи объявлена метрика успеха"
+    part: I
+    level: MUST
+    category: principle
+    severity: high
+    gate: "discovery_completeness"
+    enforced_in: child
+    validation:
+      automated: true
+      manual: true
+  - id: PROD-002
+    title: "Названы ДЛЯ КОГО и какая задача (JTBD)"
+    part: I
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: PROD-003
+    title: "Предпочитаем обратимые ставки"
+    part: I
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: PROD-004
+    title: "Честность продуктовых заявок"
+    part: I
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: PROD-005
+    title: "Не добавляем того, что не сможем убрать"
+    part: I
+    level: SHOULD
+    category: principle
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: PROD-006
+    title: "Фича задекларирована в реестре фич"
+    part: II
+    level: MUST
+    category: principle
+    severity: high
+    gate: "feature_coverage"
+    enforced_in: child
+    validation:
+      automated: true
+      manual: true
+  - id: PROD-007
+    title: "Discovery до кода для нетривиальной фичи"
+    part: II
+    level: SHOULD
+    category: principle
+    severity: medium
+    gate: "discovery_completeness"
+    enforced_in: child
+    validation:
+      automated: true
+      manual: false
+  - id: PROD-008
+    title: "Scope честен — объявлены non-goals"
+    part: II
+    level: SHOULD
+    category: principle
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: PROD-009
+    title: "Решение несёт альтернативы и обоснование"
+    part: II
+    level: SHOULD
+    category: principle
+    severity: medium
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true
+  - id: PROD-010
+    title: "После выпуска измеряем исход"
+    part: II
+    level: MUST
+    category: principle
+    severity: high
+    gate: "none"
+    enforced_in: none
+    validation:
+      automated: false
+      manual: true

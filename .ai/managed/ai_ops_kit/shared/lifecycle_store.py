@@ -22,7 +22,7 @@ from pathlib import Path
 import yaml
 
 
-def _durable(path, data, serialize, parse, require_keys, keep_backup):
+def _durable(path: str | Path, data: dict, serialize: Callable, parse: Callable, require_keys: tuple, keep_backup: bool) -> dict:
     """v3.0.15 (LifecycleStore v1.1, finding аудита P1): АТОМАРНАЯ + FAIL-CLOSED запись с валидацией
     ПРОСПЕКТИВНОГО документа ДО os.replace (иначе программная ошибка могла заменить валидный файл
     невалидным, а потом вернуть ok=False — старый источник истины уже потерян). Порядок:
@@ -84,7 +84,7 @@ def _durable(path, data, serialize, parse, require_keys, keep_backup):
                 pass
 
 
-def durable_write(path, data, require_keys=(), keep_backup=False):
+def durable_write(path: str | Path, data: dict, require_keys: tuple = (), keep_backup: bool = False) -> dict:
     """АТОМАРНАЯ + FAIL-CLOSED запись YAML-артефакта (LifecycleStore v1.1: validate-before-replace,
     unique temp, cleanup, opt-in backup). -> {ok} | {ok: False, error}. Вызывающий ОБЯЗАН остановиться
     при ok=False (нет источника истины)."""
@@ -92,7 +92,7 @@ def durable_write(path, data, require_keys=(), keep_backup=False):
                     yaml.safe_load, require_keys, keep_backup)
 
 
-def durable_write_json(path, data, require_keys=(), keep_backup=False):
+def durable_write_json(path: str | Path, data: dict, require_keys: tuple = (), keep_backup: bool = False) -> dict:
     """v3.0.14/v3.0.15 (finding аудита #2/P1): durable JSON-запись (run-report/controller-report) с той же
     гарантией validate-before-replace, что durable_write. -> {ok} | {ok: False, error}."""
     import json as _json
@@ -101,16 +101,17 @@ def durable_write_json(path, data, require_keys=(), keep_backup=False):
                     _json.loads, require_keys, keep_backup)
 
 
-def _event_checksum(payload_str):
+def _event_checksum(payload_str: str) -> str:
     import hashlib
     return hashlib.sha256(payload_str.encode("utf-8")).hexdigest()[:16]
 
 
 import contextlib
+from typing import Callable, Iterator
 
 
 @contextlib.contextmanager
-def _journal_lock(journal_path):
+def _journal_lock(journal_path: Path) -> Iterator[None]:
     """v3.1 (trace v0.2): межпроцессная блокировка вокруг append — конкурентные писатели не получают
     одинаковые seq/prev_checksum (устранён v0.1-разрыв). best-effort: без fcntl (Windows) — no-op."""
     lock_path = Path(str(journal_path) + ".lock")
@@ -132,10 +133,11 @@ def _journal_lock(journal_path):
         f.close()
 
 
-def _journal_scan(journal_path):
+def _journal_scan(journal_path: Path) -> tuple:
     """Чистое сканирование JSONL с проверкой checksum-цепочки. -> (events, ok, broken_at|None, reason|None)."""
     import json as _json
-    events, prev = [], None
+    events: list = []
+    prev = None
     for i, ln in enumerate(l for l in Path(journal_path).read_text(encoding="utf-8").splitlines() if l.strip()):
         try:
             rec = _json.loads(ln)
@@ -168,11 +170,11 @@ def _journal_scan(journal_path):
 # двенадцатый вызов приедет без проверки. Здесь регистрируется САМ факт утраты, у источника; отчёт
 # потом сливает накопленное (`drain_bookkeeping_losses`). Образец взят в этом же репозитории:
 # `orchestrator_usage.drain_call_stats` — та же форма «накопили у источника, слили в отчёт».
-_BOOKKEEPING_LOSSES = []
+_BOOKKEEPING_LOSSES: list[dict] = []
 _BOOKKEEPING_LIMIT = 50
 
 
-def _note_journal_loss(journal_path, event, error):
+def _note_journal_loss(journal_path: Path, event: dict, error: str) -> dict:
     """Зарегистрировать утрату записи журнала и вернуть тот же контракт {ok: False, error}.
 
     Идентифицирующие поля события переносятся в запись НАМЕРЕННО: «потеряна запись журнала» без
@@ -206,7 +208,7 @@ def _note_journal_loss(journal_path, event, error):
     return {"ok": False, "error": error}
 
 
-def drain_bookkeeping_losses():
+def drain_bookkeeping_losses() -> list:
     """Забрать и ОБНУЛИТЬ накопленные утраты служебных записей. -> list[dict].
 
     Обнуление — часть контракта: одна утрата обязана попасть в ОДИН отчёт, иначе прогон в том же
@@ -217,7 +219,7 @@ def drain_bookkeeping_losses():
     return out
 
 
-def note_bookkeeping_error(rep, what, exc):
+def note_bookkeeping_error(rep: dict, what: str, exc: BaseException) -> None:
     """Записать в отчёт УТРАТУ служебной записи, не роняя прогон. -> None (правит rep на месте).
 
     Единый писатель для всех, кому нужно сказать «запись потеряна, прогон продолжается»:
@@ -231,7 +233,7 @@ def note_bookkeeping_error(rep, what, exc):
                                 if isinstance(exc, BaseException) else str(exc)[:200]})
 
 
-def merge_bookkeeping_losses(rep):
+def merge_bookkeeping_losses(rep: dict) -> int:
     """Слить накопленные утраты записей журнала в отчёт. -> число слитых.
 
     Зовётся на КАЖДОМ пути возврата отчёта наружу: пропущенный путь возвращает ровно то состояние,
@@ -245,7 +247,7 @@ def merge_bookkeeping_losses(rep):
     return len(losses)
 
 
-def journal_append(journal_path, event):
+def journal_append(journal_path: Path, event: dict) -> dict:
     """v3.0.14/v3.1 (trace v0.2): append-only JSONL event journal с checksum-цепочкой + head-marker.
     Каждое событие: seq, prev_checksum, собственный checksum. v0.2 ЗАКРЫВАЕТ ограничения v0.1:
       * межпроцессный ЛОК вокруг всей read-verify-append (нет гонки seq/prev_checksum);
@@ -284,7 +286,7 @@ def journal_append(journal_path, event):
         return _note_journal_loss(journal_path, event, f"{type(e).__name__}: {e}")
 
 
-def journal_read(journal_path):
+def journal_read(journal_path: Path) -> dict:
     """Прочитать event journal + ПРОВЕРИТЬ целостность: checksum-цепочка И сверка с head-marker (v0.2 —
     ловит усечение последней целой строки, которое v0.1 пропускал). -> {events, ok, broken_at?, reason?}."""
     import json as _json
@@ -328,7 +330,7 @@ _TRACE_REQUIRED = {
 }
 
 
-def validate_trace(events):
+def validate_trace(events: list) -> list:
     """v3.1 (trace v0.2): проверить, что события трейса несут ОБЯЗАТЕЛЬНЫЕ id своей связи (Run/Attempt/
     Package/Gate/Delivery) — чтобы трейс был реконструируем. Неизвестный kind допустим (требует лишь
     run_id). -> список ошибок (пусто = валиден)."""
@@ -347,7 +349,7 @@ def validate_trace(events):
     return errs
 
 
-def _fsync_dir(directory):
+def _fsync_dir(directory: Path) -> None:
     """fsync каталога — иначе питание сразу после os.replace могло потерять сам rename, хотя контент
     уже на диске. best-effort: не все ФС/платформы дают fsync каталога (Windows/некоторые сетевые ФС)."""
     try:
@@ -362,7 +364,7 @@ def _fsync_dir(directory):
         os.close(dfd)
 
 
-def load_guarded(path, required_keys=(), kind=None):
+def load_guarded(path: str | Path, required_keys: tuple = (), kind: str | None = None) -> dict:
     """FAIL-CLOSED чтение. Различает три состояния (а не «пусто -> дефолт»):
       * absent  — файла нет (легитимно fresh);
       * corrupt — есть, но НЕЧИТАЕМ/пуст/не dict/не тот kind/нет обязательных ключей (оборванная запись,
@@ -392,7 +394,7 @@ def load_guarded(path, required_keys=(), kind=None):
     return {"state": "ok", "data": data}
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="lifecycle_store.py")
     ap.add_argument("--selftest", action="store_true")
     ap.parse_args(argv)          # разбор ради проверки аргументов; результат не нужен

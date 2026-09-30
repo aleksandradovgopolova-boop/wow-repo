@@ -6,7 +6,7 @@ schema_version: 1
 kind: ai-ops-manifest
 
 ai_ops:
-  package_version: 3.39.0
+  package_version: 4.9.2
   schema_version: 1
   minimum_runtime_contract: 1
 
@@ -32,7 +32,6 @@ registries:
   capability_index: registry/capability-index.yaml
   routing: config/model-routing.yaml          # расширяется на Ф6
   entities: registry/entities.yaml            # Knowledge Graph: типы и связи (v2.0)
-  skills_catalog: registry/skills-catalog.yaml # v2.12: внешние скиллы (declared), ставятся на уровне child
 
 workflows:
   mvp: [QUICK, ENGINEERING, PRODUCT, RESEARCH]
@@ -97,12 +96,18 @@ quality_gates:
   count_pinned_by_claims: [gate-count, mvp-blocking-count]   # knowledge/claims.yaml (тип count)
 
 agents:
-  registered: 51             # 38 (v1.0) + 7 ревьюеров (v1.4) + 3 research-pack (v2.1) + 3 AI Product Pack (v2.4)
-  core_target: 12            # целевой минимальный CORE после merge (Ф2-3)
+  registered: 42             # #679: 47 − 5 исполнителей + 1 data-engineer = 43; − development-orchestrator = 42.
+                             #  Ранее: 51 − 4 растворённых источника (repository-explorer,
+                             #  system-analyst, business-analyst, prompt-reviewer).
+  core_target: 12            # целевой минимальный CORE после остальных merge (Ф2-3)
   core_target_note: >
-    В реестре 16 файлов с target_layer=core: 10 сохраняемых + 3 новых (create) + 3 merge-источника
-    (repository-explorer, system-analyst, business-analyst). После merge источники схлопываются
-    в context-builder и requirements-writer, давая итоговые 12 core-агентов.
+    Растворены 4 merge/adapt-источника (Тир-2 #679): repository-explorer -> context-builder;
+    system-analyst и business-analyst -> requirements-writer; prompt-reviewer -> plan-reviewer.
+    Свёрнуты preset-исполнители: fullstack-developer поглотил backend+frontend; новый data-engineer
+    поглотил database+integration+migration. Растворён development-orchestrator в
+    implementation-integrator (инертен — оркестрацию стадий делает generic-orchestrator движка).
+    user-researcher оставлен как отдельный агент (решение владельца 09.09.2026). Дальнейшее движение
+    к core_target=12 — за счёт загрузки по presets, а не удаления агентов.
 
 providers:
   status: integrated          # Ф6: реестры + декларативный routing + self-test
@@ -112,7 +117,7 @@ providers:
   tools: registry/tools.yaml
   capability_index: registry/capability-index.yaml
   routing_policy: registry/routing-policy.yaml
-  routing_engine: ai_ops_kit/engine/ai_route.py
+  routing_engine: ai_ops_kit/shared/ai_route.py
   capability_selftest: ai_ops_kit/validation/ai_capability_selftest.py
   first_class: [anthropic, openai]
   live_executor_providers: [anthropic, openai, openai-compatible]  # v2.39: openai-compatible (DeepSeek/local) через OPENAI_COMPATIBLE_BASE_URL+ключ
@@ -137,24 +142,24 @@ execution_engine:
   phase0_done: [ai-start-task-drift, security-in-engineering, ai_red_team-blocking, audit-log-redaction, per-workitem-state]
   run_plan:
     schema: schemas/run-plan.schema.json
-    tool: tools/run_plan.py                 # plan (base_workflow + tracks -> gates) / validate
+    tool: ai_ops_kit/engine/run_plan.py                 # plan (base_workflow + tracks -> gates) / validate
     tracks_registry: registry/tracks.yaml   # трек -> signal -> gates (Design/Analytics/Docs by Default)
     child_path: "features/<id>/run-plan.yaml"
   phase1_done: [run-plan-tracks, structured-reviewer-outputs, per-gate-evidence-schema]
   reviewer_result_schema: schemas/reviewer-result.schema.json   # источник истины вместо regex
   reviewer_result_validator: ai_ops_kit/validation/validate_reviewer_result.py
   project_detector:                         # v2.41 (P0#5 аудита): stack-aware evidence
-    tool: tools/project_detector.py          # detect -> RepositoryProfile (стек, команды build/lint/test)
+    tool: ai_ops_kit/shared/project_detector.py          # detect -> RepositoryProfile (стек, команды build/lint/test)
     schema: schemas/repository-profile.schema.json
     child_path: ".ai/project/RepositoryProfile.yaml"
     note: "детерминированно из манифестов; неопределённое -> undetermined; status draft (человек подтверждает)"
   evidence_collector:                       # v2.44: детерминированный stack-aware сбор evidence
-    tool: tools/evidence_collector.py        # RepositoryProfile -> прогон команд через Broker -> gate evidence
+    tool: ai_ops_kit/gates/evidence_collector.py        # RepositoryProfile -> прогон команд через Broker -> gate evidence
     feeds_gate: implementation_verification  # по evidence_schema (build/lint/typecheck/tests)
     invariant: "вердикт = exit_code реальной команды (не LLM); в provided только реально прошедшие проверки"
     honesty: "команда не определена (None) -> not_run, флаг НЕ выдаётся; деструктивное отклоняет Policy"
   run_controller:                           # v2.34 Фаза 2 срез 1: единый вход задачи
-    tool: tools/ai_ops_run.py                # route -> RunPlan -> WorkItem -> active-work -> exec -> report
+    tool: ai_ops_kit/engine/ai_ops_run.py                # route -> RunPlan -> WorkItem -> active-work -> exec -> report
     command: commands/task/ai-run.md
     execution: {claude-code: planned+scaffold (рантайм исполняет), generic-orchestrator: orchestrated}
   dogfood_findings:                         # v2.35: из обкатки 2.34 в ии-среде
@@ -166,18 +171,18 @@ execution_engine:
     - "#4 unknown task_type -> тяжёлый ENGINEERING для мелкой правки -> ЗАКРЫТО v2.52: size xs/small + low risk -> QUICK (ai_route)"
     - "#6 released без доказательства поставки (blueprint/reality дрейф) -> ЗАКРЫТО v2.52: validate_feature_blueprint требует хотя бы один done-артефакт при status=released"
   tool_broker:                              # v2.36 Фаза 2 срез 2: контролируемое исполнение
-    tool: tools/tool_broker.py               # Policy(level/write_scope/protected) + execute + Evidence
+    tool: ai_ops_kit/engine/tool_broker.py               # Policy(level/write_scope/protected) + execute + Evidence
     rule: rules/ai/ToolBrokerPolicy.md
     invariant: "execute() всегда через decide(); модель предлагает, политика решает"
     status: component-ready                  # компонент готов+тестирован; петля с живой моделью — след. шаг
     protected_paths_source: "MERGE: config/protected-paths.yaml (дефолт) + child .ai-ops.yaml protected_paths (v2.37)"
   execution_budget:                         # v2.38: жёсткий потолок прогона
-    tool: tools/budget.py                    # Budget.from_dict(RunPlan.execution_budget); charge_call перед вызовом
+    tool: ai_ops_kit/shared/budget.py                    # Budget.from_dict(RunPlan.execution_budget); charge_call перед вызовом
     enforced: [max_model_calls]              # детерминировано
     declared_only: [max_cost, max_duration]  # нужен учёт токенов/времени на рантайме
-    wired_into: tools/orchestrator.py        # превышение -> blocked + budget_exceeded
+    wired_into: ai_ops_kit/providers/orchestrator.py        # превышение -> blocked + budget_exceeded
   tool_loop:                                # v2.42 Фаза 2 срез 3: tool-calling петля (механика)
-    tool: tools/tool_loop.py                 # proposer -> Policy решает (Broker) -> Evidence -> обратно в контекст
+    tool: ai_ops_kit/engine/tool_loop.py                 # proposer -> Policy решает (Broker) -> Evidence -> обратно в контекст
     stop_conditions: [done, budget, max_steps]
     invariant: "запрещённое не исполняется, а возвращается модели как DENIED (само-коррекция)"
     status: component-ready                  # МЕХАНИКА детерминирована и тестируется offline (mock-предложитель)
@@ -215,8 +220,8 @@ effect_metrics:
   # v2.30: автонакопление истории эффекта — чтобы baseline закрывался сам.
   status: integrated
   history_dir: ".ai/project/report-history"
-  recorder: tools/run_report.py                      # --record: срез в историю
-  metrics: tools/effect_metrics.py                   # baseline_ready при 3 фичах x >=3 срезов
+  recorder: ai_ops_kit/lifecycle/run_report.py                      # --record: срез в историю
+  metrics: ai_ops_kit/intelligence/effect_metrics.py                   # baseline_ready при 3 фичах x >=3 срезов
   auto_record:
     in_session: [commands/task/ai-plan-task.md, commands/task/ai-implement.md, commands/task/ai-verify.md, commands/task/ai-finish-task.md]  # процедуры, где рантайм пишет срез
     ci_net: templates/ci/ai-ops-record.yml           # на push фиксирует срез по затронутым фичам
@@ -247,12 +252,12 @@ unified_product_path:
   # v2.17: единый продуктовый путь — одна сущность связывает два прежде раздельных
   # контура (прогон workflow и Feature Blueprint) одним id и одним статусом.
   status: integrated
-  entity: tools/workitem.py                    # start (routing->blueprint->run) + status
+  entity: ai_ops_kit/lifecycle/workitem.py                    # start (routing->blueprint->run) + status
   schema: schemas/workitem.schema.json
   entry_point: commands/task/ai-start-task.md  # единственная точка входа -> создаёт WorkItem
   record: "features/<id>/workitem.yaml"        # в child; один id = id фичи
   single_status: [done, blocked, needs_human_decision, needs_more_evidence]
-  status_source: [tools/gate_executor.py, tools/run_report.py]   # детерминированный вывод
+  status_source: [ai_ops_kit/gates/gate_executor.py, ai_ops_kit/lifecycle/run_report.py]   # детерминированный вывод
 
 decision_intelligence:
   # v2.10: Decision Intelligence (идея team-os-toolkit init-team-decisions).
@@ -291,7 +296,7 @@ session_orchestration:
     writes: context/**                       # черновики; источник истины подтверждает человек
   active_work_registry:
     schema: schemas/active-work.schema.json
-    tool: tools/active_work.py               # register/list/check(conflict forecast)/finish
+    tool: ai_ops_kit/lifecycle/active_work.py               # register/list/check(conflict forecast)/finish
     child_path: ".ai/runtime/active-work.yaml"   # видна всем параллельным сессиям
     conflict_kinds: [area, contract, dependency, cycle]   # v2.23: явные связи задач + типы конфликта
   living_status:                              # v2.27: единая точка правды о «сейчас»
@@ -324,12 +329,18 @@ session_orchestration:
       invariant: >
         продуктовые факты не выдумываются: цели, боли и «следующий результат» из кода не выводятся,
         и на их месте стоит пометка владельцу, а не правдоподобный текст
-    required_repo_artifacts:                          # обязательные артефакты контура планирования
+    required_repo_artifacts:                          # обязательные артефакты продуктового репозитория
       - ROADMAP.md                                    # направление: четыре горизонта
       - planning/plan.yaml                            # delivery plan: kind: delivery-plan
+      - ARCHITECTURE.md                               # единый источник правды об архитектуре (SR-7)
+      - SECURITY.md                                   # архитектура безопасности: как продукт защищён внутри (SEC-008)
+      - security/security-policy.md                   # внешний путь раскрытия уязвимостей (SEC-001 конституции)
     templates:
       roadmap: templates/planning/ROADMAP.md
       plan: templates/planning/plan.yaml
+      architecture: templates/system/ARCHITECTURE.md
+      security: templates/system/SECURITY.md
+      security_policy: templates/system/security-policy.md
     # v3.35.2 (тир 3): РЕПОЗИТОРИЙ ВПРАВЕ ОПИСАТЬ СЕБЯ. Пути артефактов были жёсткими, и монорепо,
     # где продукт живёт в `apps/web/`, не мог описать себя вовсе. Дополнить сигналы кита было можно,
     # снять — нельзя (`**/entities/**` в Feature-Sliced Design: 6 ложных находок из 9).
@@ -357,7 +368,7 @@ session_orchestration:
     invariant: "перевод меняет язык, а не факты: degraded остаётся degraded на всех уровнях"
   concurrency_preflight:                      # v2.28: коллизии параллельной работы до старта
     gate: concurrency_preflight                # quality/gates.yaml, stage intake, advisory
-    tool: tools/concurrency_preflight.py       # base_changes (git) + open PRs (gh -> REST) + active-work
+    tool: ai_ops_kit/gates/concurrency_preflight.py       # base_changes (git) + open PRs (gh -> REST) + active-work
     rule: rules/engineering/ConcurrencyAwareness.md
     open_prs_sources: [gh-cli, github-rest]     # v2.43: REST-фоллбэк (urllib), токен GITHUB_TOKEN/GH_TOKEN из env
     note: >
@@ -367,20 +378,20 @@ session_orchestration:
   session_bootstrap:
     command: commands/task/ai-session-start.md   # runtime-исполняемая: читает, не меняет
   worktree_per_workitem:                      # v2.24: изоляция файлов на WorkItem
-    tool: tools/worktree.py                    # add/list/remove — реальная git-операция
+    tool: ai_ops_kit/engine/worktree.py                    # add/list/remove — реальная git-операция
     command: commands/task/ai-worktree.md
     child_dir: ".ai/worktrees/<id>"            # держать в .gitignore
     note: >
       Инструмент создаёт worktree реально (тест на temp-репо); «сессия автоматически берёт
       свой worktree» — шаг рантайма через ai-start-task, не гарантия кита.
   merge_to_memory:                            # v2.25: обновление памяти при мердже WorkItem
-    tool: tools/merge_memory.py                # record -> memory/lessons-learned/<дата>-<id>.md
+    tool: ai_ops_kit/lifecycle/merge_memory.py                # record -> memory/lessons-learned/<дата>-<id>.md
     flow: commands/task/ai-finish-task.md      # шаг «обновить repository memory»
     note: >
       Инструмент записи и flow — в ките; «авто» на реальном событии мерджа (хук CI/рантайма)
       — шаг рантайма, не гарантия кита.
   conversational_install:                     # v2.26: «подключи AI Ops» -> установка+онбординг
-    generated_command: ai-ops-init             # tools/generate_runtime.py -> .claude/commands/
+    generated_command: ai-ops-init             # ai_ops_kit/shared/generate_runtime.py -> .claude/commands/
     installer: installer/ai_ops.py             # реальную установку делает CLI (silent update запрещён)
     onboarding_skill: skills/repo-onboarding/SKILL.md
     note: >
@@ -425,6 +436,26 @@ update_policy:
     # ссылается на файлы (agents/core/*.md, rules/**, templates/**), которых в child нет.
     - "agents/**/*.md"
     - "rules/**/*"
+    # Карта `constitution_id -> правило` UI/UX-Конституции. Чек-листы дизайн-гейтов
+    # (`rules/design/*.yaml`) несут `constitution_id`, и ревьюеры (`agents/quality/*-reviewer.md`)
+    # ОБЯЗАНЫ цитировать этот ID в находке. Оба набора уже едут в дочку — а карта, по которой ID
+    # раскрывается в текст правила, оставалась в ките: в дочке цитата ссылалась на ID, который
+    # дочке нечем резолвить («висячий» ID через границу поставки). Едет только машинный реестр
+    # (~19 КБ), не 147-КБ `UI_CONSTITUTION.md`: дочке нужна карта резолва, а не исходный текст.
+    # Пакетно принадлежит `ai-ops-quality` (там же `rules/design/**`), поэтому карта едет ровно
+    # туда, куда едут цитирующие её чек-листы, и не грузит дочку без дизайн-гейтов.
+    - "standards/uiux/rules.yaml"
+    # Архитектурная конституция (#825): в дочку едет ТОЛЬКО компактный машинный реестр статей
+    # `rules.yaml` (карта `constitution_id -> статья` с полями gate/enforced_in для гейтов и резолва),
+    # как uiux. Тяжёлый источник ARCHITECTURE_CONSTITUTION.md и оперативный слой arch.rules.md —
+    # родительские (footprint-бюджет доставки узкий). Пакетно принадлежит `ai-ops-quality`.
+    - "standards/architecture/rules.yaml"
+    # Продуктовая конституция (PROD-*): в дочку едет ТОЛЬКО компактный машинный реестр статей
+    # `rules.yaml` (карта `constitution_id -> статья` с полями gate/enforced_in) — тот же путь-паттерн,
+    # что uiux/architecture. Тяжёлый источник PRODUCT_CONSTITUTION.md и оперативный слой
+    # product.rules.md — родительские (не едут). Пакетно принадлежит `ai-ops-quality` (там же живут
+    # проверки конформанса `constitution_conformance`, которые резолвят PROD-* в дочке).
+    - "standards/product/rules.yaml"
     - "templates/**/*"
     - "context/**/*"
     - "workflows/*.md"
@@ -436,11 +467,9 @@ update_policy:
     # файлы, принадлежащие ai-ops-execution/quality/..., ставятся при выборе этих пакетов;
     # без выбора packages (дефолт) — ставится всё. Полный self-contained доказан
     # validate_standalone_engine.py (subprocess из .ai/managed без parent на path).
-    # v3.30: код движка переехал в пакеты ai_ops_kit/*; tools/**/*.py остались тонкими
-    # алиасами обратной совместимости, поэтому в поставку нужны ОБА — иначе алиас в
-    # child-репозитории ссылается на несуществующий пакет.
+    # v4.0: плоский слой `tools/` СНЯТ. Движок и все точки входа — пакетные (`ai_ops_kit/**`),
+    # запуск скриптом идёт `python3 -m ai_ops_kit.<pkg>.<mod>` с PYTHONPATH=.ai/managed.
     - "ai_ops_kit/**/*.py"
-    - "tools/**/*.py"
     - "config/**/*"
     - "qualification/**/*"
     - "containers/*"

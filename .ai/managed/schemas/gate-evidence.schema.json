@@ -8,6 +8,7 @@
     "type": "object",
     "properties": {
       "status": { "type": "string", "enum": ["pass", "warn", "fail"] },
+      "source": { "type": "string", "enum": ["deterministic", "ai_judgment", "human"], "description": "Веха 4.2 (#588): честный источник этого доказательства — deterministic (тест/lint/CI/schema, воспроизводимо), ai_judgment (заключение AI-судьи или самозаявление писателя — advisory-мнение) или human. Авторитетный источник gate_executor выводит из вида гейта (evidence_source); это поле — самодекларация producer'а (напр. deterministic-коллектор помечает свой прогон deterministic), необязательное и не переопределяет вывод из структуры гейта." },
       "provided": { "type": "array", "items": { "type": "string" }, "description": "ключи required_evidence, подтверждённые для этого гейта" },
       "checks": {
         "type": "array",

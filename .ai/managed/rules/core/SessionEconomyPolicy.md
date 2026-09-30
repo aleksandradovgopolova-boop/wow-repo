@@ -112,8 +112,8 @@ Enforcement тот же — **advise**: сильный совет с точно�
 После каждого завершённого WorkItem кит проверяет: результат достигнут → проверки пройдены →
 состояние сохранено → handoff создан → решения записаны → commit/PR зафиксированы → usage посчитан —
 и **обязательно** выдаёт SessionRecommendation с точной командой. Без этого задача не считается
-полностью закрытой с точки зрения AI Ops, даже если код готов. См. `tools/session_guardrails.py`
-(`completion_ritual`) и снимок `tools/session_telemetry.py`.
+полностью закрытой с точки зрения AI Ops, даже если код готов. См. `ai_ops_kit/engops/session_guardrails.py`
+(`completion_ritual`) и снимок `ai_ops_kit/engops/session_telemetry.py`.
 
 Пункт «handoff создан» **выводится из наличия файла**, а не объявляется (17.08.2026). До этого он был
 значением параметра по умолчанию: `ai-ops session` на живой сессии печатал «handoff_created» при
@@ -125,7 +125,7 @@ Enforcement тот же — **advise**: сильный совет с точно�
 ## SessionHandoff — состояние для СЛЕДУЮЩЕЙ сессии
 
 `SESSION COMPLETE` с разделами Goal / Done / Decisions / Changed / Tests / Open / Next / Risks.
-Механизм — `tools/session_handoff.py`; файл — `.ai/runtime/sessions/<session_id>/handoff.yaml`.
+Механизм — `ai_ops_kit/engops/session_handoff.py`; файл — `.ai/runtime/sessions/<session_id>/handoff.yaml`.
 
 Разделы названы **именами `RunHandoff`** (`engine/run_handoff.py`) дословно, потому что тот уже несёт
 те же семь полей: дублировать словарь значило бы развести две правды об одном. Разный только предмет:
@@ -152,9 +152,9 @@ Enforcement тот же — **advise**: сильный совет с точно�
 ## Инструменты
 
 - `ai-ops session` — снимок телеметрии + рекомендация по текущей границе.
-- `tools/session_telemetry.py` — машинный снимок (объём/стоимость/контекст, честный usage_status).
-- `tools/session_guardrails.py` — политика/классификация/рекомендация/ритуал.
-- `tools/session_handoff.py` — SESSION COMPLETE: сборка, запись, поиск последнего handoff сессии.
+- `ai_ops_kit/engops/session_telemetry.py` — машинный снимок (объём/стоимость/контекст, честный usage_status).
+- `ai_ops_kit/engops/session_guardrails.py` — политика/классификация/рекомендация/ритуал.
+- `ai_ops_kit/engops/session_handoff.py` — SESSION COMPLETE: сборка, запись, поиск последнего handoff сессии.
 
 ## Чего этот документ НЕ решает
 

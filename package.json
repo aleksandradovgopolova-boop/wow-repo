@@ -2,7 +2,7 @@
   "name": "wow-repo",
   "type": "module",
   "version": "0.1.0",
-  "description": "WowRepo — an AI-powered engine that turns repositories into beautiful, living websites.",
+  "description": "WowRepo \u2014 an AI-powered engine that turns repositories into beautiful, living websites.",
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
@@ -16,7 +16,8 @@
     "schema:export": "tsx scripts/export-schema.ts",
     "validate:plan": "tsx scripts/validate-plan.ts",
     "generate:plan": "tsx scripts/generate-plan.ts",
-    "validate": "npm run check && npm run lint"
+    "validate": "npm run check && npm run lint",
+    "verify:iteration": "python3 scripts/verify-iteration.py"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",

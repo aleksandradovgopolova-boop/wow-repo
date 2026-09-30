@@ -4,7 +4,7 @@
 
 Изолировать работу сессии в собственном git worktree (свой рабочий каталог + своя
 ветка), чтобы параллельные сессии не мешали друг другу и не работали в main. Реальная
-git-операция — выполняет `tools/worktree.py`.
+git-операция — выполняет `ai_ops_kit/engine/worktree.py`.
 
 ## Когда
 
@@ -14,13 +14,13 @@ git-операция — выполняет `tools/worktree.py`.
 ## Порядок выполнения
 
 1. Создать worktree под WorkItem:
-   `tools/worktree.py add <id> --branch <feature/…>` — появится каталог
+   `PYTHONPATH=.ai/managed python3 -m ai_ops_kit.engine.worktree add <id> --branch <feature/…>` — появится каталог
    `.ai/worktrees/<id>` на своей ветке; main не трогается.
 2. Дальнейшую работу вести **в этом каталоге**.
 3. Зарегистрировать работу в реестре активных работ с этой веткой
-   (`tools/active_work.py register … --branch <feature/…>`).
+   (`PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.active_work register … --branch <feature/…>`).
 4. По завершении: смерджить ветку обычным потоком, снять работу с реестра
-   (`ai-finish-task`) и удалить worktree `tools/worktree.py remove <id>` (ветка
+   (`ai-finish-task`) и удалить worktree `PYTHONPATH=.ai/managed python3 -m ai_ops_kit.engine.worktree remove <id>` (ветка
    сохраняется).
 
 ## Границы (честно)

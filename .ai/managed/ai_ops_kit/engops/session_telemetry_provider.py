@@ -10,8 +10,8 @@
     ~/.claude/projects/<slug>/<session_id>/subagents/   # транскрипты сабагентов
 
 `slug` — это рабочий каталог, из которого запущен рантайм, где каждый символ вне `[A-Za-z0-9-]`
-заменён на `-`: `/Users/sasad/msh_news_bot_v2` -> `-Users-sasad-msh-news-bot-v2`,
-`/Users/sasad/.claude-jobs/x` -> `-Users-sasad--claude-jobs-x`.
+заменён на `-`: `/home/user/msh_news_bot_v2` -> `-home-user-msh-news-bot-v2`,
+`/home/user/.claude-jobs/x` -> `-home-user--claude-jobs-x`.
 
 ПОЧЕМУ ЭТО ПЕРЕПИСАНО (найдено полем 2026-08-13). Прежняя версия искала транскрипт по пути
 `~/.claude/projects/<proj>/sessions/<session_id>.jsonl`. Каталога `sessions/` не существует ни в

@@ -1,0 +1,60 @@
+# ai-ops-scorecard.yml — supply-chain дочки: агрегатный сигнал OpenSSF Scorecard.
+# Ставится `ai-ops init` в .github/workflows/ (или скопируйте вручную). Опт-аут: удалить этот файл.
+#
+# ЧТО ЭТО ДАЁТ. OpenSSF Scorecard прогоняет репозиторий по чек-листу практик supply-chain (Pinned-
+# Dependencies, Branch-Protection, Dangerous-Workflow, Token-Permissions, Signed-Releases, SAST,
+# Dependency-Update-Tool и др.) и публикует находки во вкладку Security. Это ЕДИНАЯ ЛИНЕЙКА, по
+# которой видно СИЛУ остальных шаблонов этого набора: не «поставили codeql», а «SAST=да, пины=нет».
+#
+# ADVISORY. Проверка ничего не роняет и ничего не мержит — только измеряет. Балл Scorecard кит НЕ
+# делает блокирующим гейтом: это ориентир для governance-отчёта (см. SUPPLY-CHAIN.md, SR-17..20), а
+# не девятый гейт мимо решения владельца.
+#
+# ГРАНИЦА С ИНВАРИАНТОМ КИТА. Фордж-конфигурация дочки; кода кита и его зависимостей не касается.
+#
+# ПИНЫ. Большинство действий закреплено по мажорному тегу; для Pinned-Dependencies закрепите их на
+# commit SHA (см. SUPPLY-CHAIN.md) — тогда Scorecard засчитает и этот пункт. `ossf/scorecard-action`
+# ПЛАВАЮЩЕГО мажорного тега `v2` НЕ публикует (только полные версии) — поэтому он закреплён на commit
+# SHA с комментарием версии; `@v2` не резолвился и ронял workflow у каждой дочки (finding живого прогона).
+name: ai-ops-scorecard
+on:
+  branch_protection_rule: {}
+  schedule:
+    - cron: "41 6 * * 1"      # еженедельно — практики репозитория дрейфуют медленно
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  # Отменять УСТАРЕВШИЕ прогоны — но ТОЛЬКО для PR (новый пуш в тот же PR гасит прежний).
+  # На push в main / schedule / release / record отмена НЕ применяется: там каждый прогон
+  # относится к своему коммиту/событию, и его потеря = дыра в проверке или в записи.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
+    permissions:
+      security-events: write   # публикация SARIF во вкладку Security
+      id-token: write          # keyless-аутентификация Scorecard к публичному API
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@55891bbd73f2425e97637d96e306fc9d491d0b21 # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: false   # true публикует балл в публичный OpenSSF-реестр — включайте осознанно
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 5
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

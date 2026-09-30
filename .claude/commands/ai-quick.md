@@ -4,7 +4,7 @@ description: Workflow QUICK — Малое локальное изменение
 # ai-quick — Малое локальное изменение с низким риском.
 
 Сгенерировано из registry/workflows.yaml — НЕ редактировать вручную
-(перегенерация: python3 tools/generate_runtime.py).
+(перегенерация: python3 -m ai_ops_kit.shared.generate_runtime).
 
 ## Что делает
 Проводит задачу по workflow **QUICK** (native / минимум

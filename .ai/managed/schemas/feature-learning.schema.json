@@ -73,7 +73,9 @@
     "research_gap": { "type": ["string", "null"],
       "description": "v3.3.3 неопределённость, маршрутизируемая в research (при decision=investigate)" },
     "supersedes": { "type": ["string", "null"], "pattern": "^FL-[0-9]{3,}$",
-      "description": "v3.3.3 предыдущий FeatureLearning, который этот заменяет (design history)" }
+      "description": "v3.3.3 предыдущий FeatureLearning, который этот заменяет (design history)" },
+    "derived_from_outcome": { "type": ["string", "null"], "minLength": 1,
+      "description": "id узла outcome (<goal>-outcome) в Knowledge Graph, из результата которого извлечён урок: явно замыкает нить «outcome -> чему научились» на КОНКРЕТНЫЙ исход. Ссылка на несуществующий outcome отвергается validate_knowledge_graph." }
   },
   "examples": [
     {

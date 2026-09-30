@@ -10,7 +10,7 @@
 2. Запустить доступные команды.
 3. Зафиксировать результаты и непроверенные области.
 4. Запустить Final Verifier.
-5. **Записать срез эффекта**: `tools/run_report.py features/<id> --record` (автонакопление истории).
+5. **Записать срез эффекта**: `PYTHONPATH=.ai/managed python3 -m ai_ops_kit.lifecycle.run_report features/<id> --record` (автонакопление истории).
 
 ## Результат
 

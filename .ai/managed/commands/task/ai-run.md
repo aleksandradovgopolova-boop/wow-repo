@@ -9,12 +9,13 @@
 классификация/маршрут → RunPlan (base_workflow + треки + агрегированные гейты) →
 WorkItem → регистрация в реестре активных работ → исполнение → компактный отчёт.
 Собирает то, что раньше было отдельными шагами `ai-start-task`. Инструмент —
-`tools/ai_ops_run.py`.
+`ai_ops_kit/engine/ai_ops_run.py`.
 
 ## Порядок выполнения
 
 ```
-tools/ai_ops_run.py run "<задача>" <child_root> --signals '<json сигналов>' \
+PYTHONPATH=.ai/managed python3 -m ai_ops_kit.engine.ai_ops_run run "<задача>" <child_root> \
+    --signals '<json сигналов>' \
     [--runtime claude-code|generic-orchestrator] [--provider mock] [--execute]
 ```
 

@@ -30,7 +30,9 @@ import yaml
 REGISTRY_REL = "decisions/registry.yaml"
 AI_ACTOR = "ai"
 REVERSIBILITY = ("one-way", "two-way")          # набор validate_decisions
+CONFIDENCE = ("low", "medium", "high")          # калибровка, как у принципов
 _REQUIRED = ("id", "question", "decision", "reason", "reversibility", "date")
+_EXPECTED_OUTCOME_FIELDS = ("metric", "baseline", "target")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # начало строки верхнего уровня (не отступ, не комментарий) — граница секции YAML
 _TOP_KEY = re.compile(r"^[^\s#]")
@@ -42,8 +44,16 @@ class RegistryError(Exception):
 
 def build_ai_episode(*, decision_id: str, question: str, decision: str, reason: str,
                      date: str, data: str, outcome=None, human_overrode: bool = False,
-                     reversibility: str = "two-way", context=None) -> dict:
-    """Собрать AI-эпизод. Порядок полей сохраняется при сериализации."""
+                     reversibility: str = "two-way", context=None,
+                     confidence=None, expected_outcome=None, review_at=None) -> dict:
+    """Собрать AI-эпизод. Порядок полей сохраняется при сериализации.
+
+    Необязательные поля калибровки (все опциональны, отсутствие — норма):
+      - confidence: насколько уверены в решении (low|medium|high);
+      - expected_outcome: ожидаемый исход как измеримое обязательство — объект
+        с непустыми metric (что двигаем), baseline (где сейчас), target (куда идём);
+      - review_at: дата (YYYY-MM-DD), когда стоит сверить ожидание с фактом.
+    """
     ep = {
         "id": decision_id,
         "actor": AI_ACTOR,
@@ -55,6 +65,12 @@ def build_ai_episode(*, decision_id: str, question: str, decision: str, reason: 
         "reversibility": reversibility,
         "date": date,
     }
+    if confidence is not None:
+        ep["confidence"] = confidence
+    if expected_outcome is not None:
+        ep["expected_outcome"] = expected_outcome
+    if review_at is not None:
+        ep["review_at"] = review_at
     if outcome is not None:
         ep["outcome"] = outcome
     if context is not None:
@@ -63,6 +79,14 @@ def build_ai_episode(*, decision_id: str, question: str, decision: str, reason: 
     if errs:
         raise RegistryError("AI-эпизод недостоверен: " + "; ".join(errs))
     return ep
+
+
+def _expected_outcome_errors(exp) -> list:
+    """expected_outcome — измеримое обязательство: непустые metric/baseline/target."""
+    if not isinstance(exp, dict):
+        return ["expected_outcome должен быть объектом (metric/baseline/target)"]
+    return [f"expected_outcome.{f} пусто" for f in _EXPECTED_OUTCOME_FIELDS
+            if exp.get(f) in (None, "")]
 
 
 def _episode_errors(ep: dict) -> list:
@@ -74,6 +98,16 @@ def _episode_errors(ep: dict) -> list:
         errs.append(f"reversibility '{ep.get('reversibility')}' не в {REVERSIBILITY}")
     if not (isinstance(ep.get("date"), str) and _DATE_RE.match(ep["date"])):
         errs.append("date должен быть строкой YYYY-MM-DD")
+    # опциональная калибровка: проверяем форму, только если поле присутствует
+    conf = ep.get("confidence")
+    if conf is not None and conf not in CONFIDENCE:
+        errs.append(f"confidence '{conf}' не в {CONFIDENCE}")
+    ra = ep.get("review_at")
+    if ra is not None and not (isinstance(ra, str) and _DATE_RE.match(ra)):
+        errs.append("review_at должен быть строкой YYYY-MM-DD")
+    exp = ep.get("expected_outcome")
+    if exp is not None:
+        errs.extend(_expected_outcome_errors(exp))
     return errs
 
 

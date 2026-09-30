@@ -19,7 +19,7 @@
 2. **client ⊆ union(обёртки)** — путь, который вызывает клиент, кем-то обслуживается;
 3. **union(обёртки) \ client** — смонтировано, но никто не вызывает → advisory (мусор/незаконченная работа).
 
-(1)+(2) → drift (error); (3) → advisory. Проверяет `validation/validate_surface_wiring.py`
+(1)+(2) → drift (error); (3) → advisory. Проверяет `ai_ops_kit/validation/validate_surface_wiring.py`
 (`check`+`selftest` с негативами, включая ровно кейс `/api/catalog`).
 
 ### Где что работает

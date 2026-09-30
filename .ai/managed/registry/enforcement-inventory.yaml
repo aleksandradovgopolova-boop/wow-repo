@@ -1,0 +1,118 @@
+# Инвентарь «объявлено → исполняется» (аудит 2026-09-09, §6 — КОРЕНЬ, а не находка).
+#
+# ЗАЧЕМ. Класс дефекта «объявлено, но не исполняется» рос молча и держался на памяти владельца:
+# mypy стоит в [dev] и не запускается НИГДЕ; ruff когда-то стоял и не гонялся; число в README не
+# было подключено к заверению; гейт слоёв исполнялся, но мерил не предмет. Каждый раз это ловил
+# внешний глаз, а не машина. Здесь класс держится машиной: `validate_enforcement_inventory.py`
+# сверяет ОХВАТ (каждый объявленный dev-инструмент и каждый ратчет-baseline перечислен здесь) и
+# РЕЗОЛЮЦИЮ доказательства (enforced_at реально находит вызов; consumed_by реально читает baseline).
+#
+# ПРАВИЛО. Объявленный механизм обязан быть либо `enforced` с доказательством, где он вызывается,
+# либо честно `unenforced` с причиной и ссылкой на работу. Тихое «есть в зависимостях, а нигде не
+# запускается» краснеет. Реестр вправе только пополняться синхронно с объявлениями: новый
+# dev-инструмент или baseline без записи здесь — красный.
+#
+# ОХВАТ. Три оси: dev-инструменты (requirements-dev.txt + pyproject [dev]), pre-commit-ХУКИ
+# (.pre-commit-config.yaml) и ратчет-baseline'ы (packages/*baseline*.yaml). У хука два честных
+# исхода: `enforced` — зеркалён в CI, с доказательством `enforced_at`, где именно; либо `local_only`
+# — гоняется только локально pre-commit'ом и в CI не зеркалён, с причиной (это допустимо: хук на
+# машине разработчика всё равно исполняется, но машина CI за него не ручается). Внешний кластер
+# аудита (доступ внешних контрибьюторов) отклонён владельцем.
+schema_version: 1
+kind: enforcement-inventory
+
+# Каждый инструмент из requirements-dev.txt / pyproject [dev] обязан быть здесь.
+dev_tools:
+  - name: pytest
+    status: enforced
+    enforced_at: {file: .github/workflows/package-quality.yml, pattern: "pytest"}
+  - name: pytest-cov
+    status: enforced
+    enforced_at: {file: .github/workflows/nightly-coverage.yml, pattern: "pytest-cov"}
+  - name: pytest-xdist
+    status: enforced
+    enforced_at: {file: .github/workflows/package-quality.yml, pattern: "pytest-xdist"}
+  - name: hypothesis
+    status: enforced
+    enforced_at: {file: .github/workflows/package-quality.yml, pattern: "hypothesis"}
+  - name: ruff
+    status: enforced
+    enforced_at: {file: .github/workflows/package-quality.yml, pattern: "ruff check"}
+  - name: pre-commit
+    status: enforced
+    # pre-commit — исполнитель хуков; его работа = сконфигурированные хуки, а ruff-хук ещё и зеркалён
+    # в CI (джоба lint). Доказательство — наличие конфигурации, без которой инструмент бездействует.
+    enforced_at: {file: .pre-commit-config.yaml, pattern: "repo:"}
+  - name: mypy
+    status: enforced
+    # F-05 ЗАКРЫТ (2026-09-09): замер решил спор «включить vs убрать» — обычный проход нашёл 8
+    # реальных проблем на фундаменте, типы окупаются. Включён на kernel+shared ([tool.mypy]), шаг в
+    # джобе lint. Полная аннотация (disallow_untyped_defs) — отдельный ратчет-вверх.
+    enforced_at: {file: .github/workflows/package-quality.yml, pattern: "mypy==2.3.1"}
+
+# Каждый хук из .pre-commit-config.yaml обязан быть здесь: либо `enforced` с зеркалом в CI и
+# доказательством `enforced_at`, либо честно `local_only` с причиной. Новый хук без записи — красный.
+pre_commit_hooks:
+  # ── repo astral-sh/ruff-pre-commit ──
+  - id: ruff
+    status: enforced
+    # Тот же линтер зеркалён в CI отдельным шагом `ruff check .` (та же версия, что в хуке).
+    enforced_at: {file: .github/workflows/package-quality.yml, pattern: "ruff check"}
+
+  # ── repo pre-commit/pre-commit-hooks (гигиена файлов) ──
+  # Все семь гоняются локально pre-commit'ом; джобы `pre-commit run --all-files` в CI нет, поэтому
+  # честно local_only. Их предмет (пробелы, перевод строки, валидность YAML/JSON, размер файла,
+  # маркеры конфликта, приватный ключ) дёшев на машине разработчика и не оправдывает отдельной
+  # CI-джобы; secret-скан приватных ключей вдобавок закрыт lane security-scan поверх диффа PR.
+  - id: trailing-whitespace
+    status: local_only
+    reason: "гигиена файлов; гоняется локально pre-commit'ом, отдельной pre-commit-джобы в CI нет"
+  - id: end-of-file-fixer
+    status: local_only
+    reason: "гигиена файлов; гоняется локально pre-commit'ом, отдельной pre-commit-джобы в CI нет"
+  - id: check-yaml
+    status: local_only
+    reason: "валидность YAML; гоняется локально pre-commit'ом, отдельной pre-commit-джобы в CI нет"
+  - id: check-json
+    status: local_only
+    reason: "валидность JSON; гоняется локально pre-commit'ом, отдельной pre-commit-джобы в CI нет"
+  - id: check-added-large-files
+    status: local_only
+    reason: "предел размера файла (500kb); гоняется локально, отдельной pre-commit-джобы в CI нет"
+  - id: check-merge-conflict
+    status: local_only
+    reason: "маркеры конфликта слияния; гоняется локально, отдельной pre-commit-джобы в CI нет"
+  - id: detect-private-key
+    status: local_only
+    reason: "приватные ключи; локально pre-commit'ом, а в CI секреты ловит lane security-scan"
+
+  # ── repo local (свои проверки) ──
+  - id: python-compat
+    status: local_only
+    # validate_python_compat.py есть и покрыт юнит-тестами, но джобы, гоняющей его ПО ДЕРЕВУ, в CI
+    # нет (совместимость с полом требований проверяет compatibility-matrix в pipeline-e2e). Хук
+    # исполняется локально на изменённых файлах; честно local_only, а не выдуманный enforced_at.
+    reason: "validate_python_compat гоняется локально на изменённых файлах; прохода по дереву в CI нет"
+  - id: selftest-smoke
+    status: enforced
+    # Хук на pre-push гоняет `pytest tests/contracts/`; ровно этот набор зеркалён шагом CI.
+    enforced_at: {file: .github/workflows/package-quality.yml, pattern: "tests/contracts/"}
+  - id: commit-contract
+    status: enforced
+    # Хук на commit-msg зовёт scripts/commit-contract.sh; CI зеркалит его по коммитам PR.
+    enforced_at: {file: .github/workflows/package-quality.yml, pattern: "scripts/commit-contract.sh"}
+
+# Каждый packages/*baseline*.yaml обязан читаться валидатором (который сам гоняется рантайм-контрактом).
+ratchet_baselines:
+  - name: packages/module-size-baseline.yaml
+    consumed_by: ai_ops_kit/validation/validate_module_size.py
+  - name: packages/func-size-baseline.yaml
+    consumed_by: ai_ops_kit/validation/validate_func_size.py
+  - name: packages/test-taxonomy-baseline.yaml
+    consumed_by: ai_ops_kit/validation/validate_test_taxonomy.py
+  - name: packages/print-discipline-baseline.yaml
+    consumed_by: ai_ops_kit/validation/validate_print_discipline.py
+  - name: packages/code-duplication-baseline.yaml            # #827: ратчет дублирования (CODE-003)
+    consumed_by: ai_ops_kit/devtools/code_duplication.py
+  - name: packages/swallowed-exceptions-baseline.yaml        # B3: стоячий ратчет молчаливых глушителей
+    consumed_by: ai_ops_kit/validation/validate_swallowed_exceptions.py

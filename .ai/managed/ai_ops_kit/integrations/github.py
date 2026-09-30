@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ai_ops_kit.shared import _bootstrap  # noqa: F401  (правит sys.path пакета)
+from ai_ops_kit.shared.gitio import git  # noqa: E402
 
 API_ROOT = "https://api.github.com"
 _TOKEN_ENV = ("GITHUB_TOKEN", "GH_TOKEN")
@@ -79,14 +80,12 @@ class WriteResult:
 # ── определение репозитория ─────────────────────────────────────────────────────────────────
 
 def _git_remote_url(root: Path) -> str:
+    # Единый вход к git с таймаутом (см. shared/gitio). OSError (нет git) по-прежнему -> "".
     try:
-        out = subprocess.run(
-            ["git", "-C", str(root), "remote", "get-url", "origin"],
-            capture_output=True, text=True, timeout=10,
-        )
+        rc, url, _ = git(root, "remote", "get-url", "origin", timeout=10)
     except (OSError, subprocess.SubprocessError):
         return ""
-    return out.stdout.strip() if out.returncode == 0 else ""
+    return url if rc == 0 else ""
 
 
 def parse_slug(url: str) -> str:

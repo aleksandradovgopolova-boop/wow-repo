@@ -8,7 +8,7 @@
      СУЩЕСТВУЮЩИЙ калькулятор `product_health.compute` (dp-001: не дублируем), а band его
      healthy/warning/critical переводится в green/yellow/red.
   2. Product Passport (`.ai-ops/PRODUCT_PASSPORT.md`) — обязательный артефакт продукта (Phase 1).
-  3. Roadmap (`.ai-ops/ROADMAP.md`) — направление продукта.
+  3. Roadmap (канонический путь из `roadmap.resolve_roadmap_path`) — направление продукта.
 
 Инвариант (health_common): «не проверено» ≠ «в порядке». Отсутствующий сигнал даёт UNKNOWN с
 причиной, а НЕ зелёный. Если ни одного продуктового сигнала прочитать нельзя — итог UNKNOWN,
@@ -39,7 +39,6 @@ _METRIC_BAND = {"healthy": hc.GREEN, "warning": hc.YELLOW, "critical": hc.RED}
 # где в подключённом репозитории лежат продуктовые артефакты (Product Operating Layer, Phase 1)
 METRICS_REL = ".ai-ops/product-metrics.yaml"
 PASSPORT_REL = ".ai-ops/PRODUCT_PASSPORT.md"
-ROADMAP_REL = ".ai-ops/ROADMAP.md"
 
 
 def _metrics_signal(root: Path) -> hc.Signal:
@@ -88,11 +87,16 @@ def _passport_signal(root: Path) -> hc.Signal:
 
 
 def _roadmap_signal(root: Path) -> hc.Signal:
-    path = root / ROADMAP_REL
+    # Единый резолвер направления (SR-2): путь решает одно место, общее с planning/drift/passport,
+    # а не захардкоженный здесь `.ai-ops/ROADMAP.md`. Иначе health судил бы о направлении по файлу,
+    # которого planning не ведёт, и «пусто» появлялось бы при заполненном корневом ROADMAP.md.
+    from ai_ops_kit.planning import roadmap as _roadmap
+    path = _roadmap.resolve_roadmap_path(root)
+    rel = path.relative_to(root) if path.is_relative_to(root) else path
     if not path.exists():
         return hc.Signal(
             "product_roadmap", hc.UNKNOWN,
-            f"Roadmap ({ROADMAP_REL}) отсутствует — направление продукта не определить",
+            f"Roadmap ({rel}) отсутствует — направление продукта не определить",
         )
     if not path.read_text(encoding="utf-8").strip():
         return hc.Signal(

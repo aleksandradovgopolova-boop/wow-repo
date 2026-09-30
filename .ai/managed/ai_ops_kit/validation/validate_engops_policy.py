@@ -11,7 +11,7 @@ EngOps и ПАРИТЕТ дефолтов «код ↔ правило».
    не проверяет, хуже отсутствующей.
 
 2. **Правило не расходится с кодом.** `rules/core/EngineeringOperatingModel.md` печатает пороги
-   в yaml-блоке; `tools/commit_policy.py` и `tools/branch_policy.py` держат их в `DEFAULTS`. Это два
+   в yaml-блоке; `ai_ops_kit/engops/commit_policy.py` и `ai_ops_kit/engops/branch_policy.py` держат их в `DEFAULTS`. Это два
    места для одного числа — ровно тот шов, на котором кит уже ловил дрейф (release-claims). Валидатор
    сверяет их дословно.
 

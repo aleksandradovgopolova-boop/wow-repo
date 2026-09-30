@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Проверка UIEvidenceBundle (v3.1.7) — контракт UI-evidence из локальных артефактов child-репо.
 
-Bundle (schemas/ui-evidence-bundle.schema.json) собирается tools/storybook_adapter.py и станет
+Bundle (schemas/ui-evidence-bundle.schema.json) собирается ai_ops_kit/ui/storybook_adapter.py и станет
 источником для детерминированного закрытия части UI-гейтов (v3.1.8). Валидатор держит bundle
 честным — структурно И семантически, чтобы «нет данных» не проскочило как «чисто»:
 
@@ -36,6 +36,7 @@ BUILD = {"pass", "fail", "absent"}
 _KEYS = {
     "storybook": {"detected", "build_status", "version", "story_count"},
     "state_coverage": {"required", "states", "missing", "complete"},
+    "required_stories": {"required", "present", "missing", "complete"},
     "interaction_tests": {"status", "total", "passed"},
     "accessibility": {"status", "blocking_violations", "total_violations"},
     "visual_regression": {"status", "changed"},
@@ -43,7 +44,8 @@ _KEYS = {
 }
 _TOP = {"schema_version", "kind", "commit_sha", "generated_from", "affected_components",
         "affected_stories", "component_catalog", "storybook", "state_coverage",
-        "interaction_tests", "accessibility", "visual_regression", "design_system"}
+        "required_stories", "interaction_tests", "accessibility", "visual_regression",
+        "design_system"}
 
 
 def _comp_base(name):
@@ -105,6 +107,25 @@ def check(data: dict):
                 e.append("state_coverage.complete должен быть bool")
             elif sc.get("complete") != (len(recomputed) == 0):
                 e.append("state_coverage.complete не соответствует missing")
+
+    # required_stories — АДДИТИВНОЕ поле (#452 wired): проверяем самосогласованность ТОЛЬКО если оно
+    # есть (старое evidence без него остаётся валидным). complete ⟺ missing пуст; present и missing
+    # разбивают required без пересечения — иначе «покрытие» скрывало бы дыру.
+    if "required_stories" in data:
+        rsd = _section("required_stories")
+        if rsd is not None:
+            rq, pr, ms = rsd.get("required"), rsd.get("present"), rsd.get("missing")
+            if not (isinstance(rq, list) and isinstance(pr, list) and isinstance(ms, list)):
+                e.append("required_stories: required/present/missing неверных типов")
+            else:
+                if sorted(set(pr) | set(ms)) != sorted(set(rq)):
+                    e.append("required_stories: present ∪ missing != required")
+                if set(pr) & set(ms):
+                    e.append("required_stories: present ∩ missing непусто")
+                if not isinstance(rsd.get("complete"), bool):
+                    e.append("required_stories.complete должен быть bool")
+                elif rsd.get("complete") != (len(ms) == 0):
+                    e.append("required_stories.complete не соответствует missing")
 
     it = _section("interaction_tests")
     if it is not None:

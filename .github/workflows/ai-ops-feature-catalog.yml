@@ -1,0 +1,122 @@
+# ai-ops-feature-catalog.yml — child-CI: каталог фич продукта из реестра ДОЧКИ.
+#
+# ЗАЧЕМ. Цель фичи feature-registry-coverage — чтобы системный аналитик за час разобрался во ВСЕХ
+# фичах продукта из ОДНОГО места. Человеческую сторону даёт документ `docs/feature-catalog.md`,
+# СГЕНЕРИРОВАННЫЙ из реестра фич дочки (по каждой фиче: что делает / для кого / как проверить /
+# какими поверхностями наблюдаема / статус). Этот workflow проводит генерацию в контур дочки.
+#
+# БЕЗ РАЗДУВАНИЯ ПОСТАВКИ. Рендер каталога — ПОСТАВЛЯЕМЫЙ модуль `ai_ops_kit/checks/feature_catalog.py`
+# (он уже едет в .ai/managed). Сам этот workflow новых доставляемых Python-файлов не добавляет: он
+# КЛОНИРУЕТ кит в `$RUNNER_TEMP` и зовёт генерацию ИЗ КЛОНА над реестром дочки — ровно так, как
+# ai-ops-validate.yml зовёт из клона child-валидаторы. Обёртка генерации живёт в клоне
+# (`ai_ops_kit.devtools.feature_catalog_cli`), в поставку она не едет (devtools/ исключён).
+#
+# БЕЗ РЕЕСТРА — НЕ ОШИБКА. Если у дочки ещё нет реестра фич, каталог собирать не из чего: workflow
+# честно об этом говорит и выходит с кодом 0 (skip), а не падает.
+#
+# НА PR — только генерация и сверка (без коммита): если committed-каталог разошёлся с реестром,
+# шаг предупреждает и выкладывает свежую версию артефактом прогона. На push в main — регенерация и
+# КОММИТ обновлённого каталога, чтобы главная ветка всегда несла актуальный документ.
+#
+# Пин версии кита = installed_version из .ai-ops.yaml (единый источник, как в ai-ops-validate.yml).
+name: ai-ops-feature-catalog
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+permissions:
+  contents: write   # на push в main коммитит обновлённый docs/feature-catalog.md; на PR не пишет
+concurrency:
+  # Отменять УСТАРЕВШИЕ прогоны — но ТОЛЬКО для PR (новый пуш в тот же PR гасит прежний).
+  # На push в main / schedule / release / record отмена НЕ применяется: там каждый прогон
+  # относится к своему коммиту/событию, и его потеря = дыра в проверке или в записи.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  feature-catalog:
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}   # нужна история для git diff и коммита обновления на push
+      # Python и pyyaml ставим только на раннерах GitHub (на своём раннере — PEP 668, см. ai-ops-validate.yml).
+      - uses: actions/setup-python@v5
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+        with: {python-version: "3.12"}
+      - run: pip install pyyaml
+        if: ${{ !vars.CI_RUNNER_LINUX }}
+      - name: Проверить python и pyyaml (свой раннер)
+        if: ${{ vars.CI_RUNNER_LINUX }}
+        run: |
+          python3 -c 'import sys, yaml; print("python", sys.version.split()[0], "· pyyaml", yaml.__version__)' \
+            || { echo "на раннере '${{ vars.CI_RUNNER_LINUX }}' нет python3 с pyyaml — поставьте их на машину раннера (кит ставить их в системный python не будет: PEP 668)"; exit 1; }
+      - name: Клонировать kit на пин = installed_version (.ai-ops.yaml)
+        run: |
+          SRC=$(python3 -c "import yaml;s=yaml.safe_load(open('.ai-ops.yaml'))['parent']['source'];print(s[4:] if s.startswith('git+') else s)")
+          VER=$(python3 -c "import yaml;print(yaml.safe_load(open('.ai-ops.yaml'))['parent']['installed_version'])")
+          echo "kit pin = v$VER (из .ai-ops.yaml, не protected)"
+          # Клон в $RUNNER_TEMP (не /tmp): $RUNNER_TEMP раннер чистит на каждую джобу — и у GitHub, и на своей машине.
+          git clone --depth 1 --branch "v$VER" "$SRC" "$RUNNER_TEMP/ai-ops-kit" \
+            || { echo "не удалось клонировать kit v$VER из $SRC — нет тега v$VER, нет доступа или каталог занят"; exit 1; }
+      # РЕЕСТР ФИЧ ДОЧКИ. Каталог собирается из СОБСТВЕННОГО реестра дочки по ЕДИНОМУ пути
+      # registry/features.yaml — тот же, что у контура охвата (ai-ops-feature-coverage.yml), чтобы каталог
+      # и охват читали ОДИН реестр. Его нет — каталог собирать не из чего (honest skip, не ошибка).
+      - name: Найти реестр фич дочки
+        id: reg
+        run: |
+          # Единый путь реестра фич дочки — тот же, что у контура охвата (ai-ops-feature-coverage.yml):
+          # registry/features.yaml. Держим ОДИН источник, иначе каталог и охват читали бы разные реестры.
+          FOUND=""
+          if [ -f registry/features.yaml ]; then FOUND="registry/features.yaml"; fi
+          if [ -z "$FOUND" ]; then
+            echo "у продукта ещё нет реестра фич (registry/features.yaml) — каталог фич не генерируется (это не ошибка)"
+          else
+            echo "реестр фич дочки: $FOUND"
+          fi
+          echo "path=$FOUND" >> "$GITHUB_OUTPUT"
+      # ГЕНЕРАЦИЯ ИЗ КЛОНА. Зовём поставляемый рендер через обёртку из клона над реестром ДОЧКИ,
+      # пишем в её собственный docs/feature-catalog.md, шапку подписываем командой перегенерации
+      # самой дочки (workflow), а не devtools-обёрткой кита, которой у дочки нет.
+      - name: Сгенерировать docs/feature-catalog.md из реестра дочки
+        if: steps.reg.outputs.path != ''
+        run: |
+          PYTHONPATH="$RUNNER_TEMP"/ai-ops-kit \
+            python3 -m ai_ops_kit.devtools.feature_catalog_cli "${{ steps.reg.outputs.path }}" \
+            --write --out docs/feature-catalog.md \
+            --regen-cmd "перегенерируется автоматически workflow'ом .github/workflows/ai-ops-feature-catalog.yml из ${{ steps.reg.outputs.path }}"
+      # НА PR — только сверка (без коммита): если committed-каталог разошёлся со свежесобранным,
+      # предупреждаем и выкладываем свежую версию артефактом. Не блокируем: у дочки нет devtools-
+      # обёртки локально, а на push в main каталог обновится сам.
+      - name: Сверить каталог (PR — предупреждение, без коммита)
+        if: github.event_name == 'pull_request' && steps.reg.outputs.path != ''
+        run: |
+          if git diff --quiet -- docs/feature-catalog.md; then
+            echo "docs/feature-catalog.md актуален для реестра фич дочки."
+          else
+            echo "::warning::docs/feature-catalog.md разошёлся с реестром фич — на push в main он обновится автоматически; свежая версия приложена артефактом прогона."
+            git --no-pager diff -- docs/feature-catalog.md || true
+          fi
+      - name: Приложить свежий каталог артефактом (история PR)
+        if: github.event_name == 'pull_request' && steps.reg.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-ops-feature-catalog
+          path: docs/feature-catalog.md
+          if-no-files-found: warn
+      # НА PUSH В MAIN — коммитим обновлённый каталог, если он изменился; иначе не делаем ничего
+      # (идемпотентно). БЕЗ пометки [skip ci]: защиту от петли даёт сам GitHub — пуш под GITHUB_TOKEN
+      # workflow НЕ перезапускает; а [skip ci] на вершине ветки погасил бы ВСЕ проверки следующего PR
+      # (F-020, та же граница, что в ai-ops-record.yml).
+      - name: Закоммитить обновлённый каталог (push в main)
+        if: github.event_name == 'push' && steps.reg.outputs.path != ''
+        run: |
+          if git diff --quiet -- docs/feature-catalog.md; then
+            echo "docs/feature-catalog.md не изменился — коммитить нечего."
+          else
+            git config user.name "ai-ops-cataloger"
+            git config user.email "ai-ops-cataloger@users.noreply.github.com"
+            git add docs/feature-catalog.md
+            git commit -m "docs: refresh feature catalog from registry"
+            git push
+          fi

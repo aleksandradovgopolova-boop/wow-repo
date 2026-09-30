@@ -6,3 +6,11 @@ protected_paths:
     approval: required
   - path: security/
     approval: owner_required
+  # writer≠judge (аудит F3): писатель не должен ослаблять СОБСТВЕННЫЕ ограничения. .ai-ops.yaml задаёт
+  # protected_paths/write_scope дочки, config/protected-paths.yaml — карту запретов кита. Правка этих
+  # файлов из прогона требует человеко-одобрения, иначе модель могла бы снять с себя контроль и продолжить
+  # тем же прогоном. Продуктовая задача их не трогает — коллатераль минимальна.
+  - path: .ai-ops.yaml
+    approval: owner_required
+  - path: config/protected-paths.yaml
+    approval: owner_required

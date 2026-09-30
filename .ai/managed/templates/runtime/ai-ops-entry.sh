@@ -67,6 +67,12 @@ fi
 # гейты), и они пишут байткод точно так же.
 export PYTHONDONTWRITEBYTECODE=1
 
+# КОРЕНЬ managed-слоя в PYTHONPATH: с v4.0 вход дочки идёт напрямую в пакет
+# `ai_ops_kit/cli/ai_ops_cli.py` (плоский слой `tools/` снят). При запуске файла напрямую Python
+# кладёт в путь каталог самого файла, а не корень, поэтому `import ai_ops_kit...` без этой строки
+# не находит пакет. Обёртка самого кита ставит ровно то же (`PYTHONPATH="$here"`).
+export PYTHONPATH="$managed:$PYTHONPATH"
+
 # Команды managed-слоя живут в установщике, который в поставку НЕ едет (он обновляет сам кит, и
 # ставить его в дочку значило бы дать ей себя же обновлять). Ищем его там, где он может быть:
 # переменная окружения -> типовое место клона. Если не нашли — говорим прямо, а не молчим.
@@ -162,7 +168,11 @@ case "$cmd" in
   # отвечал «исходник рядом не найден». То есть работа сделала половину: интент появился и был
   # недостижим по документированному пути. Класс F-033 — механизм починен у кита и не доехал до дочки.
   # Поведение то же: интент CLI зовёт те же session_telemetry + session_guardrails.
-  init|update|diff|validate|migrate|verify-capabilities|selftest|delivery-proof|usage|audit|drift|subsession|engops|method)
+  # `ui-status` (переименование 2026-09-02): зрелость UI-evidence репозитория. Раньше эта команда
+  # установщика звалась `onboard` и в дочку не выводилась вовсе — то же имя носит интент движка
+  # «определить стек», и `./ai-ops onboard` вёл именно в движок. После переименования столкновения
+  # имён нет, и команду можно честно вести в установщик наравне с прочими kit-командами.
+  init|setup|update|diff|validate|migrate|verify-capabilities|selftest|delivery-proof|usage|audit|drift|subsession|engops|method|ui-status)
     if inst=$(find_installer); then
       exec "$py" "$inst" "$@"
     fi
@@ -187,7 +197,7 @@ case "$cmd" in
     exit 2
     ;;
   ""|-h|--help|help)
-    exec "$py" "$managed/tools/ai_ops_cli.py"
+    exec "$py" "$managed/ai_ops_kit/cli/ai_ops_cli.py"
     ;;
   *)
     # Интенты движка: next, model, plan, run, specify, review, status, health, new, discuss, …
@@ -200,6 +210,6 @@ case "$cmd" in
     # нельзя вовсе — работал только сухой прогон. Причина в argparse: позиционные `intent` + `rest`
     # набираются одной непрерывной группой, и хвостовой аргумент после флагов в неё уже не попадает.
     intent="$1"; shift
-    exec "$py" "$managed/tools/ai_ops_cli.py" "$intent" "$here" "$@"
+    exec "$py" "$managed/ai_ops_kit/cli/ai_ops_cli.py" "$intent" "$here" "$@"
     ;;
 esac

@@ -86,6 +86,29 @@ def _run_validator(root: Path, name: str, *args, target: str = None) -> dict:
             "detail": tail[-1][:200] if tail else f"код {r.returncode}, вывод пуст"}
 
 
+# #678: валидаторы формы РЕАЛЬНЫХ политик дочки, проведённые к живому пути. Раньше форму AFP/KLP
+# сверял только parent-CI по примерам кита — форму политики САМОЙ дочки не проверял никто (built≠wired).
+# Оба теперь едут в поставку (RUNTIME_VALIDATORS) и зовутся ПРОЦЕССОМ (слой-инвариант: рантайм не
+# импортит validation). Advisory: политика опциональна (deny-by-default при отсутствии), поэтому
+# замечание о форме НЕ входит в BLOCKING и doctor не роняет — проверяем только существующий файл.
+_POLICY_FORM_VALIDATORS = (
+    (".ai/policies/access-filter.yaml", "validate_access_filter"),
+    (".ai/policies/key-lifecycle.yaml", "validate_key_lifecycle"),
+)
+
+
+def _policy_form_checks(root: Path) -> list:
+    """Сверить форму РЕАЛЬНЫХ политик дочки валидаторами, которые раньше не звал никто у дочки (#678).
+    Только существующие файлы: отсутствие политики легально (deny-by-default), это не замечание."""
+    out = []
+    for rel, vname in _POLICY_FORM_VALIDATORS:
+        if (root / rel).is_file():
+            c = _run_validator(root, vname, target=str(root / rel))
+            c["check"] = f"{vname} ({rel})"
+            out.append(c)
+    return out
+
+
 def assess(child_root) -> dict:
     """Отчёт о состоянии установки. -> dict.
 
@@ -117,6 +140,7 @@ def assess(child_root) -> dict:
     checks.append(_run_validator(root, "ai_managed_checksums", "verify", target=str(managed)))
     checks.append(_run_validator(root, "validate_ai_ops_child"))
     checks.append(_run_validator(root, "validate_child_config_filled"))
+    checks += _policy_form_checks(root)
 
     bad = [c for c in checks if c["ok"] is False]
     blockers = [c for c in bad if c["check"] in BLOCKING]

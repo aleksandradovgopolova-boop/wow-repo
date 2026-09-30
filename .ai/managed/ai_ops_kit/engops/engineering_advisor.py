@@ -24,7 +24,7 @@ from pathlib import Path
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
 def _env_recommendation(child_root):
     """Layer 1: какие окружения использовать."""
-    from ai_ops_kit.engops import environment_map
+    from ai_ops_kit.checks import environment_map
     from ai_ops_kit.gates import deploy_readiness
     recs = []
     try:
@@ -231,13 +231,56 @@ def _economic_alternatives(child_root, task_type=None):
     return recs
 
 
+def _experience_options(child_root, task_type=None):
+    """Layer 4: для UI/визуальной задачи ПРЕДЛОЖИТЬ варианты опыта с НАЗВАННЫМИ trade-offs.
+
+    Проводит `experience_contract.generate_design_options` в рабочий контур: UI-UX designer
+    предлагает варианты, а не один «правильный» макет, и каждый вариант обязан нести осознанный
+    компромисс (`offer_design_options` — fail-closed). Совет, не блок: варианты выходят наружу
+    через Human Communication Layer (`presenter_formatters.from_advice`), не сырьём.
+
+    Гейтится дважды, чтобы не сыпать вариантами на не-UI задачу:
+      1. задача визуальная (`task_type == VISUAL`);
+      2. у дочки есть Experience Contract — иначе предлагать не из чего (законное отсутствие).
+    """
+    recs = []
+    if str(task_type or "").upper() != "VISUAL":
+        return recs
+    from ai_ops_kit.ui.experience_contract import offer_design_options, option_tradeoff
+    from ai_ops_kit.ui.storybook_adapter import _load_experience_contract
+    contract = _load_experience_contract(child_root)
+    if not isinstance(contract, dict):
+        return recs   # нет контракта опыта — предлагать не из чего (не маскируем, просто молчим)
+    try:
+        options = offer_design_options(contract)
+    except ValueError as e:
+        # Вариант без осознанного компромисса — дефект, а не мелочь: называем его человеку,
+        # а не показываем псевдовыбор (fail-closed уже сработал в offer_design_options).
+        recs.append({
+            "priority": 1, "category": "experience_options",
+            "advice": f"Варианты опыта не предложены — {e}. "
+                      "Каждый вариант обязан нести названную цену, иначе это не выбор.",
+            "source": "experience_contract",
+        })
+        return recs
+    for opt in options:
+        recs.append({
+            "priority": 2, "category": "experience_options",
+            "advice": f"Вариант «{opt.get('name')}»: {opt.get('description')}. "
+                      f"Чем платим: {option_tradeoff(opt)}.",
+            "source": "experience_contract",
+        })
+    return recs
+
+
 def advise(child_root, task_type=None):
-    """Полный advisory: environment + delivery_plan + economic_alternatives.
+    """Полный advisory: environment + delivery_plan + economic_alternatives + experience_options.
     -> {kind, recommendations[], summary}."""
     recs = []
     recs.extend(_env_recommendation(child_root))
     recs.extend(_delivery_plan(child_root, task_type))
     recs.extend(_economic_alternatives(child_root, task_type))
+    recs.extend(_experience_options(child_root, task_type))
     # Sort by priority
     recs.sort(key=lambda r: r.get("priority", 3))
     # Summary

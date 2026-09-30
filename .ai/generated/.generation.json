@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "package_version": "3.39.0",
+  "package_version": "4.9.2",
   "sources": {
-    "registry/workflows.yaml": "36bdf139ef95902355053eac2c882caba1449de51a7f0e859b5b8dde0b312f92",
-    "registry/agents.yaml": "d1ae7f5c0a44f83e432692125fb06adf8e3c867ec2abc50a2ab7d15f129677b4"
+    "registry/workflows.yaml": "c942d29bd072235cb32f93c86debc6aa1fb3caa2a96758e57a93085ad1a02b41",
+    "registry/agents.yaml": "45d4e8d5e53db58db7d7fdd87736acc9414aca39aac03fd17a6625a7710e62de"
   },
   "generated": [
     ".ai/generated/claude-code/commands/ai-adoption.md",
@@ -35,5 +35,5 @@
     ".ai/generated/codex/prompts/ai-start-task.md",
     ".ai/generated/codex/prompts/ai-visual.md"
   ],
-  "note": "Do not edit by hand; regenerate with tools/generate_runtime.py"
+  "note": "Do not edit by hand; regenerate with python3 -m ai_ops_kit.shared.generate_runtime"
 }

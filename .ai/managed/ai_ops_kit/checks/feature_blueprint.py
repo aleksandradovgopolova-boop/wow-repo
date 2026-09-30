@@ -156,49 +156,72 @@ def validate_dir_full(feature_dir: Path):
             fail("feature.status=released, но ни один артефакт не 'done' — нет доказательства "
                  "поставки (reality/blueprint дрейф; пометьте реальные артефакты done или снимите released)")
 
-        # v3.27.4 WP5: проверяем наличие SHA-verified DeliveryReceipt
-        # DeliveryReceipt находится в features/<feature_id>/delivery-receipt.yaml
-        # или в .ai/runtime/delivery/<workitem_id>/receipt.yaml
-        receipt_paths = [
-            feature_dir / "delivery-receipt.yaml",
-            feature_dir.parent.parent / ".ai" / "runtime" / "delivery" / feature.get("id", "") / "receipt.yaml",
-        ]
-        receipt_found = False
-        # «НЕТ РАСПИСКИ» И «НЕ СМОГ ПРОЧИТАТЬ РАСПИСКУ» — РАЗНЫЕ ОТВЕТЫ (ревизия 2026-08-11).
-        # Прежде здесь стоял `except Exception: pass`, и битый YAML/нечитаемый файл давал ровно то
-        # же сообщение, что отсутствие файла: «нет SHA-verified DeliveryReceipt». Блокировка при
-        # этом срабатывала (fail-closed сохранялся), но владельцу называли НЕВЕРНУЮ причину — он шёл
-        # создавать расписку, которая уже лежит рядом сломанной. Это тот же класс, что инвариант
-        # `unknown` != `not_changed`: недоказанное обязано называться недоказанным, а не отсутствующим.
-        unreadable = []
-        for rp in receipt_paths:
-            if rp.exists():
-                try:
-                    receipt = yaml.safe_load(rp.read_text(encoding="utf-8"))
-                except (OSError, yaml.YAMLError) as exc:
-                    # Узкие типы намеренно: ожидаемый отказ — это ввод-вывод или разбор. Любое
-                    # другое исключение здесь — дефект валидатора, и он обязан всплыть, а не
-                    # маскироваться под «расписки нет».
-                    unreadable.append(f"{rp.name}: {type(exc).__name__}")
-                    continue
-                if receipt and receipt.get("kind") == "DeliveryReceipt" and receipt.get("sha_verified") is True:
-                    receipt_found = True
-                    break
-        if not receipt_found:
-            _why = (f" Найден файл расписки, но прочитать его не удалось ({'; '.join(unreadable)}) — "
-                    f"это НЕ то же, что отсутствие расписки: почините файл, а не создавайте новый."
-                    if unreadable else "")
-            _msg = ("feature.status=released, но нет SHA-verified DeliveryReceipt — "
-                    "done-артефакт недостаточно для доказательства поставки. "
-                    "Требуется DeliveryReceipt с sha_verified=true (PR смержён, SHA совпадает с "
-                    "remote)." + _why)
-            if str(feature.get("id")) in _debt_ids(feature_dir):
-                # Историческая поставка: доказательства нет и восстановить его нечем. Долг признан
-                # явно (см. DEBT_REL) — находка остаётся видимой, но прогон не валит.
-                debt(_msg + " Признано долгом: функция выпущена до появления требования "
-                            "(закрывается следующей настоящей доставкой или записью SHA владельцем).")
-            else:
-                fail(_msg)
+        # Политика 2026-09-21: DeliveryReceipt требуем ТОЛЬКО если процесс фичи включает стадию
+        # delivery. Ключ — стадия `delivery` в РЕШЁННЫХ required-стадиях профиля (тот же набор
+        # `set(PROFILES[profile])`, по которому reached_required пересекает per-stage проверки выше,
+        # см. ~:112). Фича, чей profile НЕ содержит delivery, никогда не заявляла поставку — и
+        # требовать доказать её нельзя (иначе кит выдаёт ложную «докажи доставку» лёгким/руками
+        # веденным фичам). Ключ — именно членство стадии, а НЕ имя профиля: lean-фича, реально
+        # прошедшая delivery (delivery ∈ lean), доказательство приносит как прежде.
+        #
+        # ПРИМЕЧАНИЕ (честно): оба текущих профиля (full, lean) содержат delivery, поэтому для
+        # сегодняшних фич поведение НЕ меняется — исключение сработает лишь для профиля/фичи, чьи
+        # required-стадии delivery не включают. Это делает правило самосогласованным, а не громким.
+        # Гейт намеренно на членстве в профиле, а не на reached_required: released-фича, застрявшая
+        # на ранней стадии (current_stage < delivery), обязана доказательство иметь как и раньше —
+        # это тот же дрейф reality/blueprint, что ловит проверка any_done и долг доказательства.
+        if "delivery" in set(PROFILES[profile]):
+            # v3.27.4 WP5: проверяем наличие SHA-verified DeliveryReceipt
+            # РЕАЛЬНЫЙ приёмник, куда пишут ВСЕ продюсеры (engine/_deliver, _reconcile_pending_delivery):
+            # features/<id>/delivery-outbox/<delivery_id>.receipt.yaml. Раньше проверка читала только
+            # исторические запасные пути (delivery-receipt.yaml, .ai/runtime/delivery/<id>/receipt.yaml),
+            # куда никто не пишет, — и честно доставленная функция всё равно валилась. Читаем outbox
+            # ПЕРВЫМ (тот же порядок, что и канонический reader lifecycle.work_view), потом запасные.
+            # Слой checks зависит только от stdlib+pyyaml и не импортирует вверх — glob делаем на месте.
+            outbox_dir = feature_dir / "delivery-outbox"
+            outbox_receipts = (sorted(outbox_dir.glob("*.receipt.yaml"))
+                               if outbox_dir.is_dir() else [])
+            receipt_paths = [
+                *outbox_receipts,
+                feature_dir / "delivery-receipt.yaml",
+                feature_dir.parent.parent / ".ai" / "runtime" / "delivery" / feature.get("id", "") / "receipt.yaml",
+            ]
+            receipt_found = False
+            # «НЕТ РАСПИСКИ» И «НЕ СМОГ ПРОЧИТАТЬ РАСПИСКУ» — РАЗНЫЕ ОТВЕТЫ (ревизия 2026-08-11).
+            # Прежде здесь стоял `except Exception: pass`, и битый YAML/нечитаемый файл давал ровно то
+            # же сообщение, что отсутствие файла: «нет SHA-verified DeliveryReceipt». Блокировка при
+            # этом срабатывала (fail-closed сохранялся), но владельцу называли НЕВЕРНУЮ причину — он шёл
+            # создавать расписку, которая уже лежит рядом сломанной. Это тот же класс, что инвариант
+            # `unknown` != `not_changed`: недоказанное обязано называться недоказанным, а не отсутствующим.
+            unreadable = []
+            for rp in receipt_paths:
+                if rp.exists():
+                    try:
+                        receipt = yaml.safe_load(rp.read_text(encoding="utf-8"))
+                    except (OSError, yaml.YAMLError) as exc:
+                        # Узкие типы намеренно: ожидаемый отказ — это ввод-вывод или разбор. Любое
+                        # другое исключение здесь — дефект валидатора, и он обязан всплыть, а не
+                        # маскироваться под «расписки нет».
+                        unreadable.append(f"{rp.name}: {type(exc).__name__}")
+                        continue
+                    if receipt and receipt.get("kind") == "DeliveryReceipt" and receipt.get("sha_verified") is True:
+                        receipt_found = True
+                        break
+            if not receipt_found:
+                _why = (f" Найден файл расписки, но прочитать его не удалось ({'; '.join(unreadable)}) — "
+                        f"это НЕ то же, что отсутствие расписки: почините файл, а не создавайте новый."
+                        if unreadable else "")
+                _msg = ("feature.status=released, но нет SHA-verified DeliveryReceipt — "
+                        "done-артефакт недостаточно для доказательства поставки. "
+                        "Требуется DeliveryReceipt с sha_verified=true (PR смержён, SHA совпадает с "
+                        "remote)." + _why)
+                if str(feature.get("id")) in _debt_ids(feature_dir):
+                    # Историческая поставка: доказательства нет и восстановить его нечем. Долг признан
+                    # явно (см. DEBT_REL) — находка остаётся видимой, но прогон не валит.
+                    debt(_msg + " Признано долгом: функция выпущена до появления требования "
+                                "(закрывается следующей настоящей доставкой или записью SHA владельцем).")
+                else:
+                    fail(_msg)
 
     return errors, advisories
 

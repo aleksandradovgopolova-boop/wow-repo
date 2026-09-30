@@ -58,6 +58,13 @@ tracks:
     reason: "LLM/агентный компонент — нужны eval и adversarial red team"
     skip_reason: "AI-компонент не заявлен в сигналах задачи — трек AI-оценки не активирован"
 
+  FEATURE_DECISIONS:
+    signal: feature_decision_declared
+    kind: required
+    gates: [feature_decision_quality]
+    reason: "заявлено фича-решение — оно обязано нести измеримое обязательство (baseline/target/guardrails)"
+    skip_reason: "фича-решение не заявлено в сигналах задачи — трек фича-решений не активирован (не факт о коде: план строится до правок)"
+
   RELEASE:
     signal: deploy_touched
     kind: conditional

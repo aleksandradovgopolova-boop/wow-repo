@@ -1,24 +1,35 @@
 #!/usr/bin/env python3
-"""ports.py — Protocol'ы ядра AI Ops (шов между ядром и реализациями).
+"""ports.py — КОНТРАКТ ТИПОВ ядра AI Ops (Protocol'ы для структурной типизации).
 
-Ядро зависит ТОЛЬКО от этих Protocol'ов и от контрактов в shared/contracts.py.
-Реализации внедряются на входе транзакции (ai_ops_run), не импортируются в глубине.
+Это контракт ТИПОВ, а НЕ шов с внедряемыми реализациями. Ядро сверяет свои входы/выходы
+против этих Protocol'ов и TypedDict'ов структурно (`isinstance` по `@runtime_checkable`,
+проверка дрейфа полей ExecutionSpec в engine/execution_pipeline) — так контракт не расходится
+с кодом на каждом прогоне, в том числе в дочке. Реализации портов НЕ регистрируются здесь и НЕ
+внедряются через DI: каждая живёт в своём пакете ядра и вызывается прямым импортом (адреса ниже —
+ориентир «где искать реализацию», а не точка внедрения).
 
-Порты (v3.38, trustworthy-core K0):
+Phase B (dependency injection: контейнер портов, подстановка реализаций на входе транзакции) НЕ
+преследуется. Ранее рядом лежали четыре модуля-заготовки под такой шов (engops/{delivery_size,
+merge_lifecycle,refusal_paths,session_thresholds}) — их сняли (2026-09-05): 0 импортеров, порту
+не соответствовали, дормантный инвентарь. Понадобится Phase B — реализации восстановят против
+этих Protocol'ов, а не воскрешением заготовок.
+
+Порты (v3.38, trustworthy-core K0) — и где лежит соответствующая реализация ядра:
   ExecutorPort       — вероятностный исполнитель (модель предлагает → broker исполняет).
-                       Реализация: providers/orchestrator (или внешний рантайм).
+                       providers/orchestrator (или внешний рантайм).
   ContextPort        — сборка контекста для WorkItem.
-                       Реализация: context/context_compiler.
+                       context/context_compiler.
   EvidenceProvider   — детерминированный сбор evidence (build/lint/test/scan).
-                       Реализация: gates/evidence_collector, security/security_scan, checks/.
+                       gates/evidence_collector, security/security_scan, checks/.
   GatePort           — оценка quality gates (fail-closed, writer≠judge).
-                       Реализация: gates/gate_executor.
+                       gates/gate_executor.
   DeliveryPort       — верифицированная доставка (draft PR, SHA-проверка).
-                       Реализация: delivery/pr_open + review_branch.
+                       delivery/pr_open (акт доставки); ревью ветки запускает движковые гейты —
+                       engine/review_branch.
   PolicyPort         — решение о допустимости действия (автономия/HITL).
-                       Реализация: governance/policy_engine, engine/tool_broker.
+                       governance/policy_engine, engine/tool_broker.
   ClassifierPort     — классификация задачи (роль/workflow/риск).
-                       Реализация: engine/ai_route.
+                       shared/ai_route (foundation: чистая классификация, зовут lifecycle+engine).
 
 Только аннотации, без runtime-логики. Structural typing (Protocol), stdlib только.
 """
@@ -102,8 +113,9 @@ class Change(TypedDict, total=False):
     profile: dict[str, Any]
 
 
-# RunContext — контекст прогона (вход PolicyPort).
-class RunContext(TypedDict, total=False):
+# PolicyContext — контекст РЕШЕНИЯ о допустимости действия (вход PolicyPort).
+# Не путать с engine.run_context.RunContext (dataclass, источник истины прогона).
+class PolicyContext(TypedDict, total=False):
     """Контекст принятия решения о допустимости действия.
 
     Включает: write_scope, sandbox (policy enforcement, не security isolation:
@@ -215,7 +227,7 @@ class GatePort(Protocol):
 class DeliveryPort(Protocol):
     """Верифицированная доставка — draft PR с SHA-проверкой.
 
-    Реализация: delivery/pr_open + review_branch.
+    Реализация: delivery/pr_open (акт доставки) + engine/review_branch (ревью ветки).
     Ядро зовёт deliver() ПОСЛЕ durable-фиксации RunHandoff.
     """
 
@@ -233,7 +245,7 @@ class PolicyPort(Protocol):
     Ядро зовёт decide() ПЕРЕД каждым действием исполнителя.
     """
 
-    def decide(self, action: Action, ctx: RunContext) -> Autonomy:
+    def decide(self, action: Action, ctx: PolicyContext) -> Autonomy:
         ...
 
 
@@ -241,7 +253,7 @@ class PolicyPort(Protocol):
 class ClassifierPort(Protocol):
     """Классификация задачи — детерминированно, по реестрам.
 
-    Реализация: engine/ai_route.
+    Реализация: shared/ai_route (foundation).
     Ядро зовёт classify() для определения workflow/риск/роль ДО исполнения.
     """
 

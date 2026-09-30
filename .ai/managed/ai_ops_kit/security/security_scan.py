@@ -6,8 +6,9 @@
 модуль даёт ДЕТЕРМИНИРОВАННУЮ часть:
   * no_secrets        — сканер секретов по изменённым файлам (regex известных форматов);
   * deps_approved     — аудит зависимостей: НОВЫЕ зависимости в манифестах против базы;
-  * injection-surface — ФЛАГИ рискованных мест (eval/exec, shell=True, pickle, yaml.load, SQL f-string,
-                        dangerouslySetInnerHTML, child_process). Это ВХОД для судьи, не автоприёмка.
+  * injection-surface — ФЛАГИ рискованных мест (eval/exec, shell=True, pickle, yaml.load, SQL f-string
+                        и SQL через шаблонный литерал JS, new Function/vm.runIn*Context, XSS-стоки DOM,
+                        child_process). Это ВХОД для судьи, не автоприёмка.
 
 Честная граница: сканер может ДОКАЗАТЬ отсутствие известных секретов и отсутствие НОВЫХ зависимостей
 (детерминированные факты) и закрыть no_secrets/deps_approved, когда чисто. no_injection_surface —
@@ -16,8 +17,14 @@
 
 Использование:
   security_scan.py <root> [--base <sha>]   # скан изменений против базы (или всего дерева)
-  security_scan.py --selftest
 Возврат 0 — ок, 1 — ошибка/находки.
+
+Проверки модуля — `pytest tests/unit/test_security_scan*.py` (AGENTS.md: selftest не живёт в
+продакшн-модуле — модули ai_ops_kit/ едут в child-репозиторий). Там у КАЖДОГО правила детектора
+есть образец и безобидный двойник, и правило без них краснит набор. До #1096 здесь была названа
+самопроверка одной командой, которой не существовало: описание обещало запуск, которого нельзя
+было сделать. Сверку «обещано ⊆ принимается argparse» держит
+tests/unit/test_security_scan_promises_are_runnable.py.
 """
 from __future__ import annotations
 
@@ -28,26 +35,42 @@ import subprocess
 import sys
 from pathlib import Path
 
+# security_scan.py запускается КАК СКРИПТ (`python3 ai_ops_kit/security/security_scan.py --base …`
+# в CI), поэтому НЕ импортирует пакет ai_ops_kit (иначе ModuleNotFoundError: sys.path[0] — каталог
+# скрипта, не корень). Git-вызовы здесь — raw subprocess с ЯВНЫМ timeout=: инвариант «git не висит
+# вечно» держится таймаутом, а не импортом gitio. Ратчет test_no_unbounded_git это допускает.
+
 # Секреты: известные форматы + generic key-in-quotes. Плейсхолдеры (xxxx/${...}/env) отсеиваем.
-SECRET_PATTERNS = [
-    ("aws_access_key_id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("private_key_block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
-    ("github_pat", re.compile(r"\bghp_[A-Za-z0-9]{36}\b")),
-    ("slack_token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
-    ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
-    ("aws_secret_access_key", re.compile(r"(?i)aws_secret_access_key\s*[:=]\s*['\"]?[A-Za-z0-9/+]{40}\b")),
-    ("generic_secret_assignment",
-     re.compile(r"(?i)\b(?:api[_-]?key|secret|token|password|passwd|access[_-]?key)\b\s*[:=]\s*"
-                r"['\"]([A-Za-z0-9/+_\-]{16,})['\"]")),
-]
-# Плейсхолдеры/ссылки на env — НЕ секрет (снижаем ложные срабатывания generic-паттерна).
-_PLACEHOLDER = re.compile(r"(?i)(x{6,}|\$\{?[a-z_]+\}?|<[a-z_ -]+>|your[_-]?|example|changeme|placeholder|env\[)")
-# Материал ключа после заголовка PEM: base64-тело. Его отсутствие означает, что назван ФОРМАТ,
-# а не выдан ключ.
-_PEM_BODY = re.compile(r"[A-Za-z0-9+/]{20,}")
-# Сколько строк после заголовка считать телом ключа. Настоящий PEM начинает тело
-# сразу; больший запас начал бы цеплять соседний текст.
-_PEM_LOOKAHEAD = 2
+#
+# СПИСОК ФОРМАТОВ ЗДЕСЬ БОЛЬШЕ НЕ ОБЪЯВЛЯЕТСЯ (#1097). Он живёт в `ai_ops_kit/shared/secret_formats.py`
+# и оттуда же его читают скрабы вывода (`engine.tool_broker`) и тела PR (`delivery.pr_open`). Пока
+# копий было две, они разошлись: детектор знал строку подключения с паролем, JWT, npm- и LLM-ключи,
+# а скраб тела PR — нет, и кит печатал наружу формат, который сам умеет опознавать.
+#
+# ГРУЗИМ ДВУМЯ ПУТЯМИ, И ЭТО НЕ ПЕРЕСТРАХОВКА. Этот файл работает в двух режимах:
+#   * как МОДУЛЬ ПАКЕТА (`from ai_ops_kit.security import security_scan`) — обычный импорт;
+#   * как СКРИПТ (`python3 ai_ops_kit/security/security_scan.py --base …` в CI) — пакета в
+#     sys.path нет (sys.path[0] — каталог скрипта), обычный импорт дал бы ModuleNotFoundError.
+# Во втором режиме источник истины грузится ПО ПУТИ от `__file__`. Именно поэтому в
+# `shared/secret_formats.py` нет ни одного импорта из `ai_ops_kit` — иначе загрузка по пути
+# развалилась бы, и сканер перестал бы запускаться в CI.
+try:
+    from ai_ops_kit.shared.secret_formats import SECRET_FORMATS as _SECRET_FORMATS
+except ImportError:                                    # запуск КАК СКРИПТ: пакета в sys.path нет
+    import importlib.util as _ilu
+
+    _formats_path = Path(__file__).resolve().parents[1] / "shared" / "secret_formats.py"
+    _spec = _ilu.spec_from_file_location("ai_ops_secret_formats", _formats_path)
+    if _spec is None or _spec.loader is None:          # fail-closed: без форматов сканер не сканер
+        raise RuntimeError(f"не удалось загрузить форматы секретов из {_formats_path}") from None
+    _formats_mod = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_formats_mod)
+    _SECRET_FORMATS = _formats_mod.SECRET_FORMATS
+
+# Имя сохранено: под ним список читают `engine.tool_broker._scrub_output`, `pipeline_readiness` и
+# тесты. Это ТОТ ЖЕ объект, что и `shared.secret_formats.SECRET_FORMATS`, а не его копия.
+SECRET_PATTERNS = _SECRET_FORMATS
+
 
 INJECTION_PATTERNS = [
     # R-40: было `\b(?:eval|exec)\s*\(` — граница слова стоит между точкой и `e`, поэтому паттерн
@@ -74,6 +97,17 @@ INJECTION_PATTERNS = [
     ("node_child_process",
      re.compile(r"require\(\s*['\"](?:node:)?child_process['\"]\s*\)|from\s+['\"](?:node:)?child_process['\"]")),
     ("dom_innerhtml_assign", re.compile(r"\.innerHTML\s*=")),
+    # ── #1094: динамическое исполнение в Node/браузере мимо `eval(`. Оба места — вход для судьи,
+    # а не приговор: `new Function` встречается и в шаблонизаторах. `(?!=)` тут не нужен —
+    # это вызовы, а не присваивания.
+    ("js_new_function", re.compile(r"\bnew\s+Function\s*\(")),
+    ("node_vm_run_in_context", re.compile(r"\bvm\s*\.\s*runIn(?:New|This)Context\s*\(")),
+    # ── #1094: XSS-стоки помимо `.innerHTML =` и `dangerouslySetInnerHTML`. `(?!=)` отсекает
+    # СРАВНЕНИЕ (`if (el.outerHTML === s)`) — оно ничего не записывает в DOM.
+    ("dom_outerhtml_assign", re.compile(r"\.outerHTML\s*=(?!=)")),
+    ("dom_insert_adjacent_html", re.compile(r"\.insertAdjacentHTML\s*\(")),
+    ("dom_document_write", re.compile(r"\bdocument\s*\.\s*write(?:ln)?\s*\(")),
+    ("vue_v_html", re.compile(r"\bv-html\s*=")),
 ]
 
 
@@ -82,40 +116,55 @@ def _scan(text, patterns):
     lines = text.splitlines()
     for lineno, line in enumerate(lines, 1):
         for pid, rx in patterns:
-            m = rx.search(line)
-            if not m:
-                continue
-            # ПЛЕЙСХОЛДЕР — НЕ СЕКРЕТ, И ЭТО ВЕРНО ДЛЯ ВСЕХ ПАТТЕРНОВ, а не только для generic.
-            # Прежде отсев применялся к одному правилу, и `AKIAIOSFODNN7EXAMPLE` — документированный
-            # ПРИМЕР самой AWS, буквально оканчивающийся на EXAMPLE, — считался утечкой ключа в
-            # четырёх местах репозитория. Сканер, который на каждом прогоне находит десять «утечек»
-            # и ни одна не утечка, обучает пролистывать раздел «СЕКРЕТ» целиком.
-            #
-            # Отсев идёт по НАЙДЕННОМУ значению, а не по строке: комментарий «# example» рядом с
-            # настоящим ключом не должен его прятать.
-            value = m.group(1) if m.groups() else m.group(0)
-            if _PLACEHOLDER.search(value):
-                continue
-            if pid == "private_key_block":
-                # Заголовок PEM без материала ключа — упоминание ФОРМАТА, а не ключ. Так он и стоит
-                # в CHANGELOG, в манифесте и в отчёте аудита: перечислением того, что ищет детектор.
-                # Секрет — байты ключа, и без них флаг ничего не охраняет.
+            # ВСЕ СОВПАДЕНИЯ НА СТРОКЕ, А НЕ ПЕРВОЕ (#1138). Прежде бралось первое, и погашенное
+            # первое прятало всё остальное: `dev=…@localhost/d prod=…@db.prod.io/a` молчал целиком —
+            # отсев снимал петлевой dev, а до боевого prod дело не доходило. Пока гасить было почти
+            # нечем, дефект оставался недостижимым; четыре новых класса отсева сделали его
+            # достижимым — нашло независимое ревью. Адрес на строку по-прежнему один на правило.
+            найдено_на_строке = False
+            for m in rx.finditer(line):
+                # ПЛЕЙСХОЛДЕР — НЕ СЕКРЕТ, И ЭТО ВЕРНО ДЛЯ ВСЕХ ПАТТЕРНОВ, а не только для generic.
+                # Прежде отсев применялся к одному правилу, и `AKIAIOSFODNN7EXAMPLE` — документированный
+                # ПРИМЕР самой AWS, буквально оканчивающийся на EXAMPLE, — считался утечкой ключа в
+                # четырёх местах репозитория. Сканер, который на каждом прогоне находит десять «утечек»
+                # и ни одна не утечка, обучает пролистывать раздел «СЕКРЕТ» целиком.
                 #
-                # ТЕЛО ИЩЕТСЯ И НА СЛЕДУЮЩИХ СТРОКАХ, а не только в хвосте текущей: в НАСТОЯЩЕМ
-                # PEM-файле заголовок стоит отдельной строкой, и проверка только своей строки
-                # пропустила бы ровно тот случай, ради которого правило существует. Поймано
-                # тестом «настоящий приватный ключ всё ещё находится».
-                tail = [line[m.end():]] + lines[lineno:lineno + _PEM_LOOKAHEAD]
-                if not any(_PEM_BODY.search(t) for t in tail):
+                # Отсев идёт по НАЙДЕННОМУ значению, а не по строке: комментарий «# example» рядом с
+                # настоящим ключом не должен его прятать.
+                value = m.group(1) if m.groups() else m.group(0)
+                if _looks_like_placeholder(value):
                     continue
-            out.append({"id": pid, "line": lineno})
+                if pid == "db_connection_string_password" and _is_loopback_dsn(line[m.end():]):
+                    continue                       # адрес на своей машине — отзывать нечего
+                if pid == "private_key_block" and not _pem_header_has_body(
+                        line[m.end():], lines[lineno:lineno + _PEM_LOOKAHEAD]):
+                    continue                   # заголовок без байтов ключа — упоминание формата
+                if найдено_на_строке:
+                    continue
+                найдено_на_строке = True
+                out.append({"id": pid, "line": lineno})
     return out
 
 
 def scan_secrets(files):
-    """files: {path: content} -> список находок секретов [{path, id, line}]."""
+    """files: {path: content} -> список находок секретов [{path, id, line}].
+
+    ПРОЗА ЗДЕСЬ НЕ ИСКЛЮЧАЕТСЯ — и это отличие от скана injection (#1138). Правило разное по
+    смыслу: код в документации не исполняется, а пароль в документации — всё ещё утёкший пароль.
+    Проверено прямо: с исключением прозы настоящий `AKIA…` в `README.md` переставал находиться, то
+    есть блокирующая проверка приобретала ПОД-срабатывание — худший вид ошибки здесь. Сторож —
+    `tests/unit/test_security_scan_secret_false_blocks.py`.
+
+    Ложные блокировки сняты в `scan_secret_noise`: там отсев говорит «это не секрет» по САМОМУ
+    значению, а не по тому, где оно лежит. Цена ошибки: находка секрета возвращает ненулевой код и
+    БЛОКИРУЕТ гейт — на реальном продукте это было 17 находок, 0 настоящих утечек и каждое четвёртое
+    изменение (129 из 500). Стало 0.
+    """
     res = []
     for path, text in files.items():
+        # СОБСТВЕННЫЙ МАТЕРИАЛ ДЕТЕКТОРА ЗДЕСЬ НЕ ПРОЩАЕТСЯ — решение v3.0.4 в силе, и ревью
+        # показало, чего стоила бы его отмена: по замеру этот класс не гасил НИ ОДНОЙ из 17 находок,
+        # а настоящий ключ, закоммиченный в файл детектора, переставал находиться.
         for f in _scan(text, SECRET_PATTERNS):
             res.append({"path": path, **f})
     return res
@@ -124,18 +173,97 @@ def scan_secrets(files):
 # R-40: исполнение команд в Node. Отличить `/re/.exec(s)` от `child_process.exec("rm -rf /")` одной
 # построчной регуляркой нельзя — обе строки выглядят как `.exec(`. Различает ПОЛУЧАТЕЛЬ вызова, а он
 # объявлен в другом месте файла (import/require), поэтому правило работает на уровне файла, а не строки.
-_CHILD_PROCESS_IMPORT = re.compile(
-    r"""(?:require\s*\(\s*['"](?:node:)?child_process['"]|"""
-    r"""from\s+['"](?:node:)?child_process['"]|"""
-    r"""import\s+[^\n;]*['"](?:node:)?child_process['"])""")
-_NODE_EXEC_CALL = re.compile(r"\b(?:exec|execSync|execFile|execFileSync)\s*\(")
-
-
 # ─── что НЕ является injection-поверхностью ───────────────────────────────────────────────────
 #
-# Проза — не исполняемый код. `dangerouslySetInnerHTML`, упомянутый в CHANGELOG, ничего не
-# исполняет; флаг на нём — не осторожность, а шум.
-_PROSE_SUFFIXES = (".md", ".rst", ".txt")
+# Разбор «код или проза» вынесен в сателлит `scan_prose`: после того как комментарии перестали
+# считаться кодом (#1112), модуль перешагнул порог монолита в 700 строк, и ратчет размера сказал об
+# этом раньше, чем это заметил бы человек. Здесь — фасад: имена те же, поведение то же.
+#
+# ГРУЗИТСЯ ДВУМЯ ПУТЯМИ — по той же причине и тем же способом, что и форматы секретов выше: этот
+# файл запускается и как модуль пакета, и КАК СКРИПТ (`python3 ai_ops_kit/security/security_scan.py`
+# в CI), где пакета в sys.path нет. Поэтому в `scan_prose.py` нет ни одного импорта из `ai_ops_kit`:
+# иначе загрузка по пути развалилась бы, и сканер перестал бы запускаться.
+try:
+    from ai_ops_kit.security.scan_sql_template import (
+        sql_template_literal_lines as _sql_template_literal_lines,
+    )
+    from ai_ops_kit.security.scan_secret_noise import PEM_LOOKAHEAD as _PEM_LOOKAHEAD
+    from ai_ops_kit.security.scan_secret_noise import is_loopback_dsn as _is_loopback_dsn
+    from ai_ops_kit.security.scan_secret_noise import pem_header_has_body as _pem_header_has_body
+    from ai_ops_kit.security.scan_secret_noise import looks_like_placeholder as _looks_like_placeholder
+except ImportError:                                    # запуск КАК СКРИПТ: пакета в sys.path нет
+    import importlib.util as _ilu3
+
+    _noise_path = Path(__file__).resolve().parent / "scan_secret_noise.py"
+    _spec3 = _ilu3.spec_from_file_location("ai_ops_scan_secret_noise", _noise_path)
+    if _spec3 is None or _spec3.loader is None:        # fail-closed: без отсева сканер блокирует зря
+        raise RuntimeError(f"не удалось загрузить отсев не-секретов из {_noise_path}") from None
+    _noise_mod = _ilu3.module_from_spec(_spec3)
+    _spec3.loader.exec_module(_noise_mod)
+    _looks_like_placeholder = _noise_mod.looks_like_placeholder
+    _is_loopback_dsn = _noise_mod.is_loopback_dsn
+    _pem_header_has_body = _noise_mod.pem_header_has_body
+    _PEM_LOOKAHEAD = _noise_mod.PEM_LOOKAHEAD
+
+    _sql_path = Path(__file__).resolve().parent / "scan_sql_template.py"
+    _spec4 = _ilu3.spec_from_file_location("ai_ops_scan_sql_template", _sql_path)
+    if _spec4 is None or _spec4.loader is None:        # fail-closed: без правила сканер слепнет
+        raise RuntimeError(f"не удалось загрузить правило SQL-шаблона из {_sql_path}") from None
+    _sql_mod = _ilu3.module_from_spec(_spec4)
+    _spec4.loader.exec_module(_sql_mod)
+    _sql_template_literal_lines = _sql_mod.sql_template_literal_lines
+
+try:
+    from ai_ops_kit.security.scan_exec_call import child_process_imported as _child_process_imported
+    from ai_ops_kit.security.scan_exec_call import launch_findings as _launch_findings
+    from ai_ops_kit.security.scan_inline_code import inline_code_lines as _inline_code_lines
+    from ai_ops_kit.security.scan_prose import PROSE_SUFFIXES as _PROSE_SUFFIXES
+    from ai_ops_kit.security.scan_prose import area_of as _area_of
+    from ai_ops_kit.security.scan_prose import blank_string_contents as _blank_strings
+    from ai_ops_kit.security.scan_prose import blank_comments as _blank_comments
+    from ai_ops_kit.security.scan_vendor import VERSION_FILE as _VENDOR_VERSION_FILE
+    from ai_ops_kit.security.scan_vendor import arrivals_note as _arrivals_note
+    from ai_ops_kit.security.scan_vendor import mark_arrivals as _mark_arrivals
+except ImportError:                                    # запуск КАК СКРИПТ: пакета в sys.path нет
+    import importlib.util as _ilu2
+
+    _prose_path = Path(__file__).resolve().parent / "scan_prose.py"
+    _spec2 = _ilu2.spec_from_file_location("ai_ops_scan_prose", _prose_path)
+    if _spec2 is None or _spec2.loader is None:        # fail-closed: без разбора прозы сканер шумит
+        raise RuntimeError(f"не удалось загрузить разбор прозы из {_prose_path}") from None
+    _prose_mod = _ilu2.module_from_spec(_spec2)
+    _spec2.loader.exec_module(_prose_mod)
+    _PROSE_SUFFIXES = _prose_mod.PROSE_SUFFIXES
+    _blank_comments = _prose_mod.blank_comments
+    _area_of = _prose_mod.area_of
+    _blank_strings = _prose_mod.blank_string_contents
+
+    _exec_path = Path(__file__).resolve().parent / "scan_exec_call.py"
+    _spec7 = _ilu2.spec_from_file_location("ai_ops_scan_exec_call", _exec_path)
+    if _spec7 is None or _spec7.loader is None:        # fail-closed: без разбора сканер слепнет
+        raise RuntimeError(f"не удалось загрузить разбор запуска команд из {_exec_path}") from None
+    _exec_mod = _ilu2.module_from_spec(_spec7)
+    _spec7.loader.exec_module(_exec_mod)
+    _child_process_imported = _exec_mod.child_process_imported
+    _launch_findings = _exec_mod.launch_findings
+
+    _inline_path = Path(__file__).resolve().parent / "scan_inline_code.py"
+    _spec8 = _ilu2.spec_from_file_location("ai_ops_scan_inline_code", _inline_path)
+    if _spec8 is None or _spec8.loader is None:        # fail-closed: без разбора сканер слепнет
+        raise RuntimeError(f"не удалось загрузить разбор inline-кода из {_inline_path}") from None
+    _inline_mod = _ilu2.module_from_spec(_spec8)
+    _spec8.loader.exec_module(_inline_mod)
+    _inline_code_lines = _inline_mod.inline_code_lines
+
+    _vendor_path = Path(__file__).resolve().parent / "scan_vendor.py"
+    _spec6 = _ilu2.spec_from_file_location("ai_ops_scan_vendor", _vendor_path)
+    if _spec6 is None or _spec6.loader is None:        # fail-closed: без сверки версий раздел слеп
+        raise RuntimeError(f"не удалось загрузить сверку поставки из {_vendor_path}") from None
+    _vendor_mod = _ilu2.module_from_spec(_spec6)
+    _spec6.loader.exec_module(_vendor_mod)
+    _mark_arrivals = _vendor_mod.mark_arrivals
+    _arrivals_note = _vendor_mod.arrivals_note
+    _VENDOR_VERSION_FILE = _vendor_mod.VERSION_FILE
 
 # СОБСТВЕННЫЙ МАТЕРИАЛ ДЕТЕКТОРА. Файл, который ОБЪЯВЛЯЕТ образцы, и тесты, которые их ПОДСОВЫВАЮТ,
 # по построению содержат всё, что детектор ищет. Замер 19.08.2026: 55 флагов из 72 приходились
@@ -149,11 +277,34 @@ DETECTOR_OWN_MATERIAL = {
     "ai_ops_kit/security/security_scan.py": "объявляет сами образцы injection и секретов",
     "tests/unit/test_security_scan.py": "подсовывает детектору образцы, чтобы проверить детекцию",
     "tests/unit/test_property_based.py": "property-based фикстуры того же детектора",
+    # #1157: реестр доменов безопасности НАЗЫВАЕТ опасные конструкции как условия блокировки
+    # («innerHTML/dangerouslySetInnerHTML без санитизации») — имя правила стоит там значением, а не
+    # вызовом. Файл едет в дочку, и на свежей установке это был один из четырёх адресов раздела
+    # поставки: сканер читал собственный реестр правил как код.
+    "security/security-domains.yaml": "реестр правил детектора: имена опасных конструкций — "
+                                      "значения условий блокировки, а не исполняемый код",
 }
 
 
+# ГДЕ ЛЕЖИТ ТОТ ЖЕ МАТЕРИАЛ В ДОЧКЕ. В материнском репозитории список выше совпадает с путями один
+# в один, и там дефект считался закрытым. В ПОДКЛЮЧЁННОМ репозитории установленная копия кита лежит
+# под `.ai/managed/`, поэтому тот же самый файл приходит как
+# `.ai/managed/ai_ops_kit/security/security_scan.py` — точного совпадения нет, и детектор читал СВОИ
+# образцы как код продукта. Замер 23.09.2026 на ии-среде: 20 флагов из 61 (33%) оказались про кит,
+# из них 15 — его же `security_scan.py`. То есть проверка «сканер не читает сам себя» стояла не там,
+# где сканер работает у пользователя.
+#
+# ПОЧЕМУ СНИМАЕТСЯ ПРЕФИКС, А НЕ СРАВНИВАЕТСЯ СУФФИКС. Прощать любой путь, ОКАНЧИВАЮЩИЙСЯ на имя из
+# списка, — это та самая «складская» лазейка, против которой список объявлен поимённо: продуктовый
+# файл с совпадающим хвостом прощался бы молча. Снимается ровно один известный префикс установки,
+# дальше работает прежний поимённый список, и он по-прежнему вправе только сокращаться.
+_MANAGED_INSTALL_PREFIX = ".ai/managed/"
+
+
 def _is_detector_own(rel: str) -> bool:
-    return rel.replace("\\", "/") in DETECTOR_OWN_MATERIAL
+    rel = rel.replace("\\", "/").removeprefix("./")
+    rel = rel.removeprefix(_MANAGED_INSTALL_PREFIX)
+    return rel in DETECTOR_OWN_MATERIAL
 
 
 def scan_injection(files):
@@ -167,193 +318,77 @@ def scan_injection(files):
     for path, text in files.items():
         if path.lower().endswith(_PROSE_SUFFIXES) or _is_detector_own(path):
             continue
-        for f in _scan(text, INJECTION_PATTERNS):
+        найдено = _scan(text, INJECTION_PATTERNS)
+        if найдено:
+            # Разбор комментариев стоит дорого, поэтому включается ТОЛЬКО когда есть что проверять:
+            # на файле без единого совпадения он ничего не изменит, а времени возьмёт столько же.
+            # ОСТАЛЬНЫЕ ПРАВИЛА ПО-ПРЕЖНЕМУ ДОВЕРЯЮТ ГАШЕНИЮ КОММЕНТАРИЕВ (#1112): комментарий,
+            # утверждающий ОБРАТНОЕ («рендер без dangerouslySetInnerHTML»), не должен становиться
+            # находкой. Признак «разобрано» нужен не здесь, а там, где снимается флаг со строки
+            # импорта: только это решение опирается на полноту разбора.
+            без_комментариев, _ = _blank_comments(text, path)
+            if без_комментариев != text:
+                найдено = _scan(без_комментариев, INJECTION_PATTERNS)
+        for f in найдено:
             res.append({"path": path, **f})
-        # Файл тянет child_process -> любой exec-вызов в нём считаем исполнением команды.
-        # Пере-срабатывание здесь безопасно (лишний needs_review), под-срабатывание — нет.
-        if _CHILD_PROCESS_IMPORT.search(text):
-            for lineno, line in enumerate(text.splitlines(), 1):
-                if _NODE_EXEC_CALL.search(line):
-                    res.append({"path": path, "id": "node_child_process_exec", "line": lineno})
+        # Файл тянет child_process -> его exec-вызовы разбираются как исполнение команд. ЧТО ИМЕННО
+        # считается поверхностью, решает сателлит `scan_exec_call`: запуск с литеральным именем
+        # бинаря, без оболочки и без встроенного кода безопасен ПО КОНСТРУКЦИИ — исполнится ровно
+        # то, что написано в файле (#1161). Стойка «пере-срабатывание безопаснее под-срабатывания»
+        # в силе: снимается ровно тот класс, где безопасность видна в самой строке вызова.
+        # Вход читает СЫРОЙ текст, вызовы — очищенный, осознанно (#1153): импорт, съеденный
+        # ошибочно угаданным комментарием, не должен выключать разбор. Границы — в `launch_findings`.
+        if _child_process_imported(text):
+            были_вызовы, вызовы = _launch_findings(text, path, _blank_comments, _blank_strings)
+            for lineno in вызовы:
+                res.append({"path": path, "id": "node_child_process_exec", "line": lineno})
+            if были_вызовы:
+                # Строка `import` найдена правилом `node_child_process` выше и теперь не нужна:
+                # вызовы РАЗОБРАНЫ, и про каждый известно, поверхность он или нет. Если все они
+                # безопасны по конструкции, файл уходит из флагов целиком — это и есть починка.
+                # А вот когда вызовов не нашлось вовсе (переименование), импорт остаётся флагом:
+                # там мы не разобрали ничего, и молчание означало бы «не проверено» вместо «чисто».
+                res = [f for f in res
+                       if not (f["path"] == path and f["id"] == "node_child_process")]
+        for lineno in _sql_template_literal_lines(text):
+            res.append({"path": path, "id": "sql_template_literal", "line": lineno})
+        # #1161: интерпретатору в .py/.sh передан код, собранный подстановкой. Литеральный код флагом
+        # не считается: исполнится ровно написанное (решение и цена — в `scan_inline_code`).
+        for lineno in _inline_code_lines(text, path):
+            res.append({"path": path, "id": "inline_code_interpolated", "line": lineno})
+    # ОБЛАСТЬ — ЯРЛЫК, А НЕ ФИЛЬТР (#1146). Ни один флаг не исчезает: `harness` (тесты, e2e, конфиги
+    # инструментов) отделён от `product`, чтобы судья не читал дюжину тестовых адресов ради одного
+    # боевого. Ошибка классификации перекладывает адрес в другой раздел, но не прячет его.
+    for f in res:
+        f["area"] = _area_of(f["path"])
     return res
 
 
-
-# ─── зависимости из TOML ──────────────────────────────────────────────────────────────────────
+# ─── зависимости из манифестов ────────────────────────────────────────────────────────────────
 #
-# ПОЧЕМУ ЗДЕСЬ ОТДЕЛЬНЫЙ РАЗБОР, А НЕ РЕГУЛЯРКА ПО ВСЕМУ ФАЙЛУ. Прежде имена искались по всему
-# тексту образцами `"имя" =` и `имя = "`, без оглядки на секцию. На собственном репозитории кита
-# это давало 18 «новых зависимостей», и ВСЕ 18 были ключами настроек: `name`, `version`, `license`,
-# `edition`, `target-version`, `addopts`, `requires-python`, `tag_format`…
+# Разбор вынесен в сателлит `scan_deps` — по той же причине, что проза и отсев не-секретов: фасад
+# подошёл к порогу монолита в 700 строк вплотную, и ратчет размера сказал об этом до слияния.
+# Публичная поверхность НЕ переезжает: `new_dependencies`, `new_dependencies_detailed` и
+# `DEP_MANIFESTS` остаются именами этого модуля (их читают `security_pack.run_pack` и
+# `planning.architecture_invariants`).
 #
-# Цена измерена: `security` — один из восьми блокирующих гейтов MVP, и проверка, ложная на 100% в
-# одной из трёх своих категорий, учит игнорировать себя ЦЕЛИКОМ. Ложная тревога дороже молчания:
-# молчание не притворяется работой.
-#
-# Секции объявлены СПИСКОМ: «всё, что похоже на пару имя-значение» — это не про зависимости.
+# ГРУЗИТСЯ ДВУМЯ ПУТЯМИ — см. объяснение у форматов секретов выше: файл работает и как модуль
+# пакета, и КАК СКРИПТ в CI дочки, где пакета в sys.path нет.
+try:
+    from ai_ops_kit.security.scan_deps import DEP_MANIFESTS
+    from ai_ops_kit.security.scan_deps import new_dependencies, new_dependencies_detailed
+except ImportError:                                    # запуск КАК СКРИПТ: пакета в sys.path нет
+    import importlib.util as _ilu5
 
-# pyproject.toml: где действительно живут зависимости.
-_PY_ARRAY_KEYS = (("project", "dependencies"), ("build-system", "requires"))
-# Секции-ТАБЛИЦЫ, где ключ и есть имя пакета. `project.optional-dependencies` сюда НЕ входит:
-# там ключ — имя группы (`dev`, `test`), а зависимости лежат в массиве-значении.
-_PY_TABLE_SECTIONS = ("tool.poetry.dependencies", "tool.poetry.dev-dependencies")
-# Cargo.toml: секции-таблицы, где ключ — имя крейта.
-_CARGO_SECTIONS = ("dependencies", "dev-dependencies", "build-dependencies")
-
-_PEP508_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-
-
-def _requirement_name(spec: str) -> str:
-    """`pyyaml>=6.0,<7` -> `pyyaml`; `serde = { version = "1" }` уже разобран вызывающим."""
-    m = _PEP508_NAME.match(str(spec))
-    return m.group(1).lower() if m else ""
-
-
-def _is_dep_section(name: str, section: str) -> bool:
-    """Секция таблицы, в которой КЛЮЧ — это имя зависимости."""
-    if name == "Cargo.toml":
-        # `[dependencies]`, `[dev-dependencies]`, `[target.'cfg(...)'.dependencies]`
-        return section in _CARGO_SECTIONS or section.split(".")[-1] in _CARGO_SECTIONS
-    if section in _PY_TABLE_SECTIONS:
-        return True
-    # `[tool.poetry.group.<имя>.dependencies]`
-    return section.startswith("tool.poetry.group.") and section.endswith(".dependencies")
-
-
-def _toml_dep_names(text: str, manifest_name: str = "pyproject.toml") -> set:
-    """Имена зависимостей из TOML. Секции объявлены, всё прочее не считается зависимостью.
-
-    РАЗБОР ОДИН, БЕЗ `tomllib`. Он появился в stdlib только с 3.11, а объявленный пол кита — 3.9
-    (`requires-python`), и собственный `validate_python_compat` этот импорт отклоняет. Два пути
-    разбора означали бы ещё и два поведения: на 3.11 один ответ, на 3.9 другой — ровно тот класс
-    «у меня работает», против которого стоит охват `compatibility-matrix`.
-
-    Первая версия этой правки имела оба пути; расхождение между ними тест поймал сразу (фолбэк
-    принимал имя ГРУППЫ `dev`/`test` за пакет). Это и есть довод: сверять два разбора дешевле не
-    получается, а один разбор сверять не с чем — он просто один.
-    """
-    return _toml_dep_names_scanned(text, manifest_name)
-
-
-_SECTION = re.compile(r"^\s*\[\s*([^\]]+?)\s*\]\s*$")
-_ARRAY_KEY = re.compile(r"^\s*([A-Za-z0-9._-]+)\s*=\s*\[")
-_TABLE_KEY = re.compile(r"^\s*([A-Za-z0-9._\"'-]+)\s*=")
-_QUOTED = re.compile(r"[\"']([^\"']+)[\"']")
-
-
-def _toml_dep_names_scanned(text: str, manifest_name: str) -> set:
-    """Фолбэк для Python 3.9/3.10 и для битого TOML: тот же ответ, построчным сканером.
-
-    Секция отслеживается, потому что именно её отсутствие и было дефектом: ключ `name` в
-    `[project]` — это имя проекта, а не пакет. Две формы записи различаются, и это не мелочь:
-    в `[project.optional-dependencies]` ключ — имя ГРУППЫ (`dev`, `test`), а зависимости лежат
-    в массиве-значении. Считать ключ именем пакета значило бы заменить одни ложные находки
-    другими.
-    """
-    deps, section, in_array = set(), "", False
-
-    def take_specs(fragment):
-        for q in _QUOTED.findall(fragment):
-            deps.add(_requirement_name(q))
-
-    for raw in text.splitlines():
-        line = "" if raw.strip().startswith("#") else raw.split("#", 1)[0]
-        m = _SECTION.match(line)
-        if m:
-            section, in_array = m.group(1).strip().strip("\"'"), False
-            continue
-        if in_array:
-            take_specs(line)
-            if "]" in line:
-                in_array = False
-            continue
-        if "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip().strip("\"'")
-        if value.lstrip().startswith("["):
-            # Массив спецификаций — только в объявленных местах.
-            if (section, key) in _PY_ARRAY_KEYS or section == "project.optional-dependencies":
-                take_specs(value)
-                in_array = "]" not in value
-            continue
-        if _is_dep_section(manifest_name, section):
-            deps.add(key.lower())
-    return deps - {""}
-
-
-def _dep_names(path, text):
-    """Множество имён зависимостей из манифеста (по типу файла). Best-effort, детерминированно."""
-    name = Path(path).name
-    deps = set()
-    if name == "package.json":
-        try:
-            data = json.loads(text)
-            for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
-                deps |= set((data.get(key) or {}).keys())
-        except json.JSONDecodeError:
-            pass
-    elif name == "requirements.txt":
-        for ln in text.splitlines():
-            ln = ln.strip()
-            if ln and not ln.startswith("#"):
-                # maxsplit=1 по имени: позиционная передача объявлена устаревшей в Python 3.13
-                # и подлежит удалению. Пол объявлен (3.9), потолка у requires-python нет —
-                # значит кит однажды поедет на интерпретаторе, где это TypeError.
-                deps.add(re.split(r"[<>=!~\[ ]", ln, maxsplit=1)[0].strip().lower())
-    elif name == "go.mod":
-        # обе формы: однострочная `require github.com/x/y v1.2.3` и блок `require ( ... )`
-        for m in re.finditer(r"^\s*(?:require\s+)?([\w][\w./\-]+)\s+v\d", text, re.M):
-            if m.group(1) != "require":
-                deps.add(m.group(1))
-    elif name in ("pyproject.toml", "Cargo.toml"):
-        deps |= _toml_dep_names(text, name)
-    return deps
-
-
-def new_dependencies(before, after):
-    """before/after: {manifest_path: content}. -> отсортированный список НОВЫХ имён зависимостей."""
-    added = set()
-    for path, after_text in after.items():
-        before_names = _dep_names(path, before.get(path, ""))
-        added |= (_dep_names(path, after_text) - before_names)
-    return sorted(added)
-
-
-def _dep_specs(path, text):
-    """{name: version|None} из манифеста (версия best-effort: requirements '==', package.json значение)."""
-    name = Path(path).name
-    specs = {}
-    if name == "package.json":
-        try:
-            data = json.loads(text)
-            for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
-                for k, v in (data.get(key) or {}).items():
-                    specs[k] = str(v)
-        except json.JSONDecodeError:
-            pass
-    elif name == "requirements.txt":
-        for ln in text.splitlines():
-            ln = ln.strip()
-            if ln and not ln.startswith("#"):
-                nm = re.split(r"[<>=!~\[ ]", ln, maxsplit=1)[0].strip().lower()  # см. выше про 3.13
-                mv = re.search(r"==\s*([0-9][\w.\-]*)", ln)
-                specs[nm] = mv.group(1) if mv else None
-    else:
-        for nm in _dep_names(path, text):
-            specs[nm] = None
-    return specs
-
-
-def new_dependencies_detailed(before, after):
-    """v3.0-rc5 (P1.2): НОВЫЕ зависимости с деталями для fingerprint approval.
-    -> [{name, version, manifest, operation:'add'}] (отсортировано по manifest, name)."""
-    out = []
-    for path in sorted(after):
-        b, a = _dep_specs(path, before.get(path, "")), _dep_specs(path, after[path])
-        for nm in sorted(set(a) - set(b)):
-            out.append({"name": nm, "version": a.get(nm), "manifest": Path(path).name, "operation": "add"})
-    return out
+    _deps_path = Path(__file__).resolve().parent / "scan_deps.py"
+    _spec5 = _ilu5.spec_from_file_location("ai_ops_scan_deps", _deps_path)
+    if _spec5 is None or _spec5.loader is None:        # fail-closed: без разбора «новых нет» = незнание
+        raise RuntimeError(f"не удалось загрузить разбор зависимостей из {_deps_path}") from None
+    _deps_mod = _ilu5.module_from_spec(_spec5)
+    _spec5.loader.exec_module(_deps_mod)
+    new_dependencies = _deps_mod.new_dependencies
+    new_dependencies_detailed = _deps_mod.new_dependencies_detailed
+    DEP_MANIFESTS = _deps_mod.DEP_MANIFESTS
 
 
 def security_evidence(secrets, injections, new_deps, deps_compared=True):
@@ -404,8 +439,12 @@ def _looks_binary(data: bytes) -> bool:
 
 
 def _git_changed_files(root, base):
-    r = subprocess.run(["git", "-C", str(root), "diff", "--name-only", f"{base}..HEAD"],
-                       capture_output=True, text=True)
+    # RAW с явным timeout= (скрипт-режим — без импорта пакета): зависший git не вешает security-скан.
+    try:
+        r = subprocess.run(["git", "-C", str(root), "diff", "--name-only", f"{base}..HEAD"],
+                           capture_output=True, text=True, timeout=90)
+    except subprocess.TimeoutExpired:
+        return None
     if r.returncode != 0:
         return None
     return [ln for ln in r.stdout.splitlines() if ln.strip()]
@@ -429,12 +468,59 @@ def _read_files(root, rels):
 
 
 def _git_show(root, ref, rel):
-    r = subprocess.run(["git", "-C", str(root), "show", f"{ref}:{rel}"],
-                       capture_output=True, text=True)
+    # RAW, а не gitio.git: нужен ДОСЛОВНЫЙ снимок файла (`git show <ref>:<path>`), а gitio.git
+    # стягивает stdout через .strip() и срезал бы ведущие/хвостовые пробелы содержимого. timeout=
+    # обязателен явно — иначе зависший git повесил бы скан (тот же инвариант, что держит gitio).
+    try:
+        r = subprocess.run(["git", "-C", str(root), "show", f"{ref}:{rel}"],
+                           capture_output=True, text=True, timeout=90)
+    except subprocess.TimeoutExpired:
+        return ""
     return r.stdout if r.returncode == 0 else ""
 
 
-DEP_MANIFESTS = ("package.json", "requirements.txt", "go.mod", "pyproject.toml", "Cargo.toml")
+def _vendor_split(injections):
+    """Отделить поставленную копию кита от кода продукта. Ярлык уже проставлен `_area_of`."""
+    vendor = [f for f in injections if f.get("area") == "vendor"]
+    return [f for f in injections if f.get("area") != "vendor"], vendor
+
+
+def _vendor_arrivals(root, base, vendor, files):
+    """Пометить каждый адрес поставки: приехал с этим обновлением кита или был и в прежней версии.
+
+    Прежний текст берётся ПОФАЙЛОВО и только для файлов, где флаги есть: на обновлении кита в дифф
+    попадают сотни файлов, а адресов среди них единицы — читать базу целиком незачем."""
+    out = []
+    for path in sorted({f["path"] for f in vendor}):
+        прежний = _git_show(root, base, path)
+        было = scan_injection({path: прежний}) if прежний else []
+        out += _mark_arrivals([f for f in vendor if f["path"] == path],
+                              files.get(path, ""), было, прежний)
+    return out
+
+
+def delivered_surface(root, rels, base=None):
+    """Флаги сканера по файлам поставленной копии кита (`.ai/managed/`) из `rels` -> [флаг].
+
+    Для тела PR обновления кита (#1157): дочка узнаёт, какую поверхность привозит выпуск, ДО
+    слияния, а не прогоном после. С `base` каждый флаг помечен `arrived` — приехал ли он с этим
+    обновлением (сравнение то же, что в разделе поставки `scan_repo`)."""
+    files = _read_files(root, [r for r in rels
+                               if r.replace("\\", "/").startswith(_MANAGED_INSTALL_PREFIX)])
+    vendor = _vendor_split(scan_injection(files))[1]
+    return _vendor_arrivals(root, base, vendor, files) if (base and vendor) else vendor
+
+
+def _vendor_version(root, base, files):
+    """Версия установленного кита до и после. None — прочитать не удалось, и это не «не менялась»."""
+    текущая = files.get(_VENDOR_VERSION_FILE)
+    if текущая is None:
+        try:
+            текущая = (Path(root) / _VENDOR_VERSION_FILE).read_text(encoding="utf-8")
+        except OSError:
+            текущая = ""
+    прежняя = _git_show(root, base, _VENDOR_VERSION_FILE) if base else ""
+    return (прежняя.strip() or None), (текущая.strip() or None)
 
 
 def scan_repo(root, base=None):
@@ -442,12 +528,29 @@ def scan_repo(root, base=None):
     root = Path(root)
     changed = _git_changed_files(root, base) if base else None
     if changed is None:
-        # не git / нет базы: сканируем отслеживаемые текстовые файлы целиком (best-effort)
-        r = subprocess.run(["git", "-C", str(root), "ls-files"], capture_output=True, text=True)
-        changed = [ln for ln in r.stdout.splitlines() if ln.strip()] if r.returncode == 0 else []
+        # не git / нет базы: сканируем отслеживаемые текстовые файлы целиком (best-effort).
+        # RAW с явным timeout= (скрипт-режим, см. _git_changed_files).
+        try:
+            r = subprocess.run(["git", "-C", str(root), "ls-files"],
+                               capture_output=True, text=True, timeout=90)
+            changed = [ln for ln in r.stdout.splitlines() if ln.strip()] if r.returncode == 0 else []
+        except subprocess.TimeoutExpired:
+            changed = []
     files = _read_files(root, changed)
     secrets = scan_secrets(files)
-    injections = scan_injection(files)
+    # ПОСТАВЛЕННАЯ КОПИЯ КИТА — ОТДЕЛЬНЫЙ РАЗДЕЛ, НЕ ПРОЩЕНИЕ (#1147). `.ai/managed/` дочка не
+    # писала и починить в своём PR не может: правка делается обновлением кита. Адреса оттуда видны
+    # все до одного, но в вердикт гейта ПРОДУКТА не входят — иначе команда вечно отвечает за чужой
+    # код. Обратная сторона названа тем же механизмом: новый `shell=True`, приехавший с
+    # обновлением, помечается `arrived` и потому виден, а не тонет в общем списке.
+    injections, vendor = _vendor_split(scan_injection(files))
+    # СРАВНЕНИЕ БЫЛО ИЛИ НЕ БЫЛО — РАЗНЫЕ СОСТОЯНИЯ. Без базы «какие адреса новые» неизвестно, и
+    # выдать это за «все были раньше» значило бы напечатать незнание фактом (тот же инвариант, что
+    # у `dependencies_compared` ниже).
+    vendor_compared = bool(base)
+    if vendor_compared and vendor:
+        vendor = _vendor_arrivals(root, base, vendor, files)
+    vendor_before, vendor_after = _vendor_version(root, base, files)
     # зависимости: сравниваем манифесты после (рабочее дерево) против базы (git show base:)
     after_mani = {p: c for p, c in files.items() if Path(p).name in DEP_MANIFESTS}
     if not after_mani:  # манифесты могли не измениться — прочитаем текущие для полноты
@@ -460,11 +563,42 @@ def scan_repo(root, base=None):
     before_mani = {p: (_git_show(root, base, p) if base else "") for p in after_mani}
     new_deps = new_dependencies(before_mani, after_mani) if deps_compared else []
     ev = security_evidence(secrets, injections, new_deps, deps_compared=deps_compared)
+    приехало = sum(1 for f in vendor if f.get("arrived"))
     return {"schema_version": 1, "kind": "security-scan",
             "scanned_files": len(files), "secrets": secrets,
             "injection_flags": injections, "new_dependencies": new_deps,
             "dependencies_compared": deps_compared,
+            "vendor_flags": vendor,
+            "vendor_compared": vendor_compared,
+            "vendor_kit_version": {"before": vendor_before, "after": vendor_after},
+            "vendor_note": _arrivals_note(vendor_before, vendor_after, приехало, len(vendor),
+                                         vendor_compared),
             "evidence": ev}
+
+
+def _vendor_lines(rep):
+    """Раздел поставленной зависимости — ОТДЕЛЬНЫЙ, НЕ СНОСКА (#1147).
+
+    Поставленная копия кита — чужой код с чужим адресатом, и смешивать его с продуктовым списком
+    значит спрашивать команду за то, чего она не писала. Приехавшие с обновлением адреса печатаются
+    ПОИМЁННО: ради них раздел и заведён — иначе о новой поверхности, привезённой китом, дочка не
+    узнаёт вовсе. Бывшие раньше свёрнуты числом: их адресат тот же, а новостью они не являются."""
+    vendor = rep.get("vendor_flags") or []
+    if not vendor:
+        return []
+    out = [f"  ── поставленная зависимость .ai/managed/ ({len(vendor)}) ──",
+           f"     {rep['vendor_note']}"]
+    if not rep.get("vendor_compared"):
+        # Сравнения не было: назвать адреса ПОИМЁННО — единственное честное поведение. Свернуть их
+        # числом «было раньше» значило бы утверждать то, чего никто не проверял.
+        out += [f"     {f['id']} — {f['path']}:{f['line']}" for f in vendor]
+        return out
+    out += [f"     ПРИЕХАЛО С ОБНОВЛЕНИЕМ {f['id']} — {f['path']}:{f['line']}"
+            for f in vendor if f.get("arrived")]
+    было = sum(1 for f in vendor if not f.get("arrived"))
+    if было:
+        out.append(f"     было и в прежней версии кита: {было}; полный список в --json")
+    return out
 
 
 def main(argv):
@@ -477,15 +611,27 @@ def main(argv):
     if a.json:
         print(json.dumps(rep, ensure_ascii=False, indent=2))
     else:
-        print(f"SECURITY-SCAN: файлов {rep['scanned_files']} · секретов {len(rep['secrets'])} · "
-              f"injection-флагов {len(rep['injection_flags'])} · новых зависимостей {len(rep['new_dependencies'])}")
-        for s in rep["secrets"]:
-            print(f"  СЕКРЕТ {s['id']} — {s['path']}:{s['line']}")
+        # ОТЧЁТ СОБИРАЕТСЯ СТРОКАМИ И ПЕЧАТАЕТСЯ ОДИН РАЗ. Раньше здесь было шесть `print` подряд, и
+        # каждый новый раздел отчёта стоил ещё одного — ратчет print-discipline упирался в это
+        # раньше, чем человек. Текст не изменился ни на символ: каждый прежний `print` печатал ровно
+        # одну строку.
+        s = [f"SECURITY-SCAN: файлов {rep['scanned_files']} · секретов {len(rep['secrets'])} · "
+             f"injection-флагов {len(rep['injection_flags'])} · новых зависимостей {len(rep['new_dependencies'])}"]
+        s += [f"  СЕКРЕТ {x['id']} — {x['path']}:{x['line']}" for x in rep["secrets"]]
+        # Боевые адреса — поимённо, обвязка — одним числом: список, где на один боевой адрес
+        # приходится дюжина тестовых, судья пролистывает целиком (#1146).
+        боевые = [f for f in rep["injection_flags"] if f.get("area") != "harness"]
+        обвязка = [f for f in rep["injection_flags"] if f.get("area") == "harness"]
+        s += [f"  ПОДОЗРИТЕЛЬНОЕ МЕСТО {f['id']} — {f['path']}:{f['line']}" for f in боевые]
+        if обвязка:
+            s.append(f"  в обвязке (тесты, e2e, конфиги инструментов) ещё {len(обвязка)} — "
+                     f"адресат тот же, срочность другая; полный список в --json")
+        s += _vendor_lines(rep)
         if not rep["dependencies_compared"]:
-            print("  зависимости: сравнивать не с чем — база не задана (--base <ревизия>); "
-                  "это НЕ «новых нет»")
-        for d in rep["new_dependencies"]:
-            print(f"  НОВАЯ ЗАВИСИМОСТЬ {d} (нужно одобрение)")
+            s.append("  зависимости: сравнивать не с чем — база не задана (--base <ревизия>); "
+                     "это НЕ «новых нет»")
+        s += [f"  НОВАЯ ЗАВИСИМОСТЬ {d} (нужно одобрение)" for d in rep["new_dependencies"]]
+        print("\n".join(s))
     # ненулевой код при находках секретов/новых зависимостей (injection-флаги — не фейл сами по себе)
     return 1 if (rep["secrets"] or rep["new_dependencies"]) else 0
 

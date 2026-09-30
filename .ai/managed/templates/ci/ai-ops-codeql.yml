@@ -1,0 +1,108 @@
+# ai-ops-codeql.yml — supply-chain дочки: SAST через CodeQL (OpenSSF Scorecard: SAST).
+# Ставится `ai-ops init` в .github/workflows/ (или скопируйте вручную). Опт-аут: удалить этот файл.
+#
+# ЧТО ЭТО ДАЁТ. CodeQL статически ищет уязвимости в коде и публикует находки во вкладку Security ->
+# Code scanning. По умолчанию проверка ADVISORY: она НЕ роняет PR. Сделать её блокирующей — решение
+# владельца: включить code scanning как required check в branch protection. Кит не превращает её в
+# девятый блокирующий гейт мимо решения (инвариант «бюджет блокирующих не растёт молча»).
+#
+# ЕСЛИ CODE SCANNING НЕ ВКЛЮЧЁН. Выгрузка находок CodeQL требует, чтобы в репозитории было включено
+# GitHub code scanning (Settings → Code security). Пока оно выключено, шаг analyze падает с
+# configuration-error «Code scanning is not enabled for this repository» — красный крест на КАЖДОМ
+# PR у дочки, которая его не включала (поле: ai-ops-cockpit, ai-ops-live-587). Крест advisory и PR
+# не роняет, но это ложный шум. Поэтому ниже есть ПРЕДПОЛЁТ: если code scanning выключен, джоба
+# завершается ЗЕЛЁНЫМ с инструкцией и analyze не запускается вовсе. Включите code scanning — и
+# workflow заработает как обычно, ничего больше менять не надо.
+#
+# ГРАНИЦА С ИНВАРИАНТОМ КИТА. Это ФОРДЖ-конфигурация дочки, а не код кита: GitHub-нативный CodeQL,
+# внешних рантайм-зависимостей у инструментов кита не прибавляет.
+#
+# ЯЗЫКИ. `language` в матрице подставьте под свой стек. Дефолт — `javascript-typescript`: это стек
+# большинства дочек, и пустой прогон на неподходящем языке — шум, а не сигнал. Другие значения:
+# python, go, java-kotlin, csharp, cpp, ruby, swift, actions (см. docs CodeQL «supported languages»).
+# Список — через несколько строк матрицы, по одной на язык.
+#
+# ПИНЫ ДЕЙСТВИЙ. Здесь действия закреплены по МАЖОРНОМУ тегу. Для OpenSSF Pinned-Dependencies закрепите
+# их на commit SHA (см. SUPPLY-CHAIN.md); Dependabot (github-actions) будет двигать SHA за вас.
+name: ai-ops-codeql
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"      # еженедельно: SAST ловит и то, что появилось в зависимостях между PR'ами
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  # Отменять УСТАРЕВШИЕ прогоны — но ТОЛЬКО для PR (новый пуш в тот же PR гасит прежний).
+  # На push в main / schedule / release / record отмена НЕ применяется: там каждый прогон
+  # относится к своему коммиту/событию, и его потеря = дыра в проверке или в записи.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    # Раннер — переменной, а не зашит: в организации со своими раннерами `ubuntu-latest` висит в
+    # очереди. Задайте vars.CI_RUNNER_LINUX — и проверка поедет на вашей машине.
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-latest' }}
+    permissions:
+      security-events: write   # публикация SARIF во вкладку Security (и чтение статуса code scanning)
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["javascript-typescript"]   # ← ПОДСТАВЬТЕ свои языки (по строке на язык)
+    steps:
+      - uses: actions/checkout@v4
+      # ПРЕДПОЛЁТ: включён ли в репозитории code scanning. Без него analyze падает с
+      # configuration-error (выгрузка SARIF некуда идти) и красит PR у дочки, которая его не включала.
+      # Спрашиваем у API /code-scanning/alerts: включённый code scanning отвечает 200 (пусть и пустым
+      # списком), выключенный — 404 (или 403 «not enabled»/«Advanced Security is not enabled»).
+      #
+      # ВАЖНО: `gh api` возвращает ненулевой код на ЛЮБОМ не-2xx — не только на 404/403, но и на
+      # rate-limit (403/429), 5xx, сетевом сбое, отсутствии `gh`, сбое auth. Если схлопнуть все эти
+      # исходы в «выключено», транзиентный сбой на репозитории, где code scanning ВКЛЮЧЁН, тихо
+      # пропустил бы analyze и позеленил бы джобу — SAST молча не сработал, и креста нет. Для контроля
+      # безопасности это недопустимо. Поэтому отказ БЕЗОПАСЕН В СТОРОНУ СКАНИРОВАНИЯ:
+      #   * «выключено» (enabled=false, зелёный пропуск с notice) — ТОЛЬКО явный 404 или 403 с телом
+      #     про «not enabled»/«Advanced Security»;
+      #   * любой другой исход (429, 5xx, сеть, нет `gh`, неизвестный код) → enabled=true: пойдёт
+      #     обычный путь init/autobuild/analyze. Реально включён → просканирует; реально выключен, но
+      #     код был не 403/404 → честно покраснеет старым configuration-error, а не тихо пропустит.
+      - id: preflight
+        name: Предполёт — включён ли code scanning
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e   # gh api на не-2xx возвращает ненулевой код — разбираем ИСХОД сами, не через set -e
+          out="$(gh api "repos/${{ github.repository }}/code-scanning/alerts" --silent -i 2>&1)"
+          rc=$?
+          enabled=true   # по умолчанию — сканируем (fail-safe); «выключено» надо ДОКАЗАТЬ кодом 404/403
+          if [ "$rc" -ne 0 ]; then
+            code="$(printf '%s' "$out" | grep -oiE 'HTTP[ /][0-9.]*[ ]?[0-9]{3}' | grep -oE '[0-9]{3}' | tail -n1)"
+            if [ "$code" = "404" ]; then
+              enabled=false
+            elif [ "$code" = "403" ] && printf '%s' "$out" | grep -qiE 'not enabled|Advanced Security'; then
+              enabled=false
+            fi
+          fi
+          if [ "$enabled" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "code scanning включён (или статус неясен — сканируем на всякий случай) — запускаю CodeQL SAST."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::code scanning не включён — включите его в Settings → Code security, чтобы SAST заработал; пока пропускаю (PR не роняется)."
+          fi
+      - if: steps.preflight.outputs.enabled == 'true'
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - if: steps.preflight.outputs.enabled == 'true'
+        uses: github/codeql-action/autobuild@v3
+      - if: steps.preflight.outputs.enabled == 'true'
+        uses: github/codeql-action/analyze@v3

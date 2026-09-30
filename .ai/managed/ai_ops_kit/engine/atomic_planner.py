@@ -46,7 +46,8 @@ def estimate(signals, child_root=None, bundle=None):
     if bundle is None and child_root is not None:
         try:
             from ai_ops_kit.context import context_compiler
-            bundle = context_compiler.compile_bundle(signals, child_root)
+            from ai_ops_kit.engine.run_plan import build_plan
+            bundle = context_compiler.compile_bundle(signals, child_root, build_plan=build_plan)
         except Exception:  # noqa: BLE001
             bundle = None
     if bundle:

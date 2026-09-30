@@ -48,6 +48,8 @@ LIFECYCLE = ("missing", "invalid", "outdated", "valid")   # PR-5: четыре �
 AUTONOMY = ("suggest", "prepare", "execute", "require_approval")   # PR-19
 KINDS = {"document": "markdown", "config": "yaml", "directory": "dir"}
 UPDATE_MODES = ("auto", "ai_assisted", "human")
+TIERS = ("tier1", "tier2", "tier3")                        # #609: ярусы обязательности, замкнутый словарь
+APPLIES_WHEN = ("always", "production", "ai_native")       # #609: условие применимости яруса
 
 
 class RegistryCorrupt(Exception):
@@ -93,6 +95,38 @@ def required_artifacts(reg: dict) -> list:
 def lifecycle_states(reg: dict) -> list:
     """Состояния жизненного цикла в объявленном порядке (Missing -> Invalid -> Outdated -> Valid)."""
     return sorted((reg.get("lifecycle_states") or []), key=lambda s: s.get("order", 0))
+
+
+def obligation_tiers(reg: dict) -> list:
+    """Ярусы обязательности артефактов (#609): tier1/tier2/tier3."""
+    return list(reg.get("obligation_tiers") or [])
+
+
+def profiles(reg: dict) -> dict:
+    """Профили стандарта: имя профиля -> {includes_tiers, means} (#609)."""
+    return dict(reg.get("profiles") or {})
+
+
+def standard_catalog(reg: dict) -> list:
+    """Каталог стандарта репозитория по ярусам (#609): элементы с tier/локатором/ai_check."""
+    return list(reg.get("standard_catalog") or [])
+
+
+def tiers_for_profile(reg: dict, profile: str) -> list:
+    """Ярусы, применимые к профилю дочки (#609). Неизвестный профиль -> пустой список.
+
+    Именно это делает профиль ВЫБОРОМ набора, а не украшением: состав ярусов один, различается
+    их применимость. Пустой список для неизвестного профиля — fail-closed: ничего не «применимо».
+    """
+    prof = profiles(reg).get(profile) or {}
+    known = {t.get("id") for t in obligation_tiers(reg)}
+    return [t for t in (prof.get("includes_tiers") or []) if t in known]
+
+
+def catalog_for_profile(reg: dict, profile: str) -> list:
+    """Элементы каталога, обязательные для профиля: те, чей ярус применим к профилю (#609)."""
+    applicable = set(tiers_for_profile(reg, profile))
+    return [c for c in standard_catalog(reg) if c.get("tier") in applicable]
 
 
 def _model_refs(model_path: Path = MODEL_PATH) -> tuple[set, set]:
@@ -195,6 +229,72 @@ def check(reg: dict, model_path: Path = MODEL_PATH) -> list:
             if act.get("autonomy") not in AUTONOMY:
                 e.append(f"артефакт '{aid}': ai_action '{act.get('action')}' с autonomy "
                          f"'{act.get('autonomy')}' вне {list(AUTONOMY)} (PR-19)")
+
+        # #609: у обязательного артефакта объявлено, ЧТО проверяет AI-агент (контракт с AI-разработчиком).
+        if a.get("required") and not (a.get("ai_check") or "").strip():
+            e.append(f"артефакт '{aid}': обязательный артефакт без ai_check — не объявлено, что "
+                     f"проверяет AI-агент по этому артефакту (#609)")
+
+    e.extend(_check_tiers(reg, ids, contours))
+    return e
+
+
+def _check_tiers(reg: dict, artifact_ids: list, contours: set) -> list:
+    """Инварианты ярусов, профилей и каталога стандарта (#609). -> список ошибок.
+
+    Отдельная функция, а не разбухший `check`: таксономия ярусов проверяется как самостоятельный
+    контракт (замкнутые словари ярусов и применимости, ссылочная целостность каталога к реестрам).
+    """
+    e = []
+    tier_defs = reg.get("obligation_tiers")
+    prof_defs = reg.get("profiles")
+    catalog = reg.get("standard_catalog")
+    # Если таксономии нет вовсе — молчим (её ввели #609; синтетический реестр без неё легитимен).
+    if not any([tier_defs, prof_defs, catalog]):
+        return e
+
+    tier_ids = [t.get("id") for t in (tier_defs or [])]
+    if sorted(tier_ids) != sorted(TIERS):
+        e.append(f"obligation_tiers обязаны быть ровно {list(TIERS)} (#609), объявлено {tier_ids}")
+    for t in tier_defs or []:
+        if t.get("applies_when") not in APPLIES_WHEN:
+            e.append(f"ярус '{t.get('id')}': applies_when '{t.get('applies_when')}' вне "
+                     f"{list(APPLIES_WHEN)} (#609)")
+        if not (t.get("means") or "").strip():
+            e.append(f"ярус '{t.get('id')}': пустое means")
+    tier_set = set(tier_ids)
+
+    if not prof_defs:
+        e.append("profiles не объявлены — профиль дочки не сможет выбрать применимый ярус (#609)")
+    for pname, pdef in (prof_defs or {}).items():
+        inc = (pdef or {}).get("includes_tiers")
+        if not inc:
+            e.append(f"профиль '{pname}': пустой includes_tiers — профиль ничего не выбирает")
+        for ti in inc or []:
+            if ti not in tier_set:
+                e.append(f"профиль '{pname}': includes_tiers ссылается на неизвестный ярус '{ti}'")
+
+    seen = set()
+    for c in catalog or []:
+        cid = c.get("id") or "<без id>"
+        if cid in seen:
+            e.append(f"каталог: дубль id '{cid}'")
+        seen.add(cid)
+        if not (c.get("name") or "").strip():
+            e.append(f"каталог '{cid}': пустое name")
+        if c.get("tier") not in tier_set:
+            e.append(f"каталог '{cid}': tier '{c.get('tier')}' вне объявленных ярусов (#609)")
+        if not (c.get("ai_check") or "").strip():
+            e.append(f"каталог '{cid}': пустой ai_check — не объявлено, что проверяет AI-агент (#609)")
+        # Локатор — ровно один из трёх, и ссылка целостна.
+        locators = [k for k in ("ref", "contour", "path") if (c.get(k) or "").strip()]
+        if len(locators) != 1:
+            e.append(f"каталог '{cid}': нужен РОВНО один локатор из ref/contour/path, "
+                     f"объявлено {locators}")
+        if c.get("ref") and c["ref"] not in artifact_ids:
+            e.append(f"каталог '{cid}': ref '{c['ref']}' не найден в artifacts этого реестра")
+        if c.get("contour") and contours and c["contour"] not in contours:
+            e.append(f"каталог '{cid}': contour '{c['contour']}' нет в product-operating-model.yaml")
     return e
 
 
@@ -268,6 +368,9 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list").add_argument("--json", action="store_true")
     sub.add_parser("check").add_argument("--json", action="store_true")
+    ct = sub.add_parser("catalog")                          # #609: ярусный каталог стандарта
+    ct.add_argument("--profile", default=None, help="показать только применимое к профилю")
+    ct.add_argument("--json", action="store_true")
     dv = sub.add_parser("divergence")
     dv.add_argument("repo", nargs="?", default=None)
     dv.add_argument("--json", action="store_true")
@@ -300,6 +403,20 @@ def main(argv=None):
         else:
             print("РЕЕСТР АРТЕФАКТОВ-OK: инварианты и ссылочная целостность сходятся.")
         return 1 if errs else 0
+
+    if ns.cmd == "catalog":
+        items = catalog_for_profile(reg, ns.profile) if ns.profile else standard_catalog(reg)
+        if ns.json:
+            print(json.dumps(items, ensure_ascii=False, indent=2)); return 0
+        for t in obligation_tiers(reg):
+            rows = [c for c in items if c.get("tier") == t.get("id")]
+            if not rows:
+                continue
+            print(f"\n{t.get('id')} ({t.get('applies_when')}): {t.get('means')}")
+            for c in rows:
+                loc = c.get("ref") or c.get("contour") or c.get("path")
+                print(f"  {c.get('name'):28} [{loc}] — {c.get('ai_check')}")
+        return 0
 
     findings = divergence(reg, Path(ns.repo) if ns.repo else None)
     if ns.json:

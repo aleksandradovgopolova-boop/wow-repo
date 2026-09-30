@@ -24,9 +24,10 @@ CHANGELOG в этом репозитории не объявлен -> `unknown` 
 `behavior_unchanged` у `regression_evidence`. Молчаливого обхода нет.
 
 ЧЕГО ЭТА ПРОВЕРКА НЕ ДЕЛАЕТ. Она не судит, ХОРОШО ли написана документация и то ли в ней написано.
-Это другой вопрос и другой гейт (`documentation_drift`, и он остаётся не машинным). Смешать их
-значило бы объявить машинным суждение — ровно та ошибка, против которой заведён
-`quality/gate-machinability.yaml`.
+Это другой вопрос — «дрейф смысла». Гейт `documentation_drift`, который его закрывал сам писатель
+(слабейшая форма), СНЯТ (#616, 2026-09-08): дрейф ссылок/чисел уже ловят машиной у самого кита
+(`validate_references`/`validate_claims`/`validate_freshness`), а объявлять машинным суждение
+значило бы совершить ровно ту ошибку, против которой заведён `quality/gate-machinability.yaml`.
 
 Использование:  documentation_evidence.py assess <root> [--base REF] [--json]
 """
@@ -35,12 +36,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 from ai_ops_kit.gates.regression_evidence import is_doc_path
 from ai_ops_kit.shared import _bootstrap  # noqa: E402,F401
+from ai_ops_kit.shared.gitio import git  # noqa: E402
 
 # Фрагмент — файл вида <что-это>.<тип>.md. Типы читаем из того же pyproject, если он есть;
 # запасной набор — типы towncrier по умолчанию в этом репозитории.
@@ -48,8 +49,8 @@ _FALLBACK_TYPES = ("feat", "fix", "quality", "chore")
 
 
 def _git(root, *args):
-    r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
-    return r.returncode, r.stdout.strip(), r.stderr.strip()
+    # Единый вход к git с таймаутом (см. shared/gitio): та же сигнатура (rc, out, err).
+    return git(root, *args)
 
 
 def resolve_base(root, base=None):

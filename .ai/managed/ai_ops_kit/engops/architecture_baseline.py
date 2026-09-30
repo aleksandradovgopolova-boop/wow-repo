@@ -16,9 +16,10 @@ CLI:  architecture_baseline.py <root> [--sha SHA] [--json]   |   architecture_ba
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
+
+from ai_ops_kit.shared.gitio import git  # noqa: E402
 
 AXES = ("module_map", "boundaries", "dependencies", "api_surface", "data_and_migrations",
         "integrations", "failure_modes", "deployment", "observability", "security_boundaries",
@@ -30,10 +31,10 @@ _CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte", ".go", ".rs
 
 
 def _git_sha(root: Path):
+    # Единый вход к git с таймаутом (см. shared/gitio): зависший git не вешает построение baseline.
     try:
-        r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
-                           capture_output=True, text=True)
-        return r.stdout.strip() if r.returncode == 0 else None
+        rc, out, _ = git(root, "rev-parse", "HEAD")
+        return out or None if rc == 0 else None
     except (OSError, ValueError):
         return None
 

@@ -2,7 +2,7 @@
 """evolution_triggers.py (v3.2.4) — замыкание governance-петли ADR ↔ Product Health.
 
 ADR декларируют влияние на quality attributes (improves/tradeoff/degrades). Product Health
-(tools/product_health.py) меряет РЕАЛЬНОСТЬ в продакшене. Триггер эволюции срабатывает, когда
+(ai_ops_kit/intelligence/product_health.py) меряет РЕАЛЬНОСТЬ в продакшене. Триггер эволюции срабатывает, когда
 реальность расходится с обещанием решения — сигнал пересмотреть ADR (advisory, НЕ gate):
 
   - promise_broken: метрика, отображающаяся на атрибут, деградирует (normalized < 0.7), а активный

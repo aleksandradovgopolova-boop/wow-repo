@@ -189,7 +189,50 @@ def plan_run(roles_cfg=None, quals=None, models=None, signals=None):
     rev = plan["code_review"]
     plan["writer_ne_judge_by_model"] = bool(impl.get("resolved") and rev.get("resolved")
                                             and impl.get("model_id") != rev.get("model_id"))
+    # v3.8.3 обеспечивал writer≠judge ПРИ ПЛАНИРОВАНИИ. Но судья эскалируется на fallback-класс
+    # во время прогона (escalation_decision), а писатель — по escalation_ladder; заново это не
+    # сверялось = инвариант объявлен, но на пути эскалации не сторожится. Фиксируем исход проверки
+    # независимости в плане (планировочное время), а вызывающий обязан перепроверить её после
+    # КАЖДОЙ применённой эскалации через check_independence(plan, escalations=...) — fail-closed.
+    plan["independence"] = check_independence(plan)
     return plan
+
+
+def check_independence(plan, escalations=None):
+    """Fail-closed страж инварианта writer≠judge, устойчивый к эскалации/fallback.
+
+    plan_run переселяет писателя с модели судьи ПРИ ПЛАНИРОВАНИИ. Но во время прогона судья
+    эскалируется на fallback-класс (escalation_decision, escalate_scope=review_only), а писатель —
+    по escalation_ladder; ни то, ни другое повторно не сверяется, и судья может «съехать» на модель
+    писателя незаметно. Эта функция берёт ФАКТИЧЕСКИ выбранные роли (с учётом переданных
+    escalations — то есть по факту исполнения, а не только по плану) и проверяет, что модель писателя
+    (implementation) не совпала с моделью НИ ОДНОГО судьи (все роли, кроме implementation; это и есть
+    role_constraints.must_differ_from=implementation для строгих судей + эконом-судья code_review).
+
+    escalations: {role: model_id} — на какие модели роли реально эскалировали в прогоне (или None
+    при планировочной проверке). Возвращает результат; НЕ бросает — вызывающий обязан остановить
+    прогон fail-closed при independent=False (ADR-004: cost_never_by_weakening_gates).
+    """
+    escalations = dict(escalations or {})
+
+    def _model(role):
+        return escalations.get(role) or (plan.get(role) or {}).get("model_id")
+
+    writer = _model("implementation")
+    violations = []
+    for jr in (r for r in ALL_ROLES if r != "implementation"):
+        jm = _model(jr)
+        if writer and jm and writer == jm:
+            violations.append({"judge_role": jr, "writer_role": "implementation", "model_id": jm})
+    after_esc = bool(escalations)
+    return {"kind": "IndependenceCheck", "independent": not violations,
+            "violations": violations, "checked_after_escalation": after_esc,
+            "writer_model": writer,
+            "note": ("инвариант writer≠judge НАРУШЕН"
+                     + (" после эскалации" if after_esc else " при планировании")
+                     + ": судья и писатель на одной модели — прогон обязан остановиться fail-closed"
+                     if violations else
+                     "writer≠judge сохранён" + (" после эскалации" if after_esc else " при планировании"))}
 
 
 def escalation_decision(role, attempt, signal, roles_cfg=None):

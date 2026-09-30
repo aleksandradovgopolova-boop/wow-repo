@@ -27,6 +27,7 @@ from pathlib import Path
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
 from ai_ops_kit.engine import tool_broker            # noqa: E402
+from ai_ops_kit.engine import reviewer_prompt         # noqa: E402
 from ai_ops_kit.shared import budget as _budget_mod  # noqa: E402
 
 
@@ -101,29 +102,99 @@ def make_reviewer_proposer(provider, gate_id, checklist="", required_evidence=No
     писатель НЕ может закрыть свой же гейт словом, и физически не может писать в роли ревьюера."""
     req = list(required_evidence or [])
     def propose(context):
-        prompt = (
+        # Секции промпта размечены XML-якорями (reviewer_prompt.assemble): `<task>`/`<criteria>`/
+        # `<evidence>`/`<output_format>` — наш каркас, а недоверенная нагрузка (дифф + журнал чтений)
+        # изолирована в ЭКРАНИРОВАННОМ `<context>`. Так дифф, содержащий строку-маркер, поддельный
+        # `Recommendation: pass` или блок reviewer-result, не может вытечь за свой якорь и подделать
+        # вердикт/инструкцию (эпик #744; замер восстановимости границ — в тестах, без живой модели).
+        task = (
             f"Ты НЕЗАВИСИМЫЙ ревьюер гейта '{gate_id}' (не автор изменения). Только чтение.\n"
             f"Проверяемая ревизия: {reviewed_revision or 'HEAD'}.\n"
-            + (f"Чек-лист:\n{checklist}\n" if checklist else "")
-            + (f"Требуемые доказательства (required_evidence): {', '.join(req)}. Ставь pass ТОЛЬКО "
-               f"если реально подтвердил их чтением; иначе fail/warn с конкретикой.\n" if req else "")
-            + "На каждом шаге верни РОВНО ОДИН JSON:\n"
-            '  {"op":"read","path":"..."}  — прочитать файл, чтобы удостовериться\n'
-            '  {"kind":"reviewer-result","gate":"' + gate_id + '","status":"pass|warn|fail",'
-            '"checks":[{"id":"...","status":"pass|warn|fail"}],"blockers":["..."]}  — ИТОГ\n'
-            "Правила: читай минимально; выноси вердикт по фактам из прочитанного. status=fail И "
-            "status=warn требуют непустой blockers с КОНКРЕТНЫМИ проблемами (warn на блокирующем "
-            "гейте тоже блокирует). Честность симметрична: НЕ выдумывай pass (чего не подтвердил "
-            "чтением — не pass), но и НЕ выдумывай сомнения ради подстраховки — если прочитал "
-            "изменение и КОНКРЕТНОЙ проблемы нет, это pass, а не warn «на всякий случай». Только JSON.\n\n"
-            "=== КОНТЕКСТ (изменение и журнал чтений) ===\n" + context)
-        return parse_action(provider(prompt))
+            "Разбери изменение (при необходимости читай файлы; читай минимально), затем ЗАВЕРШИ "
+            "вердиктом. Финальный вердикт обязателен и машиночитаем.")
+        # ФОРМА ЗАВИСИТ ОТ ВЕРДИКТА (issue #661-followup, живой прогон 587). Полевой замер 07.09
+        # (#614): ПОЛНЫЙ структурный reviewer-result с деревом checks уводил живую модель в 56с
+        # прозы без машинного вердикта. Но противоположная крайность — «простая строка достаточна
+        # и для pass» — тоже ломалась: claude-cli читает дифф ПРЯМО ИЗ ПРОМПТА и op:read не шлёт
+        # (reads всегда []), поэтому прозаический pass НЕЧЕМ заземлить, и Fix C держал его как
+        # рубер-штамп — блокирующий гейт не закрывался НИКОГДА (два патча так и не свели). Разводим
+        # по вердикту: НЕ-pass — простой строкой (анти-таймаут #614 цел), а pass на блокирующем
+        # гейте — МИНИМАЛЬНОЙ структурой с ОДНОЙ цитатой (лёгкой, не деревом — таймаут не вернётся),
+        # потому что цитата — единственный доступный claude-cli способ заземлить pass.
+        output_format = (
+            "КАК ЗАВЕРШИТЬ — форма зависит от вердикта:\n"
+            "• needs_work / fail — РОВНО ОДНОЙ последней строкой-итогом `Recommendation: needs_work` "
+            "(блокирующие замечания назови конкретно в прозе ВЫШЕ). Больше ничего после строки.\n"
+            "• pass на блокирующем гейте — ОБЯЗАТЕЛЬНО заверши структурным reviewer-result с ХОТЯ БЫ "
+            "ОДНОЙ цитатой на изменённый файл. Держи структуру МИНИМАЛЬНОЙ: один check, одна evidence — "
+            "этого достаточно, дерево checks НЕ нужно:\n"
+            '  {"kind":"reviewer-result","gate":"' + gate_id + '","status":"pass",'
+            '"checks":[{"id":"...","status":"pass","evidence":[{"file":"<изменённый файл>",'
+            '"lines":"<диапазон>"}]}],"blockers":[]}\n'
+            "Если хочешь дочитать файл сам — верни РОВНО один JSON: "
+            '{"op":"read","path":"..."}.\n'
+            "Почему pass ТРЕБУЕТ цитату: ты видишь дифф в секции <context> ниже и обычно op:read не "
+            "шлёшь, поэтому единственный способ ЗАЗЕМЛИТЬ pass — evidence-ссылка на КОНКРЕТНЫЙ файл из "
+            "ЭТОГО изменения (file+lines): по ней кит САМ перечитает файл и подтвердит, что строки "
+            "реальны и вердикт коснулся доставленной правки. pass простой строкой БЕЗ цитаты "
+            "блокирующий гейт НЕ закроет (кит не отличит его от штампа).\n"
+            "Честность симметрична: НЕ выдумывай pass (чего не подтвердил чтением — не pass), но и НЕ "
+            "выдумывай сомнения ради подстраховки — если прочитал изменение и КОНКРЕТНОЙ проблемы нет, "
+            "это pass, а не needs_work «на всякий случай». needs_work/fail требуют КОНКРЕТНЫХ проблем "
+            "(warn на блокирующем гейте тоже блокирует).\n"
+            # ПОСЛЕДНИЙ БЛОК = ВЕРДИКТ (полевой замер cockpit 8293fe54): если выше в ответе есть цитаты
+            # кода, примеры с фигурными скобками или процитированные «Recommendation: …», вердиктом
+            # считается ПОСЛЕДНИЙ по позиции (последний reviewer-result либо последняя строка-итог), а не они.
+            "Вердикт — ПОСЛЕДНИЙ по позиции: если выше есть цитаты кода, примеры со скобками или "
+            "процитированные строки Recommendation, вердиктом считается ПОСЛЕДНИЙ reviewer-result либо "
+            "ПОСЛЕДНЯЯ строка-итог, а не они.")
+        sections = [("task", task)]
+        if checklist:
+            sections.append(("criteria", str(checklist)))
+        if req:
+            sections.append(("evidence",
+                             f"Требуемые доказательства (required_evidence): {', '.join(req)}. Ставь "
+                             "pass ТОЛЬКО если реально подтвердил их чтением; иначе fail/warn с "
+                             "конкретикой."))
+        sections.append(("output_format", output_format))
+        sections.append(("context", context))
+        prompt = reviewer_prompt.assemble(sections)
+        raw = provider(prompt)
+        # ТЕРМИНАЛЬНЫЙ ВЕРДИКТ РАЗБИРАЕМ ТЕМ ЖЕ НАДЁЖНЫМ ПАРСЕРОМ, ЧТО И ОФЛАЙН-ПУТЬ. Раньше живой
+        # путь ревьюера шёл через parse_action (жадный `{.*}` от первой `{` до последней `}`): на
+        # ответе, где ревью цитирует код со скобкой или кладёт вердикт в fenced ```json, захват
+        # ломался, json.loads падал, и ВАЛИДНЫЙ вердикт молча терялся -> no-verdict, гейт не
+        # закрывался ни на какой правке (полевой замер cockpit 8293fe54; тот же класс, что уже
+        # чинили для артефактов в extract_reviewer_json, но живой путь оставался на жадном разборе).
+        # extract_reviewer_json разбирает кандидатов по одному (raw_decode) и берёт ПОСЛЕДНИЙ
+        # валидный reviewer-result — ровно «последний блок = вердикт». read-op и прочие действия
+        # (не reviewer-result) он вернёт None, и мы падаем на parse_action, как раньше.
+        if isinstance(raw, str):
+            from ai_ops_kit.gates import gate_executor as _ge  # engine->gates разрешён (см. pipeline_evidence)
+            rr = _ge.extract_reviewer_json(raw)
+            if rr is not None:
+                return rr
+            # ПРОЗАИЧЕСКИЙ ВЕРДИКТ живого судьи (issue #591): структурного JSON нет, но `claude -p` часто
+            # ЗАКЛЮЧАЕТ прозой («Recommendation: pass»). Прежде это падало в parse_action -> ещё виток.
+            # Засчитываем тем же УЖЕ доверенным парсером, что и офлайн-путь (`evidence_from_markdown`).
+            # ★ЗАЩИТА ОТ ЛОЖНОГО ЗЕЛЁНОГО★: `_last_prose_verdict` даёт вердикт ТОЛЬКО на явную финальную
+            # строку; мутная проза -> None -> НЕ синтезируем (тем более не «pass»). Строгость не ослабляем.
+            prose = _ge._last_prose_verdict(raw)
+            if prose is not None:
+                synth = {"kind": "reviewer-result", "status": prose, "checks": [],
+                         "prose_verdict": True}
+                if prose in ("warn", "fail"):
+                    synth["blockers"] = [
+                        f"вердикт вынесен прозой ({prose}); структурного reviewer-result нет"]
+                return synth
+        return parse_action(raw)
     return propose
 
 
 def run_review(reviewer, root, policy, gate_id, budget=None, max_reads=6, base_context="",
                required_evidence=None, reviewed_revision=None,
-               terminal_kind="reviewer-result", terminal_field=None):
+               terminal_kind="reviewer-result", terminal_field=None, max_unproductive=2,
+               verdict_hint=None):
     """Один независимый ревью-проход под READ-ONLY политикой -> reviewer-result (dict) + трейс.
 
     Ревьюер может читать файлы (write/shell брокер отклонит — capability-независимость от писателя),
@@ -138,35 +209,71 @@ def run_review(reviewer, root, policy, gate_id, budget=None, max_reads=6, base_c
     форс-ходе не заключает — честный no-verdict (fail). Мы лишь ограничиваем фазу чтения и требуем
     заключить по прочитанному — ровно то, что обязан делать компетентный судья.
 
+    issue #591 (оставшаяся половина #577): прежние глушилки считали брокер-чтения, но живой `claude -p`
+    читает ВНУТРИ своего цикла и `{"op":"read"}` не шлёт — `reads` структурно 0, форс не взводился,
+    петля молола все `max_reads+2` спавна («прочитано 0», ~84 мин). Теперь форс взводит ЕЩЁ и счётчик
+    НЕПРОДУКТИВНЫХ витков (ни чтения, ни вердикта; реальное чтение/вердикт его сбрасывают): после
+    `max_unproductive` (K) — форс-ход «вердикт СЕЙЧАС», нет и на нём — break. Вердикт НЕ фабрикуется.
+
     B2-14 (2026-08-14): вид терминального вердикта стал ПАРАМЕТРОМ. Петля read-only судьи нужна не
     только гейтам: сверка критериев приёмки — тот же шов (независимый судья, те же нуджи, тот же
     форс-ход, тот же брокер), но её вердикт — `acceptance-result` с вердиктом по каждому критерию,
     а не один `status` на гейт. Значения по умолчанию оставлены прежними, поэтому путь
     `reviewer-result` не меняется ни на байт; `terminal_field` называет поле, по которому вердикт
-    узнаётся, когда модель не проставила `kind`."""
+    узнаётся, когда модель не проставила `kind`.
+
+    issue #614: `verdict_hint` — как форс-ход/нуджи ПРОСЯТ завершить. По умолчанию просят «один
+    reviewer-result» (структурная форма; путь приёмки не меняется). Ревьюер кода передаёт простую
+    строку-итог (`Recommendation: pass|needs_work`), которую ловит `_last_prose_verdict`: живая модель
+    на реальном диффе тонула в 56с прозы, когда её обязывали к тяжёлому структурному JSON, а на простой
+    строке заключала за 5с. Терминальную ДЕТЕКЦИЮ параметр не трогает — прозаический вердикт
+    синтезируется в `make_reviewer_proposer` и приходит сюда уже как reviewer-result со `status`."""
     root = Path(root)
     # Локальный импорт (как ai_ops_run зовёт providers): response_contract — лист, engine не тянет,
     # цикла нет; локально — чтобы не расширять статический граф engine ради одного класса-исключения.
     from ai_ops_kit.providers.response_contract import ProviderRefusal as _ProviderRefusal
+    # #160: тем же локальным способом — тип структурного отказа СРЕДЫ (вложенный `claude -p` внутри
+    # активной сессии Claude обрывается ДО модели). Он не сетевой сбой и не вердикт: прежде летел до
+    # CLI и убивал прогон; здесь становится НАЗВАННЫМ no-verdict, по которому открывается handoff.
+    from ai_ops_kit.providers.orchestrator_providers import (
+        ProviderEnvUnavailableError as _ProviderEnvUnavailable)
     bud = budget if isinstance(budget, _budget_mod.Budget) else _budget_mod.Budget.from_dict(budget)
     context = base_context
     reads, denied = [], []
     stopped = "no-verdict"
+    # issue #614: чем просим завершить. По умолчанию — «один reviewer-result» (структурная форма,
+    # путь приёмки не меняется). Ревьюер кода передаёт verdict_hint (простую строку-итог
+    # `Recommendation: …`), и форс-ход/нуджи просят именно её, а не тяжёлый структурный JSON.
+    _terminal_ask = verdict_hint or f"один {terminal_kind}"
+    unproductive = 0                                # витков подряд без брокер-чтения И без вердикта
     for _ in range(max_reads + 2):                  # +1 нудж-запас, +1 форс-ход вердикта
         try:
             bud.charge_call()
         except _budget_mod.BudgetExceeded as e:
             stopped = f"budget: {e}"; break
-        force_verdict = len(reads) >= max_reads     # бюджет чтений исчерпан -> только вердикт
+        # форс: исчерпаны брокер-чтения (мокнутый судья) ЛИБО K непродуктивных витков (живой судья,
+        # чей reads структурно 0) — читать больше нельзя, только вердикт (issue #591)
+        force_verdict = len(reads) >= max_reads or unproductive >= max_unproductive
         if force_verdict:
-            context += (f"\n[ревью] ЛИМИТ ЧТЕНИЙ ИСЧЕРПАН. Больше не читай. Верни СЛЕДУЮЩИМ РОВНО один "
-                        f"{terminal_kind} по уже прочитанному (чего не подтвердил чтением — то и "
+            context += (f"\n[ревью] ЛИМИТ ЧТЕНИЙ ИСЧЕРПАН. Больше не читай. Верни СЛЕДУЮЩИМ РОВНО "
+                        f"{_terminal_ask} по уже прочитанному (чего не подтвердил чтением — то и "
                         f"скажи конкретно). НЕ выдумывай.")
         elif len(reads) == max_reads - 1:
             context += (f"\n[ревью] остаётся последнее чтение до лимита — прочти только самое нужное, "
-                        f"затем верни {terminal_kind}.")
+                        f"затем верни {_terminal_ask}.")
         try:
             action = reviewer(context)
+        except _ProviderEnvUnavailable as env_err:
+            # #160: провайдер ревьюера структурно не запускается в ЭТОЙ среде (сессия внутри сессии) —
+            # повтор бесполезен. НЕ пробрасываем (иначе падает весь прогон): возвращаем named
+            # no-verdict `env-unavailable`. По нему `_run_reviews` открывает handoff оркестратору
+            # (awaiting_reviewer) вместо глухого no-verdict. refusal несёт причину до отчёта.
+            return {"result": None, "stopped": "env-unavailable",
+                    "refusal": {"kind": "provider-refusal", "reason": "env_unavailable",
+                                "reason_text": "исполнитель ревьюера недоступен в этой среде",
+                                "provider": getattr(env_err, "provider", "") or "",
+                                "detail": str(getattr(env_err, "detail", "") or "")[:300]},
+                    "reads": reads, "denied": denied}
         except _ProviderRefusal as refusal:
             # Провайдер судьи НАЗВАЛ отказ (пусто/обрезано/отказ модели). Прежде это был
             # неперехваченный подъём (после того как провайдеры научились называть пустой ответ);
@@ -174,7 +281,10 @@ def run_review(reviewer, root, policy, gate_id, budget=None, max_reads=6, base_c
             return {"result": None, "stopped": f"refusal: {refusal.reason}",
                     "refusal": refusal.as_dict(), "reads": reads, "denied": denied}
         if not isinstance(action, dict) or action.get("error"):
-            context += f"\n[ревью] верни РОВНО один JSON: read-действие или {terminal_kind}."
+            unproductive += 1                       # ответ не разобрался — непродуктивный виток (#591)
+            context += f"\n[ревью] верни РОВНО одно: read-действие или {_terminal_ask}."
+            if force_verdict:                       # форс-ход не дал вердикта -> не молоть до потолка
+                break
             continue
         # терминальный вердикт: по kind, по названному полю вердикта либо (для reviewer-result) по status
         _terminal = (action.get("kind") == terminal_kind
@@ -189,24 +299,27 @@ def run_review(reviewer, root, policy, gate_id, budget=None, max_reads=6, base_c
             if reviewed_revision:
                 action.setdefault("reviewed_revision", reviewed_revision)
             return {"result": action, "stopped": "verdict", "reads": reads, "denied": denied}
-        # на форс-ходе чтения запрещены: не исполняем, повторно требуем вердикт
+        # на форс-ходе чтения запрещены, вердикта так и нет -> break (issue #591: не крутить впустую)
         if force_verdict:
-            context += f"\n[ревью] чтение отклонено: лимит исчерпан. Нужен {terminal_kind}, не read."
-            continue
+            context += f"\n[ревью] чтение отклонено: лимит исчерпан. Нужен {_terminal_ask}, не read."
+            break
         # иначе — действие через брокер (read-only Policy: write/shell -> DENIED)
         ev = tool_broker.execute(action, root, policy)
         if ev["allowed"] and ev.get("ok") and ev.get("op") == "read":
             reads.append(ev.get("target"))
+            unproductive = 0                        # реальное брокер-чтение — продуктивный виток
             context += f"\n--- {ev.get('target')} ---\n{ev.get('output_tail')}\n--- конец ---"
         elif not ev["allowed"]:
+            unproductive += 1
             denied.append({"op": ev.get("op"), "reason": ev["reason"]})
             # Вид вердикта здесь тоже параметр (ревью PR #118): судья сверки приёмки, получив
             # отказ брокера, читал «верни reviewer-result» — то есть подсказку вернуть вердикт
             # ЧУЖОЙ формы, который не пройдёт терминальную проверку. Это путь, на который он
             # попадает при попытке записи, — ровно там подсказка должна быть верной.
             context += (f"\n[ревью] действие {ev.get('op')} ОТКЛОНЕНО (ты read-only судья, не автор): "
-                        f"{ev['reason']}. Верни read или {terminal_kind}.")
+                        f"{ev['reason']}. Верни read или {_terminal_ask}.")
         else:
+            unproductive += 1                       # не-read действие тоже не двигает ревью
             context += f"\n[ревью] {ev.get('op')} -> {ev.get('reason')}"
     return {"result": None, "stopped": stopped, "reads": reads, "denied": denied}
 

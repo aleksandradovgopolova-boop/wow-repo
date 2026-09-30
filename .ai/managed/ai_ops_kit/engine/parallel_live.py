@@ -31,11 +31,21 @@ import tempfile
 from pathlib import Path
 
 from ai_ops_kit.shared import _bootstrap  # noqa: E402
+from ai_ops_kit.shared import gitio       # noqa: E402
 from ai_ops_kit.engine import parallel_executor as pe   # noqa: E402
 
 
 def _git(root, *args, check=True):
-    r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    # RAW-обёртка (а не gitio.git): вызыватели читают CompletedProcess — .stdout/.stderr/.returncode —
+    # и полагаются на порядок mutating-команд (checkout/reset/merge/push). timeout= обязателен по
+    # тому же инварианту, что держит gitio: зависший git не вешает fan-in. Таймаут -> синтетический
+    # rc=124, и check=True превратит его в RuntimeError, как любой другой сбой git.
+    try:
+        r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
+                           timeout=gitio.GIT_TIMEOUT_DEFAULT)
+    except subprocess.TimeoutExpired:
+        r = subprocess.CompletedProcess(["git", "-C", str(root), *args], 124, "",
+                                        f"git timeout {gitio.GIT_TIMEOUT_DEFAULT}s")
     if check and r.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {r.stderr.strip()[:200]}")
     return r
@@ -51,9 +61,8 @@ def _ensure_identity(root):
     настроек. Fallback ставится ТОЛЬКО когда идентичность не разрешается — реальные окружения
     (у пользователя/агента она есть) сохраняют свою и авторство коммитов не подменяется.
     """
-    probe = subprocess.run(["git", "-C", str(root), "var", "GIT_COMMITTER_IDENT"],
-                           capture_output=True, text=True)
-    if probe.returncode == 0:
+    # Единый вход к git с таймаутом (см. shared/gitio): читаем только rc.
+    if gitio.git(root, "var", "GIT_COMMITTER_IDENT")[0] == 0:
         return False
     _git(root, "config", "user.email", "ai-ops@local", check=False)
     _git(root, "config", "user.name", "AI Ops", check=False)
@@ -65,13 +74,22 @@ _INFRA_PREFIXES = (".ai/", "openspec/", "features/")
 
 
 def _glob_match(path, pat):
-    """write_scope-глоб. 'api/**' -> префикс; 'aa.py' -> точное; иначе fnmatch."""
+    """write_scope-глоб. 'api/**' и 'src/' (каталог) -> префикс; 'aa.py' -> точное; иначе fnmatch."""
     if pat.endswith("/**"):
         base = pat[:-3]
         return path == base or path.startswith(base + "/")
     if pat.endswith("**"):
         return path.startswith(pat[:-2])
-    return fnmatch.fnmatch(path, pat) or path == pat
+    if fnmatch.fnmatch(path, pat) or path == pat:
+        return True
+    # Запись-каталог без wildcard (голый сегмент 'quality' или trailing-slash 'src/') -> prefix-семантика,
+    # согласовано с parallel_planner._prefix/_overlap. Иначе легитимный 'quality/foo.py' не матчил бы
+    # scope='quality' и пакет ложно помечался fail (переблок хорошей работы). Точный файл ('calc.py')
+    # уже пойман ветками выше, так что prefix-fallback его не портит.
+    if not any(ch in pat for ch in "*?["):
+        base = pat.rstrip("/")
+        return bool(base) and (path == base or path.startswith(base + "/"))
+    return False
 
 
 def _changed_files(root, base_sha, head="HEAD"):
@@ -114,7 +132,7 @@ def _github_remote(child_root):
     return url if (r.returncode == 0 and ("github.com" in url or url.endswith(".git"))) else None
 
 
-from ai_ops_kit.engine import work_areas as _work_areas   # noqa: E402 — #138: одна формула зон
+from ai_ops_kit.shared import work_areas as _work_areas   # noqa: E402 — #138: одна формула зон
 
 
 def _pkg_signals(base_signals, pkg):
@@ -201,11 +219,26 @@ def make_integration_runner(child_root, base_sha, integration_branch="ai-ops/int
     return runner
 
 
+def _porcelain_path(ln):
+    """Путь из строки `git status --porcelain` (`XY <path>`; переименование — `XY <old> -> <new>`).
+    Строка кончается ИМЕНЕМ файла, а не статусом, поэтому фильтровать `.ai/`-churn надо по пути."""
+    p = ln[3:] if len(ln) > 3 else ln.strip()
+    if " -> " in p:
+        p = p.split(" -> ", 1)[1]
+    return p.strip().strip('"')
+
+
 def preflight_disposable(child_root):
     """v3.7.1 (#2): runner делает reset --hard/clean -fd -> ЗАПРЕЩЕН в обычном рабочем checkout с
-    незакоммиченными файлами (уничтожил бы их). Требует чистый/disposable checkout. -> (ok, reason)."""
+    незакоммиченными файлами (уничтожил бы их). Требует чистый/disposable checkout. -> (ok, reason).
+    Послабление для `.ai/`-churn: строки porcelain кончаются ПУТЁМ (` M .ai/state.json` -> '.json'),
+    поэтому раньше `endswith('.ai')` не исключал ничего (no-op) — сверяем начало РЕАЛЬНОГО пути."""
+    def _is_ai_churn(ln):
+        p = _porcelain_path(ln)
+        return p == ".ai" or p.startswith(".ai/")
+
     st = _git(child_root, "status", "--porcelain", check=False)
-    dirty = [ln for ln in (st.stdout or "").splitlines() if ln.strip() and not ln.strip().endswith(".ai")]
+    dirty = [ln for ln in (st.stdout or "").splitlines() if ln.strip() and not _is_ai_churn(ln)]
     if dirty:
         return False, ("грязный checkout: runner делает reset --hard/clean -fd и уничтожит "
                        f"незакоммиченные файлы ({len(dirty)}). Нужен disposable-clone/чистый checkout.")
@@ -233,7 +266,15 @@ def run_live(wg, child_root, base_sha, task_map, signals, run_fn, open_pr=False,
     rec["concurrency_note"] = "серийно (max_parallel=1); настоящая конкурентность требует отдельных клонов на пакет"
     rec["pr"] = None
     if open_pr and rec.get("delivery", {}).get("open_pr") and repo_slug:
-        _git(child_root, "push", "-f", "-q", "origin", integration_branch, check=False)
+        # --force-with-lease (осознанно, как delivery/pr_open.py #401): безопаснее сырого -f — падёт,
+        # если в ветку дописали извне, вместо тихой затирки. Результат ПРОВЕРЯЕТСЯ: при сбое push
+        # возвращаем явную ошибку, а не глотаем rc и не идём в gh pr create с запутанной ошибкой.
+        push = _git(child_root, "push", "--force-with-lease", "-q", "origin", integration_branch, check=False)
+        if push.returncode != 0:
+            rec["pr"] = None
+            rec["push_error"] = (f"push --force-with-lease integration-ветки не удался "
+                                 f"(rc={push.returncode}): {(push.stderr or '').strip()[:200]}")
+            return rec
         title = f"[parallel-2] {wg.get('id')} fan-in @ {rec['integration_sha'][:12]}"
         body = (f"Автоматический parallel-2 fan-in (integration-SHA {rec['integration_sha'][:12]}).\n"
                 f"Пакеты: {', '.join(task_map)}. aggregate повторён на integration-SHA.\n\n"
@@ -254,11 +295,12 @@ def make_isolated_package_runner(child_root, base_sha, task_map, signals, run_fn
     def runner(pkg):
         pid = pkg["id"]
         cpath = Path(clones_dir) / pid
-        cl = subprocess.run(["git", "clone", "-q", str(child_root), str(cpath)], capture_output=True, text=True)
-        if cl.returncode != 0:  # #7 fail-closed
+        # git clone — форма не под `-C`: единый вход с таймаутом через gitio.run (см. shared/gitio).
+        cl_rc, _, cl_err = gitio.run(["clone", "-q", str(child_root), str(cpath)])
+        if cl_rc != 0:  # #7 fail-closed
             clones[pid] = {"path": str(cpath), "branch": f"ai-ops/{pid}", "error": "clone-failed"}
             return {"status": "error", "sha": None, "gate_report": {"all_pass": False},
-                    "error": f"clone: {cl.stderr.strip()[:160]}", "clone": str(cpath)}
+                    "error": f"clone: {cl_err[:160]}", "clone": str(cpath)}
         _ensure_identity(cpath)  # прогон пакета коммитит в этом клоне — идентичность не унаследована
         co = _git(cpath, "checkout", "-q", base_sha, check=False)
         if co.returncode != 0:  # #7 fail-closed
@@ -349,10 +391,11 @@ def run_live_concurrent(wg, child_root, base_sha, task_map, signals, run_fn, clo
     try:
         clones = {}
         iroot = Path(clones_dir) / "_integration"
-        cl = subprocess.run(["git", "clone", "-q", str(child_root), str(iroot)], capture_output=True, text=True)
-        if cl.returncode != 0:  # #7 fail-closed
+        # git clone — форма не под `-C`: единый вход с таймаутом через gitio.run (см. shared/gitio).
+        cl_rc, _, cl_err = gitio.run(["clone", "-q", str(child_root), str(iroot)])
+        if cl_rc != 0:  # #7 fail-closed
             return {"proceed": False, "stage": "isolation", "execution_concurrency": "concurrent",
-                    "isolation": "per-package-clone", "reason": f"integration clone: {cl.stderr.strip()[:160]}",
+                    "isolation": "per-package-clone", "reason": f"integration clone: {cl_err[:160]}",
                     "delivery": {"open_pr": False}, "delivery_plan": None, "pr": None}
         _ensure_identity(iroot)  # merge fan-in — это КОММИТ; клон не унаследовал идентичность
         clones["_integration"] = {"path": str(iroot)}

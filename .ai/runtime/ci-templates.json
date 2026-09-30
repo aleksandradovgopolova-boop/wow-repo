@@ -1,5 +1,13 @@
 {
   "ai-ops-update.yml": "64e25082fb2fbd48d2954dd27a997c436d490d93d9cd47573ab718d8c8eefd67",
   "ai-ops-record.yml": "e8f1d03e6c47c1775ca1dd6e70debc52174d0d41d59855f8c41dab966f68af70",
-  "ai-ops-validate.yml": "c00ad378b454c90948e055d162b8a998808e952ba3d6f07aa3bf8bfb08ede39e"
+  "ai-ops-validate.yml": "c00ad378b454c90948e055d162b8a998808e952ba3d6f07aa3bf8bfb08ede39e",
+  "ai-ops-feature-coverage.yml": "dfb78da7aa67581ec857706cb66f985c4894ad4e622eedad7e9f5ffba8162f5d",
+  "dependabot.yml": "a60767391962d26583e1c104bc951bf0a2a55315f923cd3c5c61873b52d0c146",
+  "ai-ops-codeql.yml": "00ac2592852aef9c46b53bb17b3e20dfc7bbcadae4f984f906d79493097a9f45",
+  "ai-ops-secret-scan.yml": "7c4c89d8dd90988db44c376beada2f216cfef0116be65f177206958d2ec1e622",
+  "ai-ops-sbom.yml": "dab5223ee288dfcb012e89c238bcf5de87e2eaf253b32590e7d107ffa6aa92e0",
+  "ai-ops-scorecard.yml": "6ef540a0d95fee2927df37d778577cebeaa12639772baf8840945ab2fefc228c",
+  "ai-ops-feature-catalog.yml": "9c784f1121950593e987c5724f9d985c735fa1a7ddf3ee27e214aa3f87a63e8b",
+  "ai-ops-lint.yml": "2c28770c6017fc91a098c62e6cb4ac5fcf0a900529b6adfe7be9609d3e4ba346"
 }

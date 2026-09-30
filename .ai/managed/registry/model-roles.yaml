@@ -55,6 +55,13 @@ qualification_matrix:
     security_review: qualified
     integration_judge: qualified
 
-# Метрика экономики: стоимость ОДНОГО успешно доставленного и проверенного изменения
-# (вызовы + retry + reviewer + эскалация + latency + ручное вмешательство) — считает cost_account.
+# Метрика экономики.
+# cost_per_successful_change — AI-часть: вызовы + retry + reviewer + эскалация (монетизированы;
+#   считает cost_account). latency несётся сырьём для наблюдаемости, в деньги НЕ конвертируется.
+# cost_per_successful_outcome (#637) — НАГРУЖЕННАЯ стоимость исхода: AI-часть + внимание человека
+#   (manual_interventions * ставка). Ставка org-специфична и живёт в дочернем .ai-ops.yaml
+#   (engineering_operating_model.economics.human_attention_cost_per_intervention_usd); не задана ->
+#   внимание человека unavailable (не 0), нагруженная стоимость — нижняя граница.
+# Провал = чистые потери в ОБЕИХ метриках (cost_per_*=None, если не delivered_verified).
 cost_metric: cost_per_successful_change
+loaded_cost_metric: cost_per_successful_outcome

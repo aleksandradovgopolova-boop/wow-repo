@@ -54,6 +54,8 @@ LLM-судьи или решение человека. В отчёте прог�
 | `contour_consistency` | validator | совещательный | validate-product-model |
 | `deploy_readiness` | validator | блокирующий | validate-deploy-readiness |
 | `event_contract_consistency` | validator | совещательный | validate-event-catalog |
+| `feature_coverage` | validator | блокирующий | validate-feature-coverage |
+| `feature_decision_quality` | validator | блокирующий | validate-feature-decisions |
 | `implementation_verification` | validator | блокирующий | validate-evidence |
 | `intake_completeness` | validator | блокирующий | validate-intake |
 | `knowledge_freshness` | validator | совещательный | validate-freshness |
@@ -83,10 +85,9 @@ LLM-судьи или решение человека. В отчёте прог�
 | `stakeholder_readiness` | judge | совещательный | product-manager |
 | `ux_review` | judge | блокирующий | ux-reviewer |
 | `visual_regression` | judge | блокирующий | final-verifier |
-| `documentation_drift` | writer | совещательный | documentation-steward |
 
 
-**Итого: 17 машиной, 17 судьёй, 1 писателем, 0 человеком** (гейт `security` поднимается до
+**Итого: 19 машиной, 17 судьёй, 0 писателем, 0 человеком** (гейт `security` поднимается до
 человека сигналами задачи, а не постоянно).
 
 **Что изменилось 20.08.2026.** `documentation_updated` переведён из самозаявления в машинный:
@@ -102,9 +103,11 @@ LLM-судьи или решение человека. В отчёте прог�
 знать, какая проверка какая.** Теперь это видно из отчёта, и решение — оставить мнение мнением или
 довести до валидатора — принимается с открытыми глазами.
 
-Один гейт в состоянии `writer` (`documentation_drift`) — самый слабый случай, и он назван прямо:
-его закрывает та же стадия, что и писала. Список самозаявляющихся гейтов — ратчет, и он ходит
-вниз: 20.08 их стало на один меньше.
+Гейтов в состоянии `writer` не осталось (0). Последний, `documentation_drift`, снят #616 (08.09):
+дрейф ссылок/чисел уже ловят машиной (`validate_references`/`validate_claims`/`validate_freshness`),
+а «дрейф смысла» закрывал та же стадия, что и писала, — слабейшая форма. Список самозаявляющихся
+гейтов — ратчет, и он ходит вниз: 20.08 их стало на один меньше (перевод `documentation_updated` в
+машинный), 08.09 — дошёл до нуля.
 
 **У кого «мнение» временное, а у кого по существу — разобрано отдельно** и проверяется кодом:
 `quality/gate-machinability.yaml` плюс `python3 -m ai_ops_kit.devtools.gate_machinability`. Замер на
@@ -113,3 +116,21 @@ LLM-судьи или решение человека. В отчёте прог�
 мнение до остатка), четыре — человеческие по существу (`code_review`, `architecture_review`,
 `decision_quality`, `stakeholder_readiness`): там машинной остаётся только форма, и объявить их
 машинными значило бы поставить код возврата под вопрос, на который код не отвечает.
+
+## Источник доказательства: детерминированное ≠ AI-суждение (веха 4.2)
+
+Те же четыре «кто закрывает» отвечают и на более грубый вопрос: **этому можно ВЕРИТЬ как
+доказательству, или это МНЕНИЕ?** Ответов три (`gates.closure.by_source` в `run-report.json`):
+
+| Источник | Из чего | Чего стоит |
+|---|---|---|
+| `deterministic` | `validator` — тест/lint/CI/schema | Воспроизводимо: ground truth |
+| `ai_judgment` | `judge` (AI-судья) **и** `writer` (самозаявление) | Advisory-мнение, не доказательство |
+| `human` | `human` — решение человека | Ответственность названа |
+
+Судья и писатель схлопываются в `ai_judgment` намеренно: если evidence генерит AI, а проверяет
+другой AI, ground truth нет — оба по одну сторону от машины. Отсюда правило вердикта
+(`gates.evidence_verdict`): **`verified` привилегирует детерминированные сигналы.** Одно
+AI-суждение без пройденного детерминированного гейта `verified` НЕ даёт — система не называет
+«проверено» то, что держится на её же (или соседнего AI) мнении. AI-суждение при этом не
+скрывается: оно видно в `evidence_verdict.advisory` и в строке прогона как мнение.

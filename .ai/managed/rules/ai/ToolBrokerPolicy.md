@@ -4,7 +4,7 @@
 
 В контролируемом исполнении (generic-orchestrator) **не модель решает, что ей можно**.
 Модель ПРЕДЛАГАЕТ действие (`{op, path, command, content}`); разрешено ли оно — решает
-Policy Engine (`tools/tool_broker.py`) по уровням `security/permission-levels.yaml`,
+Policy Engine (`ai_ops_kit/engine/tool_broker.py`) по уровням `security/permission-levels.yaml`,
 объявленному `write_scope` и `config/protected-paths.yaml`. Broker исполняет только
 разрешённое и собирает Evidence (команда, exit_code, ревизия, что тронуто).
 

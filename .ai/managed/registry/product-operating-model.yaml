@@ -52,10 +52,13 @@ artifact_states:
   stale:          {means: "артефакт есть, но устарел относительно кода (freshness)",     trust: low,   human_needed: true}
   missing:        {means: "артефакта нет, и его отсутствие установлено",                 trust: low,   human_needed: true}
   unknown:        {means: "определить состояние нечем — признание, а не утверждение",     trust: none,  human_needed: true}
+  conflicting:    {means: "источники истины об одном факте противоречат — актуальный не определён", trust: none, human_needed: true}
 artifact_states_never: >
-  `inferred` НИКОГДА не публикуется как `verified`, `unknown` НИКОГДА не сворачивается в `missing`.
-  Первое подменяет догадку фактом, второе — незнание утверждением. Оба превращают baseline в
-  выдумку, которой следующая сессия поверит как правде.
+  `inferred` НИКОГДА не публикуется как `verified`, `unknown` НИКОГДА не сворачивается в `missing`,
+  `conflicting` НИКОГДА не сворачивается молча в одну из сторон (`verified`/`inferred`).
+  Первое подменяет догадку фактом, второе — незнание утверждением, третье — спор выбором, которого
+  кит не вправе делать за владельца. Все три превращают baseline в выдумку, которой следующая
+  сессия поверит как правде.
 
 # ── Классификация репозитория ─────────────────────────────────────────────────────────────────
 # От состояния продукта КАРДИНАЛЬНО меняется onboarding: у существующего продукта реальность
@@ -86,12 +89,34 @@ classification:
   # а часть остальных собиралась, но в классификации не участвовала: реестр перечислял сигналы,
   # которых нет. Список описывает то, что ДЕЙСТВИТЕЛЬНО решает класс.
   signals: [tree_readable, source_files, test_files, commits, ci, migrations, release_history]
-  collected_but_not_classifying: [containers, dependency_manifests, product_docs,
-                                  architecture_docs, decisions, env_configs, api_schemas]
-  collected_but_not_classifying_note: >
-    Собираются в discover() и попадают в reconstruct()/audit(), но класс репозитория по ним не
-    определяется. Названы отдельно, чтобы «сигнал класса» и «наблюдение о репозитории» не читались
-    как одно и то же.
+  # Сигналы ЗРЕЛОСТИ и их ВКЛАД в класс — данными, не в коде. Прежде `classify()` считал зашитую в
+  # код четвёрку [ci, test_files, migrations, release_history] (каждый вес 1, порог 3), а
+  # doc/schema/manifest-факты СОБИРАЛИСЬ в discover(), но класс по ним не поднимался (#818): зрелый
+  # brownfield с документацией, API-схемами и манифестами, но короткой/squash-историей деградировал
+  # в EARLY_PRODUCT — уже собранные факты не использовались. Теперь их суммарный вес участвует в
+  # решении. `id` — РОВНО ключи, которые производит discover(). Вес отражает СИЛУ признака: рабочий
+  # CI или миграции доказывают живую систему сильнее, чем ubiquitous README, — но набор
+  # «намеренных» артефактов зрелости (описанная архитектура, API-схемы, ADR) суммарно тоже поднимает
+  # класс. Правится данными живых прогонов, как `thresholds` рядом.
+  maturity_signals:
+    - {id: ci,                   weight: 2, label: "CI",                    note: "конвейер ПРОДУКТА (не свой, F-019) — сильнейший признак живой системы"}
+    - {id: test_files,           weight: 2, label: "тесты",                 note: "тесты в дереве"}
+    - {id: migrations,           weight: 2, label: "миграции",              note: "миграции схемы данных — признак живой БД"}
+    - {id: release_history,      weight: 2, label: "релизы",                note: "теги релизов — продукт доходил до выпуска"}
+    - {id: architecture_docs,    weight: 2, label: "описание архитектуры",  note: "ARCHITECTURE.md, docs/architecture, context/system — намеренный артефакт зрелости"}
+    - {id: api_schemas,          weight: 2, label: "API-схемы",             note: "openapi/graphql/proto — зафиксированный контракт наружу"}
+    - {id: decisions,            weight: 2, label: "ADR-решения",           note: "decisions/, docs/adr — зафиксированные архитектурные решения"}
+    - {id: product_docs,         weight: 1, label: "документация",          note: "README/docs/context/product — есть у большинства репозиториев, слабый признак"}
+    - {id: dependency_manifests, weight: 1, label: "манифест зависимостей", note: "package.json/pyproject/… — управляемые зависимости, а не свалка файлов"}
+    - {id: containers,           weight: 1, label: "контейнеры",            note: "Dockerfile/compose — воспроизводимая упаковка среды"}
+    - {id: env_configs,          weight: 1, label: "конфиг среды",          note: ".env.example/config — оформленная конфигурация среды"}
+  # Порог суммы весов для EXISTING_PRODUCT, когда история КОРОТКАЯ или не читается. Прежняя «тройка
+  # сильных признаков» = 3 при весе 1 → теперь три инфрапризнака по весу 2 дают 6, поэтому порог 6
+  # сохраняет прежнее поведение по инфраструктуре (CI+тесты+миграции = 6 → EXISTING). Мягкий README
+  # с манифестом (1+1) на порог не тянет; набор намеренных артефактов зрелости — описанная
+  # архитектура + API-схемы + документация + манифест (2+2+1+1) = 6 — переводит brownfield в
+  # EXISTING, даже когда коммитов мало. Так собранные doc/schema/manifest-факты наконец решают класс.
+  maturity_min_weight: 6
   rule: >
     UNKNOWN, если ни один сигнал не читается (нет доступа к дереву или к истории) — это не
     «пустой репозиторий». Пустой репозиторий читается и даёт нули; нечитаемый не даёт ничего, и
@@ -205,8 +230,19 @@ contours:
     holds: [компоненты, сервисы, зависимости, deployment topology, integrations, failure boundaries]
     owner_role: architect
     source_of_truth:
-      - {path: context/system/SystemOverview.md, required: true}
-      - {path: context/system/RepositoryMap.md, required: true}
+      # Канонический источник архитектуры — корневой ARCHITECTURE.md (SR-7, решение владельца
+      # 2026-09-07): единый документ «что построено / что осознанно не построено / куда идём / какие
+      # решения в основе», привычное индустрии имя. Прежние два файла того же смысла объявлялись
+      # обязательными, но НИКОГДА не сеялись (кит не давал им шаблона) — теперь они уходящие через
+      # окно вывода: остаются читаемыми (required:false), содержимое переносится в ARCHITECTURE.md.
+      # required_sections (SR-5): объявлены ДАННЫМИ, не в коде — секционную проверку (SR-6, три
+      # состояния: заполнена/нет/пуста) ведёт artifact_sections по этому списку. Ядро из 21 раздела
+      # шаблона; добавление секции сюда не требует правки Python.
+      - {path: ARCHITECTURE.md, required: true,
+         required_sections: [Context, System Overview, Components, Data Flows, Failure Modes,
+                             Known Limitations]}
+      - {path: context/system/SystemOverview.md, required: false}   # DEPRECATED → ARCHITECTURE.md
+      - {path: context/system/RepositoryMap.md, required: false}    # DEPRECATED → ARCHITECTURE.md
       - {path: context/system/IntegrationMap.md, required: false}
     change_signals: ["context/system/**", "**/docker-compose*.y*ml", "**/Dockerfile*",
                      "**/*.tf", "infra/**", "deploy/**"]
@@ -308,19 +344,19 @@ contours:
 # ── Роли работы ───────────────────────────────────────────────────────────────────────────────
 # РОЛЬ — НЕ ИСПОЛНИТЕЛЬ. План продукта называет роль; какой runtime/модель ей соответствует
 # СЕЙЧАС, решает роутер в момент запуска по сложности, риску, capability, стоимости и доступности
-# (`engine/ai_route.py`, `providers/model_router.py`). Поэтому смена Claude Code на Codex или Qwen
+# (`shared/ai_route.py`, `providers/model_router.py`). Поэтому смена Claude Code на Codex или Qwen
 # не переписывает план продукта — и поэтому вендорское имя в `planning/plan.yaml` ЗАПРЕЩЕНО
 # проверкой (`validate_product_model`), а не соглашением.
 #
 # `agents` — существующие id из `registry/agents.yaml` (ссылочная целостность проверяется:
 # роль, ссылающаяся на несуществующего агента, — ошибка реестра, а не опечатка).
 roles:
-  product:       {contour: product_strategy,              agents: [product-manager, business-analyst, product-reviewer]}
-  researcher:    {contour: research_decisions,             agents: [user-researcher, experiment-designer, system-analyst]}
+  product:       {contour: product_strategy,              agents: [product-manager, product-reviewer]}
+  researcher:    {contour: research_decisions,             agents: [user-researcher, experiment-designer]}
   architect:     {contour: system_architecture,            agents: [solution-architect, llm-architect, architecture-reviewer]}
-  data-engineer: {contour: data_contracts,                 agents: [database-engineer, migration-engineer, integration-engineer]}
-  engineer:      {contour: engineering_quality_security,   agents: [backend-developer, fullstack-developer, implementation-integrator]}
-  frontend:      {contour: engineering_quality_security,   agents: [frontend-developer, ui-ux-designer]}
+  data-engineer: {contour: data_contracts,                 agents: [data-engineer]}
+  engineer:      {contour: engineering_quality_security,   agents: [fullstack-developer, implementation-integrator]}
+  frontend:      {contour: engineering_quality_security,   agents: [fullstack-developer, ui-ux-designer]}
   qa:            {contour: engineering_quality_security,   agents: [test-engineer, regression-analyst]}
   security:      {contour: engineering_quality_security,   agents: [security-reviewer, ai-red-teamer]}
   reviewer:      {contour: engineering_quality_security,   agents: [code-reviewer, performance-reviewer, requirements-reviewer]}
@@ -442,3 +478,135 @@ consistency:
     - "unknown не сворачивается в not_changed"
     - "not_changed не требует обновления документов (бюрократия «восемь документов на задачу» запрещена)"
     - "контур без сигнальных путей не считается зелёным"
+
+# ── Фундамент продукта и его свежесть ───────────────────────────────────────────────────────────
+# ЗАЧЕМ (кейс владельца, дочка ии-среда). Нижние документы (сценарии, MVP-scope) и поток выпущенных
+# фич живут и обновляются, а ФУНДАМЕНТ — «зачем / для кого / какая ценность» (Vision, JTBD, Canvas) —
+# правят редко. За месяц-два в продукт уезжает много изменений, и фундамент тихо ОТСТАЁТ: он не
+# сломан связностью (`contour_consistency` смотрит на diff), не помечен датой (`freshness` спит без
+# явной даты) — он просто СТАРШЕ всего вокруг. Кит обязан заметить это сам и назвать ГЛАВНОГО
+# кандидата на пересмотр СОВЕТОМ, не блокирующим гейтом. Сигнал строит
+# `ai_ops_kit/planning/foundation_freshness.py`, встраивается в брифинг ревью фундамента
+# (`cli/foundation_proposal.py`).
+#
+# `contours` — какие контуры образуют фундамент (верх цикла: «почему / для кого / что»). Их источники
+# истины — документы фундамента; источники истины ОСТАЛЬНЫХ контуров + поток фич служат МЕРКОЙ
+# свежести. Дочка вправе задать фундамент тоньше контуров — списком файлов в
+# `.ai-ops.yaml -> product_operating_model.foundation.documents` (тогда Vision/JTBD/Canvas — фундамент,
+# а нижние документы того же контура стратегии — мерка).
+#
+# ГРАНИЦА ЧЕСТНОСТИ. Свежесть берётся из git-даты последнего изменения файла; нет даты (документ не
+# под контролем версий или без истории) -> состояние «не знаю», НЕ «свежо». Кандидат называется
+# ТОЛЬКО при измеримом основании: нижние документы и/или фичи демонстрируемо новее фундамента на
+# `min_lag_days`. Нет мерки (ни нижних документов с датой, ни фич) -> кит МОЛЧИТ, устаревание не
+# выдумывает.
+foundation:
+  contours: [product_strategy]
+  freshness:
+    enforcement: advisory       # СОВЕТ, не гейт: сигнал не валит сборку
+    min_lag_days: 21            # фундамент считается отставшим, если мерка новее хотя бы на столько
+    min_newer_features: 1       # и/или столько выпущенных фич новее фундамента
+
+# ── Доменная модель ─────────────────────────────────────────────────────────────────────────────
+# ЗАЧЕМ (issue #630, внешнее ревью 08.09.2026). Пять корневых сущностей продукта — Product, Work,
+# Run, Decision, Outcome — уже РАБОТАЮТ, но их имена размазаны по механизмам (WorkItem — в этом
+# файле, Run — в engine, Decision — в governance, Outcome — в entities.yaml), и легко построить ещё
+# один механизм, не поняв, к какой сущности он относится. Здесь ось НАЗВАНА в одном месте как ДАННЫЕ:
+# каждая сущность ссылается (`implemented_by` + `status`) на уже существующий механизм. Это НЕ новый
+# реестр и НЕ новая стройка — тот же приём, что decision-boundary.yaml применил к границе решений.
+# Ревьюер прямо просил «не новый registry» — поэтому секция ЗДЕСЬ, а не отдельным файлом.
+#
+# ЧЕСТНОСТЬ ДЕКЛАРАЦИЙ (инвариант AGENTS.md): у каждой строки implemented_by есть status
+# (implemented|planned) и `where`; тест tests/contracts/test_domain_model.py проверяет, что названный
+# файл РЕАЛЬНО существует — связь не имеет права быть выдумкой. Валидатор модели краснеет на порче.
+#
+# Всё остальное (feature/finding/evidence/artifact/role/workflow/agent/graph) — производные или
+# supporting-сущности этих пяти. KG-словарь (registry/entities.yaml) — проекция графа поверх них,
+# а не отдельная ось: `outcome` там объявлен проекцией OutcomeContract+OutcomeReadout.
+domain_model:
+  entities:
+    - id: product
+      one_liner: "То, чем владеет человек: цели, пользователи, решения, работа, знание, исходы."
+      owns: [goals, users, decisions, work, knowledge, outcomes]
+      implemented_by:
+        - {where: registry/product-operating-model.yaml, provides: [contours, roles, work_types], status: implemented}
+        - {where: context/product/ProductOverview.md, provides: [goals, users], status: implemented}
+      relations:
+        - {type: has, to: work}
+        - {type: has, to: decision}
+        - {type: has, to: outcome}
+
+    - id: work
+      one_liner: >-
+        Единица изменения. ВЛАДЕЕТ жизненным циклом: выбирает workflow, назначает role, выбирает
+        worker, создаёт run, получает evidence/delivery/outcome.
+      owns: [intent, owner_role, participants, scope, dependencies, decisions, runs, artifacts,
+             evidence, delivery, outcome, budget]
+      implemented_by:
+        - {where: registry/product-operating-model.yaml, provides: [work_types, statuses, next_work], status: implemented}
+        - {where: ai_ops_kit/lifecycle/active_work.py, provides: [scope, dependencies, status, owner_role], status: implemented}
+        - {where: ai_ops_kit/lifecycle/role_handoff.py, provides: [owner_role, handoff], status: implemented}
+        - {where: schemas/budget-contract.schema.json, provides: [budget], status: implemented}
+      relations:
+        - {type: selects,      to: run}
+        - {type: targets,      to: outcome}
+        - {type: informed-by,  to: decision}
+
+    - id: run
+      one_liner: "Конкретная попытка выполнить Work. НЕ владеет Work — у Work может быть несколько Run."
+      owns: [worker, runtime, context, actions, cost, evidence, result]
+      implemented_by:
+        - {where: ai_ops_kit/engine/run_handoff.py, provides: [run, stage, step, handoff], status: implemented}
+        - {where: ai_ops_kit/shared/usage_ledger.py, provides: [cost], status: implemented}
+      relations:
+        - {type: attempts,  to: work}
+        - {type: produces,  to: evidence}
+
+    - id: decision
+      one_liner: "Человеческое решение, определяющее направление; несёт обратимость (one-way/two-way)."
+      owns: [question, evidence, options, tradeoffs, chosen, rationale, reversibility]
+      implemented_by:
+        - {where: ai_ops_kit/governance/decision_log.py, provides: [reversibility, rationale], status: implemented}
+        - {where: ai_ops_kit/intelligence/decision_loop.py, provides: [question, options, chosen], status: implemented}
+        - {where: registry/decision-boundary.yaml, provides: [class], status: implemented}
+      relations:
+        - {type: directs, to: work}
+
+    - id: outcome
+      one_liner: "Что произошло после изменения: baseline→target под guardrails и что реально измерено."
+      owns: [metric, baseline, target, guardrails, observed, verdict]
+      implemented_by:
+        - {where: ai_ops_kit/cli/post_release_loop.py, provides: [observed, verdict], status: implemented}
+        - {where: registry/entities.yaml, provides: [baseline, target, guardrails], status: implemented}
+      relations:
+        - {type: measured-by, to: metric}
+        - {type: feeds,       to: decision}
+
+  # ── Инвариант: Work владеет жизненным циклом ──────────────────────────────────────────────────
+  # Ревью п.3: очистить дальнейшее развитие — Work центр, не координационная проекция workflow/agent.
+  invariants:
+    - id: work_owns_lifecycle
+      rule: >-
+        Work владеет жизненным циклом изменения. Workflow / Agent / Run НЕ владеют Work: Work
+        выбирает Workflow → назначает Role → выбирает Worker → создаёт Run → получает
+        Evidence / Delivery / Outcome. Смена runtime/модели/агента не пересобирает Work.
+      never: >-
+        Run/Workflow/Agent не создаёт и не владеет Work; Work не принадлежит одному Run — у одной
+        работы может быть несколько попыток (Run).
+      backed_by:
+        - "ai_ops_kit/lifecycle/active_work.py — Work как реестр (owner_role/scope/deps), переживает отдельный Run"
+        - "ai_ops_kit/engine/run_handoff.py — Run привязан к WorkItem (Feature→WorkItem→Run), а не наоборот"
+
+    - id: handoff_is_role_to_role
+      rule: >-
+        Передача Work между владельцами (#639) — named-переход `owner_role` от роли к роли с явной
+        причиной/брифом: PM закончил discovery → работа передаётся дизайнеру, дизайнер закончил UX →
+        имплементатору. Работа не «лежит в backlog» без владельца — у неё есть роль на каждом этапе,
+        и смена владельца записывается в `handoffs[]` (from→to+бриф+время), атрибуция не теряется.
+      never: >-
+        Handoff НЕ передаёт работу человеку/исполнителю: `owner_role` — РОЛЬ из словаря `roles`, а
+        какой worker ей соответствует, выбирает роутер в момент Run (поле assignee запрещено). Это
+        первый ограниченный шаг, а не Team OS: сущностей Person/Worker/Availability здесь нет.
+      backed_by:
+        - "ai_ops_kit/lifecycle/role_handoff.py — apply_handoff: валидация роли по словарю + запись перехода с брифом"
+        - "ai_ops_kit/lifecycle/active_work.py — handoff_cmd: locked-переход owner_role на записи Work"

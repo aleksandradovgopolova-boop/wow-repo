@@ -54,24 +54,24 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def load_blueprint(feature_dir: Path):
+def load_blueprint(feature_dir: Path) -> dict:
     bp_path = feature_dir / "blueprint.yaml"
     if not bp_path.exists():
         raise SystemExit(f"нет {bp_path}")
     return yaml.safe_load(bp_path.read_text(encoding="utf-8"))
 
 
-def load_generation(feature_dir: Path):
+def load_generation(feature_dir: Path) -> dict:
     p = feature_dir / GENERATION_FILE
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"artifacts": {}}
 
 
-def save_generation(feature_dir: Path, gen):
+def save_generation(feature_dir: Path, gen: dict) -> None:
     (feature_dir / GENERATION_FILE).write_text(
         json.dumps(gen, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def cmd_new(features_dir: Path, fid: str, name: str | None, profile: str = "full"):
+def cmd_new(features_dir: Path, fid: str, name: str | None, profile: str = "full") -> int:
     tmpl = (PKG / "templates" / "blueprint" / "FeatureBlueprint.lean.yaml"
             if profile == "lean" else BLUEPRINT_TEMPLATE)
     if not tmpl.exists():
@@ -94,7 +94,7 @@ def cmd_new(features_dir: Path, fid: str, name: str | None, profile: str = "full
     return 0
 
 
-def scaffold_entry(feature_dir: Path, fid: str, entry: dict, gen: dict, created: list):
+def scaffold_entry(feature_dir: Path, fid: str, entry: dict, gen: dict, created: list) -> None:
     path = feature_dir / entry["path"]
     tmpl_rel = entry.get("template")
     if path.exists() or not tmpl_rel:
@@ -113,11 +113,11 @@ def scaffold_entry(feature_dir: Path, fid: str, entry: dict, gen: dict, created:
     created.append(entry["path"])
 
 
-def cmd_scaffold(feature_dir: Path, stage: str | None):
+def cmd_scaffold(feature_dir: Path, stage: str | None) -> int:
     bp = load_blueprint(feature_dir)
     fid = bp["feature"]["id"]
     gen = load_generation(feature_dir)
-    created = []
+    created: list = []
     for st, entries in (bp.get("artifacts") or {}).items():
         if stage and st != stage:
             continue
@@ -134,7 +134,7 @@ def cmd_scaffold(feature_dir: Path, stage: str | None):
     return 0
 
 
-def cmd_add(feature_dir: Path, stage: str, rel_path: str, template: str):
+def cmd_add(feature_dir: Path, stage: str, rel_path: str, template: str) -> int:
     if stage not in STAGES:
         raise SystemExit(f"стадия '{stage}' вне словаря: {STAGES}")
     bp_path = feature_dir / "blueprint.yaml"
@@ -148,14 +148,14 @@ def cmd_add(feature_dir: Path, stage: str, rel_path: str, template: str):
     bp_path.write_text(yaml.safe_dump(bp, allow_unicode=True, sort_keys=False, width=110),
                        encoding="utf-8")
     gen = load_generation(feature_dir)
-    created = []
+    created: list = []
     scaffold_entry(feature_dir, bp["feature"]["id"], entry, gen, created)
     save_generation(feature_dir, gen)
     print(f"добавлен и создан: {rel_path}" if created else f"добавлен в blueprint: {rel_path}")
     return 0
 
 
-def cmd_check(feature_dir: Path):
+def cmd_check(feature_dir: Path) -> int:
     bp = load_blueprint(feature_dir)
     gen = load_generation(feature_dir)
     stage = bp["feature"]["current_stage"]
@@ -187,7 +187,7 @@ def cmd_check(feature_dir: Path):
     return 0
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
         return 1

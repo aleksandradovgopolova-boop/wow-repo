@@ -7,7 +7,7 @@ contract_version: 1
 generated_note: Bootstrap-реестр из фактических файлов agents/ (тела не менялись). layer/action/target
   — план миграции (component-classification).
 counts:
-  agents: 51
+  agents: 42
 agents:
 - schema_version: 1
   id: context-builder
@@ -28,25 +28,6 @@ agents:
   action: merge
   migration_phase: 2
   migration_note: поглощает repository-explorer (Ф2)
-- schema_version: 1
-  id: development-orchestrator
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: core
-  preset: null
-  file: agents/core/development-orchestrator.md
-  domain: core
-  purpose: Координирует выполнение утверждённого плана, распределяет work packages, следит за зависимостями,
-    quality gates и состоянием задачи. Не подменяет аналитика, архитектора или разработчика
-  review_mode: writer
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: core
-  target_preset: null
-  action: adapt
-  migration_phase: 2
-  migration_note: EXECUTION orchestrator (Ф2)
 - schema_version: 1
   id: final-verifier
   version: 2.0.0
@@ -84,7 +65,7 @@ agents:
   target_preset: null
   action: adapt
   migration_phase: 2
-  migration_note: integration owner (Ф2)
+  migration_note: 'integration owner; поглощает development-orchestrator (инертен — оркестрацию стадий делает generic-orchestrator движка) (#679)'
 - schema_version: 1
   id: intake-classifier
   version: 0.1.0
@@ -124,25 +105,6 @@ agents:
   action: create
   migration_phase: 3
   migration_note: 'NEW: PLAN CRITIQUE (adapt prompt-reviewer) (Ф3)'
-- schema_version: 1
-  id: repository-explorer
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: core
-  preset: null
-  file: agents/core/repository-explorer.md
-  domain: core
-  purpose: Исследует релевантную часть репозитория без изменений и возвращает компактную карту реализации,
-    зависимостей и рисков
-  review_mode: read-only
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: core
-  target_preset: null
-  action: merge
-  migration_phase: 2
-  migration_note: в context-builder (Ф2)
 - schema_version: 1
   id: requirements-writer
   version: 0.1.0
@@ -257,44 +219,6 @@ agents:
   migration_phase: 7
   migration_note: RELEASE readiness (Ф7)
 - schema_version: 1
-  id: backend-developer
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: preset
-  preset: software-product
-  file: agents/engineering/backend-developer.md
-  domain: engineering
-  purpose: Реализует серверную логику, API и работу с данными с учётом совместимости, безопасности и эксплуатационных
-    рисков
-  review_mode: writer
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: preset
-  target_preset: software-product
-  action: move-later
-  migration_phase: 7
-  migration_note: ENGINEERING исполнитель (Ф7)
-- schema_version: 1
-  id: database-engineer
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: preset
-  preset: data-and-integrations
-  file: agents/engineering/database-engineer.md
-  domain: engineering
-  purpose: Проектирует и проверяет изменения схемы, индексов, миграций и backfill с учётом объёма данных,
-    блокировок, совместимости и rollback
-  review_mode: writer
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: preset
-  target_preset: data-and-integrations
-  action: move-later
-  migration_phase: 7
-  migration_note: изменения БД (Ф7)
-- schema_version: 1
   id: devops-engineer
   version: 2.0.0
   contract_version: 1
@@ -314,24 +238,6 @@ agents:
   migration_phase: 7
   migration_note: CI/CD delivery (Ф7)
 - schema_version: 1
-  id: frontend-developer
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: preset
-  preset: software-product
-  file: agents/engineering/frontend-developer.md
-  domain: engineering
-  purpose: Реализует клиентскую часть строго в утверждённом scope и с переиспользованием дизайн-системы
-  review_mode: writer
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: preset
-  target_preset: software-product
-  action: move-later
-  migration_phase: 7
-  migration_note: ENGINEERING исполнитель (Ф7)
-- schema_version: 1
   id: fullstack-developer
   version: 2.0.0
   contract_version: 1
@@ -340,8 +246,8 @@ agents:
   preset: software-product
   file: agents/engineering/fullstack-developer.md
   domain: engineering
-  purpose: Выполняет небольшую сквозную задачу, когда контракты уже определены, архитектура не меняется
-    и количество затрагиваемых компонентов ограничено
+  purpose: Основной инженерный исполнитель серверной и клиентской части, когда контракты определены и
+    архитектура не меняется (поглощает backend-developer и frontend-developer)
   review_mode: writer
   vendor_neutral: true
   source_version: '2.0'
@@ -349,17 +255,18 @@ agents:
   target_preset: software-product
   action: move-later
   migration_phase: 7
-  migration_note: ENGINEERING исполнитель (Ф7)
+  migration_note: 'ENGINEERING исполнитель; поглощает backend-developer + frontend-developer (#679)'
 - schema_version: 1
-  id: integration-engineer
+  id: data-engineer
   version: 2.0.0
   contract_version: 1
   entity_type: agent
   layer: preset
   preset: data-and-integrations
-  file: agents/engineering/integration-engineer.md
+  file: agents/engineering/data-engineer.md
   domain: engineering
-  purpose: Проектирует и реализует надёжное взаимодействие с внешними и внутренними системами
+  purpose: Отвечает за данные и их движение — схему, миграции и backfill, а также интеграции с внешними
+    и внутренними системами (поглощает database-engineer, migration-engineer, integration-engineer)
   review_mode: writer
   vendor_neutral: true
   source_version: '2.0'
@@ -367,26 +274,7 @@ agents:
   target_preset: data-and-integrations
   action: move-later
   migration_phase: 7
-  migration_note: интеграции/контракты (Ф7)
-- schema_version: 1
-  id: migration-engineer
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: preset
-  preset: data-and-integrations
-  file: agents/engineering/migration-engineer.md
-  domain: engineering
-  purpose: Планирует безопасный переход между старыми и новыми версиями данных, API или компонентов без
-    остановки критичных процессов
-  review_mode: writer
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: preset
-  target_preset: data-and-integrations
-  action: move-later
-  migration_phase: 7
-  migration_note: миграции данных (Ф7)
+  migration_note: 'DATA/INTEGRATION исполнитель; поглощает database-engineer + integration-engineer + migration-engineer (#679)'
 - schema_version: 1
   id: solution-architect
   version: 2.0.0
@@ -407,25 +295,6 @@ agents:
   migration_phase: 2
   migration_note: SPEC/ARCH + ADR (Ф2)
 - schema_version: 1
-  id: system-analyst
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: core
-  preset: null
-  file: agents/engineering/system-analyst.md
-  domain: engineering
-  purpose: Преобразует продуктовые и бизнес-требования в системные требования, контракты, модели данных,
-    последовательности и каталог ошибок
-  review_mode: read-only
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: core
-  target_preset: null
-  action: merge
-  migration_phase: 3
-  migration_note: -> requirements-writer (Ф3)
-- schema_version: 1
   id: agent-creator
   version: 2.0.0
   contract_version: 1
@@ -443,25 +312,6 @@ agents:
   action: move-later
   migration_phase: 7
   migration_note: инструмент авторинга (Ф7)
-- schema_version: 1
-  id: prompt-reviewer
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: core
-  preset: null
-  file: agents/meta/prompt-reviewer.md
-  domain: meta
-  purpose: Проверяет агентные инструкции на ясность роли, конфликт правил, чрезмерный scope, отсутствие
-    запретов, невалидируемый результат и platform lock-in
-  review_mode: read-only
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: core
-  target_preset: null
-  action: adapt
-  migration_phase: 3
-  migration_note: -> plan-reviewer PLAN CRITIQUE (Ф3)
 - schema_version: 1
   id: repository-memory-curator
   version: 2.0.0
@@ -499,24 +349,6 @@ agents:
   action: move-later
   migration_phase: 7
   migration_note: авторинг workflow (Ф7)
-- schema_version: 1
-  id: business-analyst
-  version: 2.0.0
-  contract_version: 1
-  entity_type: agent
-  layer: core
-  preset: null
-  file: agents/product/business-analyst.md
-  domain: product
-  purpose: Формализует бизнес-потребность, процессы, роли, правила, исключения и критерии приёмки
-  review_mode: read-only
-  vendor_neutral: true
-  source_version: '2.0'
-  target_layer: core
-  target_preset: null
-  action: merge
-  migration_phase: 3
-  migration_note: -> requirements-writer (Ф3)
 - schema_version: 1
   id: experiment-designer
   version: 2.0.0

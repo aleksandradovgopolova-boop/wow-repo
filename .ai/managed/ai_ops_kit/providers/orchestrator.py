@@ -271,7 +271,6 @@ def run_workflow(workflow_id: str, task_text: str, child_root: Path,
 
     # gate executor: контур замыкается здесь — workflow НЕ done, пока блокирующие
     # гейты контракта не выполнены (writer ≠ judge; честный отказ вместо тихого done).
-    sys.path.insert(0, str(PKG / "tools"))
     from ai_ops_kit.gates import gate_executor
     gate_ev = dict(gate_evidence or {})
     if collect:      # вывести evidence из вердиктов reviewer-стадий; явный --evidence имеет приоритет
@@ -330,7 +329,6 @@ def main(argv):
         gate_evidence = None
         if "--evidence" in rest:            # JSON по schemas/gate-evidence.schema.json (валидируется)
             i = rest.index("--evidence")
-            sys.path.insert(0, str(PKG / "tools"))
             from ai_ops_kit.gates import gate_executor
             gate_evidence = gate_executor.load_evidence(rest[i + 1])
             del rest[i:i + 2]

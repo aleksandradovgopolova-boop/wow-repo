@@ -127,7 +127,24 @@ def assess(child_root):
             "signals": {"config_dir": config_dir, "storybook_dep": dep, "build_script": build_script,
                         "static_build": static_build, "evidence_present": evidence_present},
             "evidence_status": per_status, "recommendation": rec,
+            # health углублён ИЗ Конституции: покрытие правил проверками кита, каждое — по constitution_id
+            "constitution_coverage": _constitution_coverage(),
+            # Доставлено ли превью Storybook в PR (CI-артефакт статической сборки) — честный факт из
+            # рабочего дерева дочки, не обещание. Ставит его контур доставки только UI-продукту.
+            "preview_workflow": (root / ".github" / "workflows" / "ai-ops-storybook-preview.yml").is_file(),
             "installs_dependencies": False}   # кит НИКОГДА не ставит deps сам
+
+
+def _constitution_coverage():
+    """Срез покрытия UI/UX-Конституции проверками кита (машинно из standards/uiux/rules.yaml).
+
+    Углубляет health: он отражает соответствие Конституции, а не только «есть ли Storybook».
+    Недоступность реестра — объявленное «не проверено», не тишина (absent не маскируется под ok)."""
+    from ai_ops_kit.ui import constitution_coverage as _cc
+    try:
+        return _cc.summary(_cc.coverage())
+    except Exception as exc:   # noqa: BLE001 — реестр недоступен -> честный «не проверено», не молчание
+        return _cc.unavailable(f"реестр Конституции недоступен: {type(exc).__name__}")
 
 
 def script_template():
@@ -153,6 +170,14 @@ def check(a):
     for k, v in (a.get("evidence_status") or {}).items():
         if v not in ("pass", "fail", "not_run", "absent", "present"):
             e.append(f"evidence_status.{k}: недопустимый статус {v!r}")
+    cc = a.get("constitution_coverage")
+    if cc is not None:
+        if not isinstance(cc, dict) or "available" not in cc:
+            e.append("constitution_coverage должен быть dict с полем available")
+        elif cc.get("available") is True:
+            for key in ("automated_total", "automated_uncovered", "source"):
+                if key not in cc:
+                    e.append(f"constitution_coverage.{key} отсутствует при available=true")
     return e
 
 
@@ -165,6 +190,25 @@ def _fmt(a):
     L.append("  evidence (честно): story_index=%s interaction=%s a11y=%s visual=%s" %
              (es["story_index"], es["interaction"], es["a11y"], es["visual"]))
     L.append("  → " + a["recommendation"])
+    # Превью Storybook в PR (CI-артефакт статической сборки, без внешнего хостинга/секретов): честно
+    # называем, доставлен ли workflow. Не доставлен -> называем условие (UI-продукт со сборкой), а не
+    # обещание. Авто-подъём Storybook и внешний хостинг за владельцем остаются — их кит не делает.
+    if a.get("preview_workflow"):
+        L.append("  превью в PR: ВКЛЮЧЕНО (workflow ai-ops-storybook-preview доставлен) — на PR с "
+                 "UI-изменениями CI соберёт Storybook и выложит артефакт `storybook-static`.")
+    else:
+        L.append("  превью в PR: доступно отдельным workflow (CI-артефакт сборки, без внешнего "
+                 "хостинга) — доставляется UI-продукту со Storybook-билдом; авто-подъём Storybook "
+                 "и внешний хостинг остаются за владельцем.")
+    cc = a.get("constitution_coverage") or {}
+    if cc.get("available"):
+        L.append("  Конституция (из %s): автоматизируемых правил %d, покрыто ревьюером %d" %
+                 (cc["source"], cc["automated_total"], len(cc.get("automated_covered") or [])))
+        unc = cc.get("automated_uncovered") or []
+        if unc:
+            L.append("  без проверки-двойника (дизайн-решение владельца): " + ", ".join(unc))
+    elif cc:
+        L.append("  Конституция: не проверено — " + str(cc.get("reason", "")))
     if a["storybook_maturity"] in ("absent", "configured"):
         L.append("  шаблон скрипта (добавьте в package.json; зависимости ставит ВЛАДЕЛЕЦ):")
         for k, v in script_template().items():

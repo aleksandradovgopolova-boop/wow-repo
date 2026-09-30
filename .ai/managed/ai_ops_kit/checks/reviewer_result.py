@@ -13,7 +13,12 @@ from __future__ import annotations
 ST = {"pass", "warn", "fail"}
 
 
-def check(data: dict, gate_ids=None):
+def check(data: dict, gate_ids=None, allow_empty_checks=False):
+    """Проверить форму reviewer-result. `allow_empty_checks` (issue #614): пустой список checks
+    ДОПУСТИМ — это прозаический вердикт (`Recommendation: pass|needs_work`, `prose_verdict: True`),
+    у которого структурных checks нет по определению; условием вердикта структура быть перестала.
+    Заземление pass это НЕ ослабляет: pass без чтения и без цитаты доставленного файла остаётся
+    рубер-штампом и блокирующий гейт не закрывает (Fix C в `_gate_ev_from_verdict`)."""
     errors = []
     if data.get("schema_version") is None:
         errors.append("нет schema_version")
@@ -28,9 +33,11 @@ def check(data: dict, gate_ids=None):
         errors.append(f"gate '{gid}' отсутствует в quality/gates.yaml")
 
     checks = data.get("checks")
-    if not isinstance(checks, list) or not checks:
+    if not isinstance(checks, list):
         errors.append("checks должен быть непустым списком")
         checks = []
+    elif not checks and not allow_empty_checks:
+        errors.append("checks должен быть непустым списком")
     any_fail = False
     for c in checks:
         if not isinstance(c, dict) or not c.get("id") or c.get("status") not in ST:

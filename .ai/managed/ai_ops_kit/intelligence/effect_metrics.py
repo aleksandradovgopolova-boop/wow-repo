@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Метрики эффекта по истории прогонов (v2.5) — слой «Метрики эффекта» из внешнего ревью.
 
-Вход: .ai/project/report-history/*.jsonl — срезы run_report --record (по файлу на фичу).
+Вход: .ai/project/report-history/ — срезы run_report --record. Формат — файл на ПРОГОН
+(<feature>/<run-id>.jsonl, #148); старый плоский <feature>.jsonl тоже читается.
 Считает ДЕТЕРМИНИРОВАННО, по накопленной истории, а не по впечатлению:
   - на фичу: число срезов, период, доля срезов с PROBLEM, последний вердикт/стадия,
     динамика покрытия (заполнено первый срез -> последний), days-in-flight
@@ -49,9 +50,22 @@ def load_history(hist_dir: Path):
     """
     features = {}
     dropped = {}
+    # Сырые строки собираются по фиче из ДВУХ источников (#148, шардирование по прогону):
+    #   - шарды `report-history/<feature>/<run-id>.jsonl` — новый формат, файл на прогон:
+    #     параллельные прогоны пишут в разные файлы, поэтому git-merge-конфликта нет;
+    #   - плоский `report-history/<feature>.jsonl` — старый формат, ещё встречается в
+    #     дочках; читаем и его, чтобы не потерять уже накопленную историю.
+    # Дедуп ниже — по ФИЧЕ (через все её источники), а не по файлу: срез, пришедший с двух
+    # сторон слияния плоского файла, всё так же снимается и НАЗЫВАЕТСЯ в `dropped`.
+    raw: dict[str, list[str]] = {}
     for f in sorted(hist_dir.glob("*.jsonl")):
+        raw.setdefault(f.stem, []).extend(f.read_text(encoding="utf-8").splitlines())
+    for d in sorted(p for p in hist_dir.iterdir() if p.is_dir()) if hist_dir.is_dir() else []:
+        for shard in sorted(d.glob("*.jsonl")):
+            raw.setdefault(d.name, []).extend(shard.read_text(encoding="utf-8").splitlines())
+    for fid, lines in sorted(raw.items()):
         entries, seen, dup = [], set(), 0
-        for line in f.read_text(encoding="utf-8").splitlines():
+        for line in lines:
             line = line.strip()
             if not line:
                 continue
@@ -63,9 +77,9 @@ def load_history(hist_dir: Path):
             seen.add(key)
             entries.append(entry)
         if dup:
-            dropped[f.stem] = dup
+            dropped[fid] = dup
         if entries:
-            features[f.stem] = sorted(entries, key=lambda e: e.get("ts", ""))
+            features[fid] = sorted(entries, key=lambda e: e.get("ts", ""))
     load_history.dropped_duplicates = dropped
     return features
 

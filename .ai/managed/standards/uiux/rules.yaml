@@ -1,0 +1,721 @@
+# rules.yaml — машинный реестр UI/UX Constitution
+# Генерируется из UI_CONSTITUTION.md (scripts/build-rules.py). Не редактировать вручную.
+# level выведен из нормативных глаголов; severity/validation — эвристика, уточняется вручную при необходимости.
+version: "1.7"
+rules_total: 65
+rules:
+  - id: UI-001
+    title: "Назначение важнее оформления"
+    part: I
+    section: 3
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-002
+    title: "Пользователь понимает, что происходит"
+    part: I
+    section: 3
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: false
+      manual: true
+  - id: UI-003
+    title: "Знакомые понятия и язык"
+    part: I
+    section: 3
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-004
+    title: "Консистентность — свойство системы"
+    part: I
+    section: 3
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-041
+    title: "Консистентность между экранами"
+    part: I
+    section: 3
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-005
+    title: "Узнавание вместо припоминания"
+    part: I
+    section: 3
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-006
+    title: "Сохранение агентности пользователя"
+    part: I
+    section: 3
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: false
+      manual: true
+  - id: UI-007
+    title: "Предотвращение ошибок вместо объяснения"
+    part: I
+    section: 3
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: false
+      manual: true
+  - id: UI-038
+    title: "Прозрачность поведения системы"
+    part: I
+    section: 3
+    level: MUST_NOT
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-008
+    title: "У каждого экрана — понятная иерархия"
+    part: I
+    section: 4
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-009
+    title: "Одна доминирующая задача"
+    part: I
+    section: 4
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-010
+    title: "Прогрессивное раскрытие"
+    part: I
+    section: 4
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-011
+    title: "Предсказуемая навигация"
+    part: I
+    section: 4
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-014
+    title: "Визуальные решения токенизированы"
+    part: I
+    section: 5
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: true
+      manual: true
+  - id: UI-012
+    title: "Переиспользование прежде создания"
+    part: I
+    section: 6
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-013
+    title: "Разделение оснований, компонентов и паттернов"
+    part: I
+    section: 6
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-015
+    title: "Компонент определяет поведение и состояния"
+    part: I
+    section: 6
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-016
+    title: "Предсказуемость взаимодействий"
+    part: I
+    section: 7
+    level: MUST_NOT
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-017
+    title: "Обратная связь следует за значимым действием"
+    part: I
+    section: 7
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-018
+    title: "Деструктивные действия защищены"
+    part: I
+    section: 7
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: false
+      manual: true
+  - id: UI-039
+    title: "Риск определяет трение"
+    part: I
+    section: 7
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: false
+      manual: true
+  - id: UI-019
+    title: "Форма сообщает структуру"
+    part: I
+    section: 8
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: true
+      manual: true
+  - id: UI-020
+    title: "Ошибки действенны"
+    part: I
+    section: 8
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: false
+      manual: true
+  - id: UI-021
+    title: "Не запрашивать лишнее"
+    part: I
+    section: 8
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-031
+    title: "Оптимизация под сканирование"
+    part: I
+    section: 9
+    level: MUST_NOT
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-032
+    title: "Состояния данных — первого класса"
+    part: I
+    section: 9
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-035
+    title: "Каждое значимое состояние спроектировано"
+    part: I
+    section: 10
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: true
+      manual: true
+  - id: UI-036
+    title: "Пустое состояние объясняет и направляет"
+    part: I
+    section: 10
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: false
+      manual: true
+  - id: UI-037
+    title: "Загрузка сохраняет контекст"
+    part: I
+    section: 10
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: high
+    validation:
+      automated: false
+      manual: true
+  - id: UI-025
+    title: "Доступность — базовый уровень, а не улучшение"
+    part: I
+    section: 12
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-026
+    title: "Клавиатурная управляемость"
+    part: I
+    section: 12
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-027
+    title: "Никогда только цветом"
+    part: I
+    section: 12
+    level: MUST_NOT
+    tier: world_standard
+    category: principle
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-028
+    title: "Семантическая структура"
+    part: I
+    section: 12
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-029
+    title: "Контраст и видимость фокуса"
+    part: I
+    section: 12
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-040
+    title: "WCAG 2.2 и российский контекст"
+    part: I
+    section: 12
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-033
+    title: "Адаптируется опыт, а не только вьюпорт"
+    part: I
+    section: 13
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-030
+    title: "Устойчивость к масштабированию и reflow"
+    part: I
+    section: 13
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-022
+    title: "Язык интерфейса — часть интерфейса"
+    part: I
+    section: 14
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-023
+    title: "Действия названы действиями"
+    part: I
+    section: 14
+    level: SHOULD
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-024
+    title: "Без языка реализации"
+    part: I
+    section: 14
+    level: MUST_NOT
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-034
+    title: "Движение должно сообщать"
+    part: I
+    section: 15
+    level: MUST
+    tier: world_standard
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: AI-001
+    title: "ИИ обязан изучить контекст до генерации"
+    part: I
+    section: 17
+    level: MUST
+    tier: ai_ops
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: AI-002
+    title: "ИИ не изобретает компонент без нужды"
+    part: I
+    section: 17
+    level: MUST
+    tier: ai_ops
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: AI-003
+    title: "ИИ генерирует полные состояния"
+    part: I
+    section: 17
+    level: MUST
+    tier: ai_ops
+    category: principle
+    severity: medium
+    validation:
+      automated: true
+      manual: true
+  - id: AI-004
+    title: "ИИ сохраняет консистентность дизайн-системы"
+    part: I
+    section: 17
+    level: MUST
+    tier: ai_ops
+    category: principle
+    severity: medium
+    validation:
+      automated: true
+      manual: true
+  - id: AI-005
+    title: "ИИ объясняет отклонения"
+    part: I
+    section: 17
+    level: MUST
+    tier: ai_ops
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: AI-006
+    title: "UI от ИИ проходит независимую проверку"
+    part: I
+    section: 17
+    level: SHOULD
+    tier: ai_ops
+    category: principle
+    severity: medium
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-001
+    title: "Создание нового компонента при наличии подходящего существующего."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-002
+    title: "Произвольные цвета, отступы, радиусы, типографика при наличии эквивалентных токенов."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-FORBIDDEN-003
+    title: "Цвет как единственный индикатор состояния."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-FORBIDDEN-004
+    title: "Плейсхолдер как единственная метка поля."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-FORBIDDEN-005
+    title: "Технические сообщения об ошибке напрямую пользователю."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-FORBIDDEN-006
+    title: "Проектирование только happy path."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-FORBIDDEN-007
+    title: "Существенная функциональность спрятана только за hover."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-008
+    title: "Недоступные кастомные контролы при наличии доступного нативного/устоявшегося."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-FORBIDDEN-009
+    title: "Новый паттерн взаимодействия без продуктовой причины."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-010
+    title: "Молчаливое отклонение ИИ от Конституции."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: ai_ops
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-011
+    title: "Манипулятивный (тёмный) паттерн: асимметрия выбора, pre-checked согласие, затруднённая отмена, confirmshaming, фейковая срочность (Часть VI)."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-012
+    title: "Выдавать ИИ-контент или ИИ-действие за человеческое либо скрывать, что работает ИИ (Часть V)."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: ai_ops
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-013
+    title: "AI-функция без пути коррекции ошибки и без обозначения неопределённости (Часть V)."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: ai_ops
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-014
+    title: "Форсированная регистрация до того, как показана ценность продукта (registration wall)."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-015
+    title: "Ложный или обманный индикатор загрузки, имитирующий работу, которой нет."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-FORBIDDEN-016
+    title: "Навязчивые прерывания: автозапуск видео/аудио; всплывающее окно поверх активной задачи или сразу после входа; автообновление, сбивающее позицию или ввод."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: true
+      manual: true
+  - id: UI-FORBIDDEN-017
+    title: "Мисдирекшн: «крестик» закрытия, запускающий действие вместо отмены; кнопка отказа, замаскированная под согласие."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true
+  - id: UI-FORBIDDEN-018
+    title: "Icon-only кнопка неквадратной/«плавающей» формы (высота ≠ ширина, размер вне шкалы) или иконка-действие без aria-label и тултипа (§28.1)."
+    part: I
+    section: 19
+    level: MUST_NOT
+    tier: world_standard
+    category: forbidden
+    severity: critical
+    validation:
+      automated: false
+      manual: true

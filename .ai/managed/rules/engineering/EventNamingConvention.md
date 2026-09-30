@@ -25,7 +25,7 @@
    явный `standalone: true` + `reason`. Так три «языка» сходятся к одному имени, а не
    расходятся молча.
 5. **Проверка механическая** — гейт `event_contract_consistency`
-   (`validation/validate_event_catalog.py`), опционально `--scan` по коду ловит литералы
+   (`ai_ops_kit/validation/validate_event_catalog.py`), опционально `--scan` по коду ловит литералы
    событий, которых нет в каталоге (drift кода).
 
 ## Признак здоровья

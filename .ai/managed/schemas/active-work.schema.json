@@ -24,6 +24,11 @@
           "shared_contracts": {"type": "array", "items": {"type": "string"},
             "description": "пути общих контрактов (схема данных/API/артефакт); пересечение -> риск расхождения (kind=contract)"},
           "owner_session": {"type": "string", "description": "идентификатор владеющей сессии"},
+          "owner_role": {"type": "string", "description": "роль-владелец Work на текущем этапе (#639) — из словаря roles модели; меняется через handoff. РОЛЬ, не исполнитель"},
+          "handoffs": {"type": "array", "description": "журнал передач работы между ролями (#639): from→to + бриф + время; атрибуция прежних владельцев",
+            "items": {"type": "object", "required": ["to", "reason", "at"],
+              "properties": {"from": {"type": ["string", "null"]}, "to": {"type": "string"},
+                "reason": {"type": "string"}, "at": {"type": "string"}, "session": {"type": "string"}}}},
           "started_at": {"type": "string"}
         }
       }

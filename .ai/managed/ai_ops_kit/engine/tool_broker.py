@@ -12,8 +12,8 @@ write_scope + config/protected-paths.yaml), НЕ модель. Broker испол
 
 Действие: {"op": read|write|shell|git, "path": ..., "command": ..., "content": ...}.
 
-Использование (программно; интегрируется в tools/orchestrator.py):
-  from tool_broker import Policy, execute
+Использование (программно; интегрируется в ai_ops_kit/providers/orchestrator.py):
+  from ai_ops_kit.engine.tool_broker import Policy, execute
   pol = Policy(level="controlled-write", write_scope=["src/"])
   ev = execute({"op": "write", "path": "src/a.ts", "content": "..."}, root, pol)
 
@@ -30,6 +30,8 @@ from pathlib import Path
 
 import yaml
 
+from ai_ops_kit.shared import argv_command
+
 # ВАЖНО (finding аудита исполнения): shell — НЕ полноценная security boundary. Статически
 # проверить произвольную команду нельзя, поэтому НА ВХОДЕ для shell действуют только timeout +
 # denylist деструктивных команд + scrub_env.
@@ -39,11 +41,22 @@ import yaml
 # Брокер снимает состояние git-дерева до команды и после; если shell изменил protected-путь
 # (а при shell_scope_guard — и путь вне write_scope), правка ОТКАТЫВАЕТСЯ, а операция помечается
 # запрещённой. Обход перестал быть необнаружимым и безнаказанным — но это пост-фактум, не запрет.
+# Откат может НЕ УДАТЬСЯ (права, каталог) — тогда `revert_complete` false и причина начинается с
+# «ОТКАТ НЕ УДАЛСЯ» (R-43/#786: раньше заявляла успех безусловно). Успех перечисляет откаченное —
+# сторож видит не всё (см. честный список ниже), и список даёт заметить, чего в нём нет.
 #
+# R-43 закрыт с обеих сторон: (1) сторож не заявляет успех отката, которого не было (#797);
+# (2) игнорируемые файлы ВНУТРИ protected-путей теперь в снимке (`_ignored_under`) — запись в них
+# больше не проходит молча: новый игнор-файл удаляется, правка существующего на месте ОБНАРУЖИВАЕТСЯ
+# и честно доложена как «откатить не смогли» (прежнего содержимого нет — файл не под git).
 # Что этим ЕЩЁ НЕ закрыто, честно:
 #   * не-git рабочее дерево — сверять не с чем, сторож молчит (в evidence нет fs_guard);
 #   * запись ВНЕ корня репозитория (python -c open('/etc/...','w')), чтение чужих файлов, сеть —
 #     сторож смотрит только внутрь git-дерева;
+#   * игнорируемые файлы ВНЕ protected-путей не сверяются намеренно: снимать игнор всего дерева на
+#     каждой shell-операции значило бы откатывать законную суету (__pycache__, node_modules, сборку);
+#   * правку существующего игнорируемого файла под protected сторож ОБНАРУЖИТ, но не восстановит
+#     (содержимого нет в git) — это отказ с честным отчётом, не тихий пропуск;
 #   * write_scope для shell по умолчанию НЕ enforced (см. shell_scope_guard): тот же брокер
 #     исполняет подготовку окружения и проверки движка, а они законно пишут вне scope;
 #   * побочные эффекты без файлов (внешние вызовы, БД, отправка данных) не откатываются в принципе.
@@ -108,6 +121,34 @@ def _norm_entry(e, default_appr="required"):
     return None
 
 
+# Движок, CI и реестры кита — под owner-approval ТОЛЬКО когда прогон идёт над САМИМ китом (self-host /
+# догфуд): кит, развивающий себя, всё ещё может править движок с явным одобрением владельца
+# (privileged + protected_path_write), но не молча тем же прогоном, который эти правила ослабляет.
+# ПОЧЕМУ не в config/protected-paths.yaml: тот дефолт применяется к КАЖДОЙ дочке, а дочка правит свой
+# .github/ в рамках write_scope легитимно (её .github/ уже прикрыт human-approval-доменом security-гейта).
+# Навязывать эти пути всем — ломать легитимную доставку дочки (откат PR #504). Поэтому они условны от
+# self-host, а не универсальны.
+SELF_HOST_PROTECTED = (".github/", "ai_ops_kit/", "registry/")
+
+
+def _is_kit_self_host(root) -> bool:
+    """Репозиторий-цель ЕСТЬ исходники кита (а не .ai/managed-слой дочки)?
+
+    Маркеры берём в корне цели и требуем ВСЕ сразу — это исходники кита, а не совпадение имени:
+      * пакет `ai_ops_kit/__init__.py` — сам движок лежит в корне (у дочки он под .ai/managed/, не тут);
+      * `VERSION` — файл версии пакета в корне (кит его не раздаёт дочке в корень);
+      * `manifest/ai-ops-manifest.yaml` — центральный манифест пакета (в дочку едет под .ai/managed/,
+        в корне его нет).
+    Тройка вместе однозначно отделяет клон кита от произвольной дочки: у дочки в корне нет ни одного из
+    трёх. При отсутствии child_root (root=None) — не self-host (карта пакета остаётся дефолтной)."""
+    if not root:
+        return False
+    root = Path(root)
+    return ((root / "ai_ops_kit" / "__init__.py").exists()
+            and (root / "VERSION").exists()
+            and (root / "manifest" / "ai-ops-manifest.yaml").exists())
+
+
 def _protected_prefixes(child_root=None):
     """Дефолт пакета + карта child'а (MERGE, не replace): child ДОБАВЛЯЕт к
     универсально-опасным путям, не отменяя их. Источники child'а:
@@ -123,6 +164,9 @@ def _protected_prefixes(child_root=None):
 
     for e in _load("config/protected-paths.yaml").get("protected_paths", []) or []:
         add(e)
+    if _is_kit_self_host(child_root):   # self-host: движок/CI/реестры под owner-approval (SEAM)
+        for p in SELF_HOST_PROTECTED:
+            add({"path": p, "approval": "owner_required"})
     if child_root:
         child_root = Path(child_root)
         cfg = child_root / ".ai-ops.yaml"
@@ -153,7 +197,10 @@ def _canon_rel(rel: str) -> str:
 
     ЧЕСТНО про границы: нормализация ЛЕКСИЧЕСКАЯ. Регистр она не трогает — им заведует
     `_under(ignore_case=...)`, потому что для запрета и для разрешения ответ РАЗНЫЙ (см. ниже).
-    Симлинки — тоже не сюда: их ловит физическая проверка `_within_root` в execute()."""
+    Симлинки сюда НЕ входят и `_within_root` их НЕ ловит (R-42): та проверяет лишь ПОБЕГ за корень,
+    поэтому симлинк, чья цель остаётся ВНУТРИ корня (`src/out -> migrations/destructive`), проходил
+    и переписывал protected-цель. Их ловит отдельный symlink-target-guard в execute(): он судит
+    РАЗЫМЕНОВАННУЮ цель записи по deny-стороне (protected + побег), не трогая write_scope."""
     p = (rel or "").strip().strip("/")
     if not p:
         return ""
@@ -190,41 +237,23 @@ def _under(path: str, prefix: str, *, ignore_case: bool = False) -> bool:
 NETWORK_RE = re.compile(r"\b(curl|wget|nc|ncat|netcat|ssh|scp|sftp|telnet|rsync|ftp|"
                         r"nmap|dig|nslookup|http|https)\b", re.I)
 # git push из tool-loop: доставка ветки/PR — только доверенным кодом движка (pr_open), не моделью
-# (finding аудита v2.79 P0.2). ЧЕСТНО (v2.85, уточнено R-38): это best-effort текстовый денай.
-# _normalize снимает кавычки, продолжение строки и backslash-escape; ПЕРЕМЕННЫЕ/eval
-# (`p=push; git $p`) статически не ловятся — перечень обходов держать в _normalize актуальным,
-# иначе комментарий обещает больше, чем код (тот же класс, что R-33).
-# Жёсткая гарантия недоставки — окружение (нет push-credentials / git-wrapper), не regex.
+# (finding аудита v2.79 P0.2). ЧЕСТНО (v2.85, уточнено R-38): это best-effort текстовый денай —
+# ВТОРОЙ рубеж (defense-in-depth), НЕ гарантия. _normalize снимает кавычки, продолжение строки и
+# backslash-escape; ПЕРЕМЕННЫЕ/eval (`p=push; git $p`) статически не ловятся — перечень обходов
+# держать в _normalize актуальным, иначе комментарий обещает больше, чем код (тот же класс, что R-33).
+# ПЕРВЫЙ рубеж — СРЕДА: песочница credential-less для push (containers/run-sandboxed.sh + Dockerfile:
+# credential.helper="", GIT_ASKPASS=/bin/false, GIT_TERMINAL_PROMPT=0; .git-credentials/SSH-agent
+# внутрь не проброшены). Это закрывает АВТОМАТИЧЕСКИЕ каналы, которыми git сам добывает креду —
+# push через них падёт независимо от regex. ЧЕСТНО, НЕ полная гарантия: GITHUB_TOKEN всё же в
+# песочнице (для чтения GitHub) и push-способен — явную доставку им (токен в URL / API из скрипта)
+# ловят этот regex + медиатор shell, а не среда. Полная гарантия средой = read-only токен без
+# push-scope или host-side чтение GitHub (решение владельца, см. run-sandboxed.sh ОГРАНИЧЕНИЕ).
 GIT_PUSH_RE = re.compile(r"\bgit\b[^\n;&|]*\bpush\b", re.I)
 
-# v2.85/2.87: команду в allowlist-режиме проверяем ПОСЕГМЕНТНО (первый бинарь каждого сегмента),
-# иначе chained/piped/background команды (`pytest && curl`, `x | nc`, `true & psql`) обходят
-# allowlist по первому токену. Разделители: && || ; | и одиночный & (фон), плюс перевод строки.
-_SHELL_SPLIT_RE = re.compile(r"&&|\|\||[;|&\n]")
 # подстановка команд / process substitution — статически не проверить -> в allowlist-режиме денай.
 _SUBST_RE = re.compile(r"\$\(|`|<\(|>\(")
-
-
-def _normalize(cmd):
-    """Снять поверхностную обфускацию перед текстовыми денай-проверками.
-
-    Снимается три формы, все проверены на векторах (R-38):
-      * кавычки: `git pu""sh` -> `git push`;
-      * продолжение строки: `git \\`↵`push` -> `git push`. Без этого `GIT_PUSH_RE` не срабатывал
-        вовсе — его класс `[^\\n;&|]*` не пересекает перевод строки, а shell команду склеивает;
-      * одиночный backslash-escape: `cu\\rl` -> `curl`. `/bin/sh` съедает escape перед обычным
-        символом и исполняет команду, а денайлист видел другое слово и молчал.
-
-    ЧЕСТНО, что НЕ раскрывается и здесь раскрыто быть не может: переменные и eval
-    (`p=push; git $p`), подстановка команд, кодировки. Это по-прежнему поверхностная
-    нормализация, а не разбор shell. Жёсткие гарантии живут не тут: недоставка — в окружении
-    без push-credentials, изоляция сети и ФС — в контейнере, сужение входных бинарников —
-    в allowlist-режиме (он оба вектора выше ловил и до этой правки)."""
-    s = (cmd or "").replace('"', "").replace("'", "")
-    # Продолжение строки shell УДАЛЯЕТ, не заменяет пробелом: `cur\`↵`l` исполняется как `curl`.
-    # Пробел здесь давал бы `cur l` — денайлист снова не видел бы слова (поймано тестом).
-    s = re.sub(r"\\\r?\n", "", s)
-    return re.sub(r"\\(.)", r"\1", s)  # escape перед обычным символом: shell его съест
+# `\r` перед переводом строки или в конце команды — CRLF, а не часть слова (см. execute).
+_CR_AT_EOL_RE = re.compile(r"\r+(?=\n)|\r+\Z")
 
 
 class Policy:
@@ -360,11 +389,12 @@ class Policy:
                             "reason": "подстановка команд ($()/`…`/<()) запрещена в allowlist-режиме "
                                       "(нельзя статически проверить вложенные бинарники)"}
                 # ПОСЕГМЕНТНО: каждый бинарь после ; && || | должен быть в allowlist (v2.85 —
-                # иначе `pytest && curl` обходил проверку по первому токену)
-                bad = [b for b in _command_binaries(norm) if b not in self.shell_allowlist]
-                if bad:
-                    return {"allow": False,
-                            "reason": f"{bad} не в shell_allowlist {sorted(self.shell_allowlist)}"}
+                # иначе `pytest && curl` обходил проверку по первому токену). Слова — по СЫРОЙ
+                # команде тем же разбором, что у запуска (кавычки, escape, только пробел/таб):
+                # проверяется ровно то, что исполнится; неоднозначное — отказ.
+                why = _allowlist_denial(cmd, self.shell_allowlist)
+                if why:
+                    return {"allow": False, "reason": why}
         return {"allow": True, "reason": f"{op} в пределах уровня {self.level}"}
 
 
@@ -386,229 +416,14 @@ SANDBOX_SHELL_ALLOWLIST = {
 }
 
 
-def _first_binary(cmd):
-    """Первый токен сегмента (бинарь) — для shell_mode=allowlist. Учитывает VAR=val префиксы."""
-    for tok in (cmd or "").strip().split():
-        if "=" in tok and not tok.startswith(("/", "./", "-")):
-            continue                      # env-присваивание FOO=bar перед командой
-        return tok
-    return ""
-
-
-def _command_binaries(cmd):
-    """Все ведущие бинарники команды по сегментам (split по ; && || |) — для allowlist-проверки.
-    Пустые сегменты (напр. только VAR=val) пропускаются. v2.85: закрывает обход `a && curl`/`a | nc`."""
-    bins = []
-    for seg in _SHELL_SPLIT_RE.split(cmd or ""):
-        b = _first_binary(seg)
-        if b:
-            bins.append(b)
-    return bins
-
-
 def sandbox_policy(child_root=None, write_scope=None, allow_network=True):
-    """v2.81 Containment: усиленная политика для pipeline с живой моделью — shell по allowlist
-    dev-инструментов, доставка (git push) заблокирована. allow_network оставляем True по
-    умолчанию (npm ci/pip нуждаются в сети на этапе установки); отдельные шаги могут ужесточать.
-    ЧЕСТНО: это enforceable-подмножество; полная FS/сеть/ресурс-изоляция — контейнер (v2.81 доп.)."""
+    """v2.81 Containment: усиленная политика МОДЕЛЬНОЙ ПЕТЛИ — shell по allowlist, git push заблокирован,
+    allow_network=True по умолчанию (install нуждается в сети). P0 (аудит 04.09): shell_scope_guard=True —
+    write_scope enforce-ится и на shell (иначе `echo … > out_of_scope/x` писал мимо scope, а прямой write —
+    нет); фаза install берёт install-политику со снятым guard (см. _install_dependencies). Полн. изоляция — контейнер."""
     return Policy(level="execution", child_root=child_root, write_scope=write_scope,
                   shell_mode="allowlist", shell_allowlist=SANDBOX_SHELL_ALLOWLIST,
-                  allow_network=allow_network, block_push=True)
-
-
-def _escapes_root(rel):
-    """Лексически: путь выходит за корень рабочего дерева? (абсолютный или ../ после нормализации).
-    Не требует реального root — защищает decide() до любого доступа к ФС."""
-    if not rel:
-        return False
-    if os.path.isabs(rel):
-        return True
-    norm = os.path.normpath(rel)
-    return norm == ".." or norm.startswith(".." + os.sep) or norm.startswith("../")
-
-
-def _relativize_inside_root(root, rel):
-    """Абсолютный путь, физически лежащий ВНУТРИ root -> путь относительно root. Иначе None.
-
-    F-016 (находка живой квалификации, раунд C, задача T2): writer предлагал абсолютный путь
-    внутри собственного worktree, брокер отклонял его как traversal (`_escapes_root` судит
-    лексически, без знания корня), writer повторял попытку относительным путём. Формально
-    безопасно, фактически — ложный отказ и лишний шаг цикла на ровном месте.
-
-    Проверка физическая (resolve), поэтому симлинк наружу сюда не пролезет: путь обязан
-    разрешиться внутрь настоящего корня."""
-    if not rel or not os.path.isabs(str(rel)):
-        return None
-    try:
-        target = Path(rel).resolve()
-        base = Path(root).resolve()
-    except OSError:
-        return None
-    try:
-        return target.relative_to(base).as_posix()
-    except ValueError:
-        return None
-
-
-def _within_root(root, rel):
-    """Belt-and-suspenders: итоговый путь физически внутри root (resolve, без симлинк-побега)."""
-    try:
-        (Path(root).resolve() / rel).resolve().relative_to(Path(root).resolve())
-        return True
-    except (ValueError, OSError):
-        return False
-
-
-# v2.63 (adversarial-review finding): denylist по именам дыряв (пропускал голый _KEY,
-# DATABASE_URL/DSN/JWT/PAT…). Переход на ALLOWLIST: в shell-команду модели попадает ТОЛЬКО
-# явно безопасное окружение; всё остальное (включая любые секреты под любыми именами) режется.
-_ENV_ALLOW_EXACT = {
-    # базовое окружение оболочки/сборки
-    "PATH", "HOME", "LANG", "LANGUAGE", "TZ", "TERM", "SHELL", "USER", "LOGNAME",
-    "HOSTNAME", "PWD", "OLDPWD", "TMPDIR", "TEMP", "TMP", "SHLVL",
-    # тулчейны (не секреты)
-    "NODE_ENV", "CI", "PYTHONPATH", "PYTHONUNBUFFERED", "PYTHONDONTWRITEBYTECODE",
-    "VIRTUAL_ENV", "LD_LIBRARY_PATH", "GOPATH", "GOCACHE", "GOROOT", "JAVA_HOME",
-    "CARGO_HOME", "RUSTUP_HOME", "PIP_CACHE_DIR", "npm_config_cache", "COLUMNS", "LINES",
-    # НЕ-секретный контекст GitHub Actions (его отсутствие ломает build/test) — токены сюда НЕ входят
-    "GITHUB_SHA", "GITHUB_REF", "GITHUB_REF_NAME", "GITHUB_REPOSITORY", "GITHUB_RUN_ID",
-    "GITHUB_RUN_NUMBER", "GITHUB_WORKSPACE", "GITHUB_ACTIONS", "GITHUB_HEAD_REF",
-    "GITHUB_BASE_REF", "GITHUB_EVENT_NAME",
-    # base_url провайдера — не секрет (ключ OPENAI_COMPATIBLE_API_KEY НЕ в allowlist -> режется)
-    "OPENAI_COMPATIBLE_BASE_URL", "GITHUB_API_URL",
-}
-_ENV_ALLOW_PREFIX = ("LC_", "XDG_")
-
-
-def scrub_env(env=None, passthrough=None):
-    """ALLOWLIST окружения для shell-команд Broker (finding adversarial-review: denylist по именам
-    пропускал целые классы секретов — голый _KEY, DATABASE_URL/DSN/JWT/PAT…). В подпроцесс,
-    команду которого предлагает модель, попадает ТОЛЬКО безопасное окружение: exact-allowlist +
-    префиксы LC_/XDG_ + явный passthrough. Любой секрет под любым именем режется по умолчанию.
-    passthrough — список имён, которые child осознанно разрешает (напр. нужная build-переменная).
-    Полная FS/сеть-изоляция — контейнер (заявлено в постуре, не имитируется здесь)."""
-    src = dict(os.environ if env is None else env)
-    allow = set(_ENV_ALLOW_EXACT) | set(passthrough or [])
-    return {k: v for k, v in src.items()
-            if k in allow or k.startswith(_ENV_ALLOW_PREFIX)}
-
-
-def _revision(root):
-    # finding аудита (P0.5): полный SHA (не --short) — надёжный идентификатор ревизии,
-    # к которому привязывается evidence; короткий SHA теоретически коллизирует.
-    rc = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
-                        capture_output=True, text=True)
-    return rc.stdout.strip() if rc.returncode == 0 else None
-
-
-def _git_q(root, *args):
-    """git в root без интерактива. -> (rc, stdout). Ошибка git не роняет брокер."""
-    try:
-        r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True,
-                           timeout=60, env=scrub_env())
-        return r.returncode, (r.stdout or "")
-    except (OSError, subprocess.SubprocessError):
-        return 1, ""
-
-
-def _porcelain(root):
-    """Состояние рабочего дерева -> {"paths": set, "renames": [(old, new)]} (None, если не git).
-
-    Переносы нужны отдельно: `git mv security/x public/x` вынес бы содержимое из protected-пути,
-    и откат только исходной стороны оставил бы копию снаружи — то есть обход остался бы рабочим."""
-    # -uall: новые файлы перечисляются ПОШТУЧНО. Без него git сворачивает untracked-каталог в одну
-    # запись «dir/», и откат нарушения промахивался бы: unlink каталога — не файл, тихий no-op.
-    rc, out = _git_q(root, "status", "--porcelain", "-uall")
-    if rc != 0:
-        return None
-    paths, renames = set(), []
-    for line in out.splitlines():
-        if len(line) < 4:
-            continue
-        entry = line[3:].strip()
-        if " -> " in entry:                      # "R  old -> new" / "C  old -> new"
-            old, new = (s.strip().strip('"') for s in entry.split(" -> ", 1))
-            paths.add(old)
-            paths.add(new)
-            renames.append((old, new))
-        else:
-            paths.add(entry.strip('"'))
-    return {"paths": paths, "renames": renames}
-
-
-def _fs_snapshot(root, policy):
-    """Состояние до shell-операции: HEAD + грязные пути. None -> сторож неприменим."""
-    if not getattr(policy, "shell_path_guard", False):
-        return None
-    # нечего защищать -> не платим двумя git status за каждую shell-операцию (петля делает их десятки)
-    if not policy.protected and not (getattr(policy, "shell_scope_guard", False) and policy.write_scope):
-        return None
-    st = _porcelain(root)
-    if st is None:
-        return None      # не git-дерево: пост-фактум сверка невозможна, честно ничего не обещаем
-    rc, head = _git_q(root, "rev-parse", "HEAD")
-    return {"dirty": st["paths"], "head": head.strip() if rc == 0 else None}
-
-
-def _shell_violations(root, policy, pre):
-    """Что shell РЕАЛЬНО изменил в запрещённых путях: рабочее дерево + новые коммиты."""
-    check_scope = bool(getattr(policy, "shell_scope_guard", False))
-    touched, renames = set(), []
-    now = _porcelain(root)
-    if now is not None:
-        touched |= (now["paths"] - pre["dirty"])   # только delta: чужую грязь до операции не судим
-        renames = now["renames"]
-    rc, head_now = _git_q(root, "rev-parse", "HEAD")
-    head_now = head_now.strip() if rc == 0 else None
-    committed = []
-    if pre["head"] and head_now and head_now != pre["head"]:
-        rc2, names = _git_q(root, "diff", "--name-only", f"{pre['head']}..{head_now}")
-        if rc2 == 0:
-            committed = [n for n in names.splitlines() if n.strip()]
-            touched |= set(committed)
-    # вынос содержимого ИЗ запрещённого пути: целевая сторона переноса тоже подлежит откату,
-    # иначе `git mv security/x public/x` оставлял бы копию снаружи и обход работал бы.
-    carried = {new: old for old, new in renames
-               if policy.path_violation(old, check_scope=check_scope) and new in touched}
-    violations = []
-    for rel in sorted(touched):
-        why = policy.path_violation(rel, check_scope=check_scope)
-        if not why and rel in carried:
-            why = f"перенос из запрещённого пути '{carried[rel]}'"
-        if why:
-            violations.append({"path": rel, "reason": why, "committed": rel in committed})
-    return violations, head_now
-
-
-def _revert_violations(root, pre, head_now, violations):
-    """Откатить ровно нарушения. Коммиты операции снимаются (движок коммитит сам, не модель)."""
-    undone = {"reset_from": None, "restored": [], "removed": [], "failed": []}
-    if head_now and pre["head"] and head_now != pre["head"] and any(v["committed"] for v in violations):
-        rc, _ = _git_q(root, "reset", "--mixed", pre["head"])
-        if rc == 0:
-            undone["reset_from"] = head_now
-        else:
-            undone["failed"].append(f"reset к {pre['head'][:12]} не удался")
-    for v in violations:
-        rel = v["path"]
-        rc, _ = _git_q(root, "cat-file", "-e", f"HEAD:{rel}")
-        if rc == 0:
-            rc2, _ = _git_q(root, "checkout", "HEAD", "--", rel)
-            (undone["restored"] if rc2 == 0 else undone["failed"]).append(rel)
-        else:
-            fp = Path(root) / rel
-            try:
-                if fp.is_file() or fp.is_symlink():
-                    fp.unlink()
-                    undone["removed"].append(rel)
-                elif fp.is_dir():
-                    # с -uall сюда попасть не должно; если попали — не молчим (тихий no-op в
-                    # security-откате хуже отказа: он выглядел бы как успешный откат)
-                    undone["failed"].append(f"{rel}: каталог, автоматический откат не выполнен")
-                # путь уже отсутствует -> откатывать нечего, это не ошибка
-            except OSError as e:
-                undone["failed"].append(f"{rel}: {e}")
-    return undone
+                  allow_network=allow_network, block_push=True, shell_scope_guard=True)
 
 
 def execute(action: dict, root, policy: Policy) -> dict:
@@ -624,6 +439,12 @@ def execute(action: dict, root, policy: Policy) -> dict:
         if _relp:
             _normalized_from = action.get("path")
             action = dict(action, path=_relp)
+    # CRLF (команда из файла с Windows-переводами строк): `\r` в конце строки срезаем ДО решения
+    # политики — и решение, и запуск видят одну и ту же команду. Срезать только в проверке было
+    # бы обходом: `./gradlew\r` оболочка исполняет как другой файл. `\r` в середине строки
+    # остаётся и allowlist-режимом отклоняется.
+    if action.get("op") in ("shell", "git") and "\r" in (action.get("command") or ""):
+        action = dict(action, command=_CR_AT_EOL_RE.sub("", action["command"]))
     d = policy.decide(action)
     ev = {"op": action.get("op"), "target": action.get("path") or action.get("command"),
           "allowed": d["allow"], "reason": d["reason"], "revision": _revision(root)}
@@ -641,6 +462,26 @@ def execute(action: dict, root, policy: Policy) -> dict:
             ev["allowed"] = False
             ev["reason"] = "traversal-guard: путь вне корня"
             return ev
+        # R-42 (novelty-Watch): decide() судит НАПИСАННЫЙ путь, но write_text РАЗЫМЕНОВЫВАЕТ симлинк.
+        # Симлинк, чья цель не покидает корень (`src/out -> migrations/destructive`), проходил
+        # _within_root (тот стережёт только ПОБЕГ за корень) и переписывал protected-цель мимо
+        # protected_paths/write_scope. Судим ЦЕЛЬ по DENY-стороне (protected + побег через симлинк);
+        # write_scope остаётся на НАПИСАННОМ пути — симметрия R-37: судить цель на allow-стороне
+        # сделало бы write_scope fail-open (`вне-зоны -> src` прошёл бы как «в зоне»).
+        if op == "write":
+            _resolved = (root / action["path"]).resolve()
+            try:
+                _tgt_rel = _resolved.relative_to(root.resolve()).as_posix()
+            except ValueError:
+                ev.update({"ok": False, "error": "цель симлинка вне корня (containment)",
+                           "allowed": False, "reason": "symlink-target-guard: цель вне корня"})
+                return ev
+            if _tgt_rel != action["path"]:
+                _why = policy.path_violation(_tgt_rel, check_scope=False)
+                if _why:
+                    ev.update({"ok": False, "error": f"симлинк ведёт в '{_tgt_rel}': {_why}",
+                               "allowed": False, "reason": f"symlink-target-guard: {_why}"})
+                    return ev
         if op == "read":
             p = root / action["path"]
             text = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
@@ -676,19 +517,37 @@ def execute(action: dict, root, policy: Policy) -> dict:
             p.write_text(action.get("content", ""), encoding="utf-8")
             ev.update({"ok": True, "bytes": len(action.get("content", "").encode("utf-8"))})
         else:  # shell / git — env со скрабленными секретами (модель не получает токены)
-            # SECURITY: shell=True с модельным выводом — риск инъекций.
-            # Митигации: scrub_env() удаляет секреты из env, timeout ограничивает выполнение,
-            # output scrubbing скрывает чувствительные данные в выводе.
-            # Policy Engine контролирует, какие команды разрешены (read/write/shell levels).
-            # Для production рекомендуется shell=False + list args, но tool-loop требует shell
-            # для поддержки pipe/redirect/glob, которые генерирует модель.
+            # БЕЗ ОБОЛОЧКИ, КОГДА ОНА НЕ НУЖНА (#1157). Команды движка — установка и проверки из
+            # профиля (`npm ci`, `pytest -q`, `git status`) — это бинарь и аргументы; оболочка там
+            # давала лишь поверхность внедрения. Такие команды идут СПИСКОМ: исполняется ровно
+            # argv[0], и денай-проверки выше судят то, что будет исполнено, а не текст до `sh`.
+            #
+            # ОБОЛОЧКА ОСТАЁТСЯ ОСОЗНАННО — ДЛЯ КОМАНД С ЕЁ СИНТАКСИСОМ. Модель tool-loop пишет
+            # конвейеры, `&&`, перенаправления (`echo … > f`), маски — это объявленная возможность
+            # op `shell`, и на её ПОСЛЕДСТВИЯХ построен пост-фактум сторож путей ниже. Исполнить
+            # такую строку без оболочки значило бы написать свою оболочку («свой tool-loop не
+            # наращиваем», AGENTS.md). Контур этой ветки: Policy.decide (уровень, allowlist по
+            # КАЖДОМУ сегменту, денай подстановок/сети/push), scrub_env (секретов в окружении нет),
+            # timeout, скраб вывода, откат правок protected/вне scope; полная изоляция — контейнер.
+            # Флаг сканера на `shell=True` здесь — правда, а не шум: это настоящая поверхность, и
+            # прятать её от сканера (`["sh", "-c", …]`) было бы подгонкой замера.
             timeout = action.get("timeout", SHELL_TIMEOUT_DEFAULT)
             # v3.36: снимок ДО команды — основа пост-фактум сторожа путей (см. _fs_snapshot)
             _pre = _fs_snapshot(root, policy)
             try:
-                r = subprocess.run(action["command"], shell=True, cwd=str(root),
-                                   capture_output=True, text=True, env=scrub_env(),
-                                   timeout=timeout)
+                _env = scrub_env()
+                try:
+                    _argv, _env_extra = argv_command.split(action["command"])
+                except argv_command.NeedsShell:
+                    _argv = None
+                if _argv is None:
+                    r = subprocess.run(action["command"], shell=True, cwd=str(root),
+                                       capture_output=True, text=True, env=_env,
+                                       timeout=timeout)
+                else:
+                    r = argv_command.run(_argv, cwd=str(root), env={**_env, **_env_extra},
+                                         timeout=timeout)
+                ev["via_shell"] = _argv is None
                 ev.update({"ok": r.returncode == 0, "exit_code": r.returncode,
                            "command": action["command"],
                            "output_tail": _scrub_output((r.stdout + r.stderr)[-SHELL_OUTPUT_TAIL:])})
@@ -706,14 +565,54 @@ def execute(action: dict, root, policy: Policy) -> dict:
                     _undone = _revert_violations(root, _pre, _head_now, _viol)
                     ev["allowed"] = False
                     ev["ok"] = False
-                    ev["fs_guard"] = {"violations": _viol, "reverted": _undone}
-                    ev["reason"] = ("shell изменил запрещённые пути — правка откачена: "
-                                    + "; ".join(f"{v['path']}: {v['reason']}" for v in _viol[:5]))
+                    # R-43 (#786): причина заявляла «правка откачена» БЕЗУСЛОВНО — в том числе
+                    # когда откат провалился и правка ОСТАЛАСЬ на диске (замер: каталог r-x ->
+                    # EACCES на unlink, файл цел). Отчёт, называющий дыру закрытой, опаснее самой
+                    # дыры: читающий «откачено» на диск не пойдёт. Разбор — docs/audit-report R-43.
+                    _names = "; ".join(f"{v['path']}: {v['reason']}" for v in _viol[:5])
+                    _done = _undone["restored"] + _undone["removed"]
+                    _complete = not _undone["failed"]
+                    ev["fs_guard"] = {"violations": _viol, "reverted": _undone,
+                                      "revert_complete": _complete}
+                    if not _complete:
+                        _what = ("ОТКАТ НЕ УДАЛСЯ — правка ОСТАЛАСЬ на диске: "
+                                 + "; ".join(str(x) for x in _undone["failed"][:5]))
+                    elif _done:                      # перечень: сторож видит не всё (R-43)
+                        _what = "откачено (" + ", ".join(_done[:5]) + ")"
+                    else:
+                        _what = "откатывать было нечего (пути уже отсутствуют)"
+                    ev["reason"] = f"shell изменил запрещённые пути; {_what} | {_names}"
                 elif _pre["dirty"] is not None:
                     ev["fs_guard"] = {"violations": []}
     except (OSError, KeyError) as e:
         ev.update({"ok": False, "error": str(e)})
     return ev
+
+
+# Ре-экспорт кластера файловой системы / git-энфорсмента / путей / команд (сателлит
+# tool_broker_fs). Разрез фасад+сателлит снят с потолка module-size; поведение НЕ менялось.
+# Публичная поверхность `tool_broker.X` не изменилась: внешний код и тесты по-прежнему зовут
+# эти имена как атрибуты tool_broker. `execute`/`Policy`/`sandbox_policy` выше используют их как
+# модульные глобали (импортированы здесь на уровне модуля). Сателлит фасад НЕ импортирует — ни
+# одного обратного ребра (все вынесенные функции берут root/policy/pre параметрами).
+from ai_ops_kit.engine.tool_broker_fs import (  # noqa: E402  — ре-экспорт в конце модуля
+    _allowlist_denial,
+    _command_binaries,
+    _escapes_root,
+    _first_binary,
+    _fs_snapshot,
+    _git_q,
+    _ignored_under,
+    _normalize,
+    _porcelain,
+    _protected_scan_prefixes,
+    _relativize_inside_root,
+    _revert_violations,
+    _revision,
+    _shell_violations,
+    _within_root,
+    scrub_env,
+)
 
 
 def main(argv):

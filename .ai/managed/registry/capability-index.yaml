@@ -100,7 +100,7 @@ entries:
     capability: parallel_execution
     status: unsupported
     value: false
-    source: "tools/orchestrator.py — sequential-only; parallel scheduler planned"
+    source: "ai_ops_kit/providers/orchestrator.py — sequential-only; parallel scheduler planned"
     fallback: "sequential role isolation"
   - entity_kind: tool
     entity_id: openspec-cli
@@ -110,6 +110,16 @@ entries:
     source: "OpenSpec docs/how-commands-work.md"
     limitations: "replace-only merge -> parallel-change data-loss risk"
     fallback: "our sync-before-archive discipline + guard validator"
+  # UI-система доступна как MCP-инструмент через минимальный read-only адаптер (не MCP-сервер).
+  - entity_kind: tool
+    entity_id: storybook-query
+    capability: mcp
+    status: declared
+    value: true
+    verification_required: true
+    source: "registry/tools.yaml storybook-query; ai_ops_kit/ui/storybook_query.py --json; live-потребитель context_compiler.build_payload (#613)"
+    limitations: "capability=mcp: полноценный MCP-сервер/SaaS сознательно отложен (ревью владельца). Сам инструмент ПРОВЕДЁН в контур (#613): live in-process потребитель — context_compiler кладёт навигацию по дизайн-системе в контекст писателя при ui_changed. Т.е. способность жива, MCP-ТРАНСПОРТ пока declared"
+    fallback: "прямой CLI-вызов storybook_query.py --json"
 
 # Правило актуальности верификации.
 verification_policy:

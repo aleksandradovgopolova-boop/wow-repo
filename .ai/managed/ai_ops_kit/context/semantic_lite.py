@@ -27,7 +27,7 @@ def _tokens(text: str):
     return [t.lower() for t in _TOK.findall(text)]
 
 
-def build_index(root=PKG, subdirs=("tools", "validation"), path_filter=None) -> dict:
+def build_index(root=PKG, subdirs=("ai_ops_kit",), path_filter=None) -> dict:
     root = Path(root)
     docs = {}
     for sd in subdirs:

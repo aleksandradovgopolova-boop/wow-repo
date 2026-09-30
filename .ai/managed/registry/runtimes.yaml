@@ -5,7 +5,7 @@
 #
 # adapter_depth (честная глубина адаптера; для mvp_adapter: true — обязателен):
 #   executing          — код кита сам исполняет контракт: проводит стадии и БЛОКИРУЕТ
-#                        по гейтам (tools/orchestrator.py + tools/gate_executor.py);
+#                        по гейтам (ai_ops_kit/providers/orchestrator.py + ai_ops_kit/gates/gate_executor.py);
 #   generated-commands — адаптер лишь ГЕНЕРИРУЕТ runtime-native точки входа (команды/
 #                        промпты); исполнение стадий, handoff и enforcement гейтов
 #                        выполняет сам раннтайм, следуя им, — не код кита;
@@ -20,7 +20,7 @@ runtimes:
     mvp_adapter: true
     adapter_depth: generated-commands
     adapter_note: >
-      Адаптер генерирует .claude/commands/ (tools/generate_runtime.py) и ставит их
+      Адаптер генерирует .claude/commands/ (ai_ops_kit/shared/generate_runtime.py) и ставит их
       при install. Стадии, handoff и enforcement гейтов исполняет сам Claude Code,
       следуя командам; код кита их в этом раннтайме не оркестрирует. Полное
       исполнение контракта с блокировкой гейтов — через generic-orchestrator.
@@ -123,6 +123,15 @@ runtimes:
   qwen-code:
     display_name: Qwen Code
     kind: cli-agent
+    mvp_adapter: true
+    adapter_depth: generated-commands
+    adapter_note: >
+      Адаптер генерирует .qwen/commands/ (ai_ops_kit/shared/generate_runtime.py, профиль
+      qwen-code) и ставит их при install, если рантайм включён в .ai-ops.yaml. Формат — тот же,
+      что у Qwen Code: markdown + YAML-фронтматтер (description), слэш-вызов /ai-<workflow>.
+      Стадии, handoff и enforcement гейтов исполняет сам Qwen Code, следуя командам; код кита их
+      в этом рантайме не оркестрирует. Полное исполнение контракта с блокировкой гейтов —
+      через generic-orchestrator.
     default_provider: qwen
     execution_modes: [native, sequential]
     preferred_mode: sequential
@@ -131,8 +140,9 @@ runtimes:
       tools: {status: documented, value: true}
       file_read: {status: documented, value: true}
       file_write: {status: documented, value: true}
+    agent_packaging: markdown+frontmatter
     command_loading: ".qwen/commands/"
-    last_documented_at: "2026-07-08"
+    last_documented_at: "2026-09-07"
 
   opencode:
     display_name: OpenCode
@@ -152,8 +162,8 @@ runtimes:
     mvp_adapter: true
     adapter_depth: executing
     adapter_note: >
-      Код кита сам исполняет контракт: tools/orchestrator.py проводит стадии
-      sequential с изоляцией ролей, tools/gate_executor.py блокирует переход по
+      Код кита сам исполняет контракт: ai_ops_kit/providers/orchestrator.py проводит стадии
+      sequential с изоляцией ролей, ai_ops_kit/gates/gate_executor.py блокирует переход по
       невыполненным блокирующим гейтам (GateReport.json). v2.18: провайдер стадий —
       живая модель (--provider anthropic|openai, ключ из env) ИЛИ mock (по умолчанию,
       офлайн). Живой путь opt-in.
@@ -173,12 +183,12 @@ runtimes:
       opt_in: "--provider (default: mock, офлайн, детерминированный для CI)"
       no_secrets: true             # ключ только из env, в репо/логи не попадает
     default_provider: mock          # офлайн по умолчанию; живой — opt-in через --provider
-    execution_modes: [sequential, orchestrated]  # v3.8: concurrent parallel-2 + governed fan-in (tools/parallel_live.py)
+    execution_modes: [sequential, orchestrated]  # v3.8: concurrent parallel-2 + governed fan-in (ai_ops_kit/engine/parallel_live.py)
     preferred_mode: sequential
     minimum_mode: sequential
     capabilities:
       native_subagents: {status: unsupported, value: false, note: emulated-via-role-isolation}
-      parallel_execution: {status: verified, value: true, note: "v3.8: concurrent parallel-2 (отдельный клон на пакет) + governed fan-in через tools/parallel_live.py (run_live_concurrent), доказан live s3c (no_checkout_damage, disjoint-scope, aggregate conflicts=0). tools/orchestrator.py остаётся sequential."}
+      parallel_execution: {status: verified, value: true, note: "v3.8: concurrent parallel-2 (отдельный клон на пакет) + governed fan-in через ai_ops_kit/engine/parallel_live.py (run_live_concurrent), доказан live s3c (no_checkout_damage, disjoint-scope, aggregate conflicts=0). ai_ops_kit/providers/orchestrator.py остаётся sequential."}
       tools: {status: documented, value: "via tool gateway"}
       mcp: {status: degraded, value: optional}
       function_calling: {status: degraded, value: provider-dependent}
@@ -252,7 +262,7 @@ runtime_contracts:
       model_call:       {value: true,  note: "может вызвать модель провайдера (ключ — из env рантайма)"}
       chat_adapter:     {value: true,  note: "читает/пишет в рабочий чат команды; ввод из чата — недоверенный"}
       kill_switch:      {value: true,  note: "оператор может остановить процесс и отозвать права; runbook в security-policies.md §3"}
-      audit_log:        {value: true,  note: "append-only interaction-log в формате tools/orchestrator.py; без секретов"}
+      audit_log:        {value: true,  note: "append-only interaction-log в формате ai_ops_kit/providers/orchestrator.py; без секретов"}
       read_mostly:      {value: true,  note: "нет записи в prod и в curated-память; инструменты — на чтение"}
     optional_capabilities:
       in_perimeter:     {value: true,  note: "закрытый контур для ПДн/гос-данных (child объявляет при необходимости)"}

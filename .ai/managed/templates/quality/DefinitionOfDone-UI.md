@@ -2,7 +2,7 @@
 
 Управленческий слой поверх технического адаптера (v3.1.7 Storybook Evidence) и калиброванной политики
 (v3.1.6/8 `gate_policy`). Определяет, что значит «UI-изменение готово» — по риск-тиру, а не «на глаз».
-Тир берётся из `ui_impact` (см. `tools/gate_policy.py`); архитектурные UI-решения фиксируют тир в
+Тир берётся из `ui_impact` (см. `ai_ops_kit/gates/gate_policy.py`); архитектурные UI-решения фиксируют тир в
 `ArchitectureDecision.ui_impact` (`schemas/architecture-decision.schema.json`).
 
 ## Риск-тиры и требования
@@ -25,7 +25,7 @@
 ## Evidence — источник истины (не мнение)
 
 Готовность доказывается `UIEvidenceBundle` (`schemas/ui-evidence-bundle.schema.json`), собранным
-`tools/storybook_adapter.py` **на точном committed_sha** (см. StorybookPolicy, Exact-SHA binding):
+`ai_ops_kit/ui/storybook_adapter.py` **на точном committed_sha** (см. StorybookPolicy, Exact-SHA binding):
 
 - evidence привязано к проверяемой ревизии (`bundle.commit_sha == committed_sha`), иначе `not_run`;
 - evidence относится ТОЛЬКО к затронутым историям (scoping по изменённым файлам);
@@ -37,7 +37,7 @@ UI-изменение **done**, когда для его тира:
 
 1. `ui_impact` определён и (для нетривиальных решений) зафиксирован в `ArchitectureDecision`;
 2. затронутые компоненты имеют stories; обязательные состояния покрыты (по тиру);
-3. `UIEvidenceBundle` собран на текущем SHA и **валиден** (`validation/validate_storybook_evidence.py`):
+3. `UIEvidenceBundle` собран на текущем SHA и **валиден** (`ai_ops_kit/validation/validate_storybook_evidence.py`):
    interaction `pass`, a11y `blocking_violations=0`, visual `pass`, design-system без необоснованных
    новых компонентов;
 4. блокирующие по тиру гейты закрыты (evidence или ревью); `critical` — с human sign-off;
@@ -53,6 +53,6 @@ UI-изменение **done**, когда для его тира:
 
 ## Связи
 
-- `tools/gate_policy.py` — тиры и enforcement; `templates/quality/StorybookPolicy.md` — маппинг
+- `ai_ops_kit/gates/gate_policy.py` — тиры и enforcement; `templates/quality/StorybookPolicy.md` — маппинг
   evidence→гейт; `schemas/ui-evidence-bundle.schema.json` — контракт evidence;
   `schemas/architecture-decision.schema.json` — фиксация UI-решений и тира.

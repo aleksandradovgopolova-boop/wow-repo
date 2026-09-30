@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-ops.dev/schemas/uiux-registry.schema.json",
+  "title": "UI/UX capability registry",
+  "description": "Реестр возможностей UI/UX-стандарта: компоненты/паттерны/шаблоны, контракт токенов и capability как данные (волна 2, #418). Записи ссылаются на правила Конституции и токены; целостность ссылок проверяет scripts/validate-registries.py.",
+  "type": "object",
+  "required": [
+    "version",
+    "kind",
+    "entries"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "components",
+        "patterns",
+        "templates",
+        "tokens",
+        "capabilities"
+      ]
+    },
+    "note": {
+      "type": "string"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "catalog_key": {
+            "type": "string",
+            "description": "ключ покрытия каталога §16 (для patterns/templates)"
+          },
+          "constitution_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(UI|AI)-"
+            }
+          },
+          "tokens": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "patterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "namespace": {
+            "type": "string",
+            "description": "пространство имён токенов (для kind=tokens): spacing, color, ..."
+          },
+          "role": {
+            "type": "string",
+            "description": "роль пространства токенов (для kind=tokens)"
+          },
+          "source": {
+            "type": "string",
+            "description": "файл-источник значений в design/tokens (для kind=tokens)"
+          },
+          "contract": {
+            "type": "string",
+            "description": "гарантия стабильности контракта токенов (для kind=tokens)"
+          },
+          "sample": {
+            "type": "array",
+            "description": "опорные стабильные id токенов (для kind=tokens)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "description": "статус возможности (для kind=capabilities): guaranteed | ..."
+          },
+          "summary": {
+            "type": "string",
+            "description": "краткое описание сквозной возможности (для kind=capabilities)"
+          },
+          "token_namespaces": {
+            "type": "array",
+            "description": "пространства токенов, на которые опирается capability (объявлены в tokens.yaml)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "backed_by": {
+            "type": "array",
+            "description": "id компонентов/паттернов/шаблонов, реализующих capability",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -2,7 +2,7 @@
 """deploy_readiness.py (v3.20.0 Engineering Operating Model, WP5) — ЧЕСТНАЯ зрелость поставки.
 
 Кит НЕ деплоит и не собирается: он не даёт **врать о готовности деплоя**. Лестница — та же, что у
-UI-evidence (tools/ui_readiness.py), потому что болезнь та же: «у нас всё готово» без единого
+UI-evidence (ai_ops_kit/ui/ui_readiness.py), потому что болезнь та же: «у нас всё готово» без единого
 проверяемого признака.
 
   absent      — ни объявленных окружений, ни признаков поставки в репозитории;
@@ -32,10 +32,14 @@ from pathlib import Path
 
 import yaml
 
-# v3.38 (K4): environment_map загружается лениво — gates не импортирует engops статически.
+# K4 РАЗВЯЗАНА (2026-09-10): environment_map — детекция окружения, примитив; переехал в `checks`
+# (слой primitives). gates -> checks вниз по слоям, статический импорт разрешён. Гейт больше не
+# тянет engops ни статически, ни динамически — ребро gates->engops (нарушение kernel-boundary) снято.
+from ai_ops_kit.checks import environment_map  # noqa: E402
+
+
 def _env_assess(root):
-    _em = __import__("ai_ops_kit.engops.environment_map", fromlist=["assess"])
-    return _em.assess(root)
+    return environment_map.assess(root)
 
 MATURITY = ("absent", "configured", "runnable", "verified")
 

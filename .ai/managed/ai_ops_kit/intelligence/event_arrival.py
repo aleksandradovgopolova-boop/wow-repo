@@ -25,8 +25,31 @@ territория продукта, и лезть туда значило бы пр
 Больше кит не просит: имени и счётчика хватает, чтобы ответить на вопрос «доехало ли», а любые
 свойства события — это уже данные продукта, и им незачем покидать его периметр.
 
+МАШИННОЕ ДОКАЗАТЕЛЬСТВО ГЕЙТА. `events_verified_live(child_root)` отображает EventArrivalReport в
+одноимённое машинное доказательство гейта analytics_runtime_verification. До этого гейт был
+объявлен mechanizable (quality/gate-machinability.yaml), но само доказательство `events_verified_live`
+производила ДЕКЛАРАЦИЯ судьи — ровно тот разрыв, который называет исход работы: «verified in
+runtime, NOT declared». Теперь оно строится из факта — сверки каталога с выгрузкой поступления.
+
+ПРОВОДКА PRODUCER → ГЕЙТ (#424). Мало ПРОИЗВЕСТИ доказательство — его надо ПОДАТЬ гейту как
+источник истины вместо слова судьи. Это делают `gate_evidence_entry` (машинный вклад в evidence
+одного гейта) и `verify_analytics_runtime` (зовёт producer и оценивает гейт через
+`gates.gate_executor`). Машинный вердикт АВТОРИТЕТЕН для факта `events_verified_live`:
+  - met is True  — машина ПОДТВЕРЖДАЕТ приход, доказательство попадает в `provided`;
+  - met is False — машина НАХОДИТ, что объявленное не доехало: гейт красный, блокер называет
+                   недоехавшее событие, и это НЕ переписывается «зелёным» словом судьи;
+  - met is None  — проверить нечем: `events_verified_live` НЕ фабрикуется словом судьи (снимается
+                   из `provided`) — «unknown != проверено», и блокирующий гейт честно не закрыт.
+
+НАПРАВЛЕНИЕ ЛЕГАЛЬНО ПО СЛОЯМ (packages/layering.yaml). `intelligence` лежит ВЫШЕ `capabilities`;
+зависимость вниз (`intelligence` → `gates`) разрешена, вверх — запрещена. Поэтому проводку держит
+`intelligence` (ему видны и producer, и форма evidence гейта), а `gates` НЕ импортирует
+`intelligence` — инвариант трёх колец не нарушен, доказательство «поставляется вниз».
+
 Использование:
     event_arrival.py [child_root] [--json]
+    event_arrival.py [child_root] --evidence [--json]
+    event_arrival.py [child_root] --gate [--json]     # оценить гейт машинным доказательством
 """
 from __future__ import annotations
 
@@ -50,6 +73,13 @@ CATALOG_PATHS = ("analytics/events.yaml", ".ai/project/analytics/events.yaml")
 # Событие, объявленное для аналитики, ОБЯЗАНО доезжать. `domain` и `audit` — внутренние записи
 # продукта: они могут не уходить во внешнюю аналитику вовсе, и требовать этого было бы придиркой.
 ARRIVAL_REQUIRED_KINDS = ("analytics",)
+
+# Имя машинного доказательства гейта analytics_runtime_verification, которое производит
+# events_verified_live() (объявлено в quality/gate-machinability.yaml как mechanizable).
+EVIDENCE_NAME = "events_verified_live"
+
+# Гейт, чьё доказательство `events_verified_live` производит этот модуль.
+GATE_ID = "analytics_runtime_verification"
 
 
 def _read_yaml(p: Path):
@@ -142,6 +172,95 @@ def assess(child_root) -> dict:
             "unknown": [], "evidence": ev["meta"], "verdict": verdict}
 
 
+def events_verified_live(child_root) -> dict:
+    """Машинное доказательство `events_verified_live` из выгрузки поступления.
+
+    Замыкает разрыв гейта analytics_runtime_verification: доказательство объявлено mechanizable,
+    но до сих пор его производила ДЕКЛАРАЦИЯ судьи. Здесь оно строится из факта — сверки каталога
+    с выгрузкой поступления (assess).
+
+    -> {"name", "met": True|False|None, "reason", "detail"}.
+
+    Инвариант `unavailable != zero` сохраняется:
+      met is None  — выгрузки/каталога нет или они не читаются: проверить нечем (НЕ провал);
+      met is False — выгрузка ЕСТЬ, а объявленное для аналитики событие в ней не встретилось
+                     (настоящая находка);
+      met is True  — выгрузка есть и все обязанные доезжать (kind=analytics) события доехали.
+
+    Событие вне каталога (дрейф в обратную сторону) НЕ роняет доказательство: это не «объявленное
+    не доехало». read-only, без сети — ровно то, что делает assess().
+    """
+    rep = assess(child_root)
+    if not rep.get("checked"):
+        return {"name": EVIDENCE_NAME, "met": None, "reason": rep.get("reason"),
+                "detail": rep.get("verdict")}
+    if rep["missing"]:
+        return {"name": EVIDENCE_NAME, "met": False,
+                "reason": "объявлено для аналитики, но в выгрузке поступления не встретилось: "
+                          + ", ".join(rep["missing"]),
+                "detail": rep.get("verdict")}
+    m = rep.get("evidence") or {}
+    where = (f"окно {m['window']}, источник {m.get('source', '—')}"
+             if m.get("window") else "выгрузка поступления")
+    detail = f"доехали {len(rep['arrived'])} из {rep['arrival_required']} ({where})"
+    if rep["undeclared"]:
+        detail += f"; вне каталога: {', '.join(rep['undeclared'])}"
+    return {"name": EVIDENCE_NAME, "met": True,
+            "reason": "все объявленные для аналитики события доезжают", "detail": detail}
+
+
+def gate_evidence_entry(child_root, base_entry: dict = None) -> dict:
+    """Машинное доказательство events_verified_live -> вклад в evidence гейта GATE_ID.
+
+    Форма — по schemas/gate-evidence.schema.json (один гейт). `base_entry` — уже собранное
+    evidence этого гейта (напр. вердикт судьи-роли); машина ДОПОЛНЯЕТ его, но для СВОЕГО факта
+    `events_verified_live` она авторитетна и снимает слово судьи (иначе «not declared» осталось бы
+    незакрытым — судья и дальше фабриковал бы это доказательство своим pass).
+
+    met is True  -> events_verified_live в `provided` (машина подтвердила приход);
+    met is False -> status=fail + блокер с недоехавшим событием (находка сильнее декларации);
+    met is None  -> events_verified_live снят из `provided` (проверить нечем — не фабрикуем).
+    """
+    live = events_verified_live(child_root)
+    entry = dict(base_entry or {})
+    # снять слово судьи о НАШЕМ факте: его подтверждает/опровергает только машина
+    provided = [p for p in (entry.get("provided") or []) if p != EVIDENCE_NAME]
+    evid = list(entry.get("evidence") or [])
+    src = f"{EVIDENCE_NAME} @ intelligence/event_arrival: {live.get('detail') or live['reason']}"
+    if live["met"] is True:
+        provided.append(EVIDENCE_NAME)
+        entry["provided"] = provided
+        entry.setdefault("status", "pass")
+        entry["evidence"] = evid + [src]
+    elif live["met"] is False:
+        entry["status"] = "fail"
+        entry["provided"] = provided
+        entry["blockers"] = list(entry.get("blockers") or []) + [live["reason"]]
+        entry["evidence"] = evid + [src]
+    else:  # met is None — «unknown != проверено»: не подделываем доказательство словом судьи
+        entry["provided"] = provided
+        entry["evidence"] = evid + [src]
+    return entry
+
+
+def verify_analytics_runtime(child_root, base_evidence: dict = None, signals: dict = None,
+                             tested_revision=None) -> dict:
+    """Оценить гейт GATE_ID, подав ему МАШИННОЕ доказательство events_verified_live.
+
+    Это и есть проводка producer -> гейт: результат гейта опирается на вердикт producer'а, а не
+    на статичный файл или слово судьи. Импорт `gates.gate_executor` — зависимость ВНИЗ по слоям
+    (intelligence -> capabilities), разрешённая packages/layering.yaml.
+
+    -> gate-result (schemas/gate-result.schema.json).
+    """
+    from ai_ops_kit.gates import gate_executor
+    gate = gate_executor.load_gates()[GATE_ID]
+    ev = dict(base_evidence or {})
+    ev[GATE_ID] = gate_evidence_entry(child_root, ev.get(GATE_ID))
+    return gate_executor.evaluate_gate(GATE_ID, gate, ev, tested_revision=tested_revision,
+                                       signals=signals)
+
+
 def render(rep: dict) -> str:
     L = []
     if not rep.get("checked"):
@@ -164,14 +283,36 @@ def render(rep: dict) -> str:
 def main(argv):
     root = "."
     js = "--json" in argv
+    want_evidence = "--evidence" in argv
+    want_gate = "--gate" in argv
     for a in argv[1:]:
         if not a.startswith("-"):
             root = a
             break
+    if want_gate:
+        res = verify_analytics_runtime(root)
+        if js:
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+        else:
+            print(f"{GATE_ID}: {res['status']}"
+                  f"{' (blocking)' if res['blocking'] else ''}")
+            for b in res.get("blockers") or []:
+                print(f"  ✗ {b}")
+            for e in res.get("evidence") or []:
+                print(f"  · {e}")
+        return 1 if res["status"] == "fail" else 0
+    if want_evidence:
+        ev = events_verified_live(root)
+        if js:
+            print(json.dumps(ev, ensure_ascii=False, indent=2))
+        else:
+            state = {True: "met", False: "НЕ met", None: "unknown"}[ev["met"]]
+            print(f"{ev['name']}: {state} — {ev['reason']}")
+            if ev.get("detail"):
+                print(f"  {ev['detail']}")
+        return 1 if ev["met"] is False else 0
     rep = assess(root)
     print(json.dumps(rep, ensure_ascii=False, indent=2) if js else render(rep))
-    # Ненулевой код ТОЛЬКО на настоящей находке. «Не проверено» не отказ: иначе продукт без
-    # выгрузки краснел бы вечно, и проверку выключили бы целиком.
     return 1 if rep.get("missing") else 0
 
 

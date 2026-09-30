@@ -28,6 +28,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ai_ops_kit.shared import gitio
+
 #: Где обычно живёт описание продукта. Ищем только то, что человек читает как правду о репозитории.
 DOC_CANDIDATES = ("README.md", "ROADMAP.md", "AI-OPS-ONBOARDING.md")
 DOC_DIRS = ("docs", ".ai/project/context")
@@ -134,17 +136,16 @@ def plan_behind_history(root, plan_rel="planning/plan.yaml") -> dict | None:
     plan = root / plan_rel
     if not plan.is_file():
         return None
+    # Форма с `cwd=`, а не `-C`: единый вход к git с таймаутом через gitio.run (см. shared/gitio) —
+    # зависший git не вешает ответ «что дальше».
     try:
-        last = subprocess.run(["git", "log", "-1", "--format=%H", "--", plan_rel],
-                              cwd=str(root), capture_output=True, text=True, timeout=20)
-        if last.returncode != 0 or not last.stdout.strip():
+        rc, sha, _ = gitio.run(["log", "-1", "--format=%H", "--", plan_rel], cwd=root, timeout=20)
+        if rc != 0 or not sha:
             return None
-        sha = last.stdout.strip()
-        cnt = subprocess.run(["git", "rev-list", "--count", f"{sha}..HEAD"],
-                             cwd=str(root), capture_output=True, text=True, timeout=20)
-        if cnt.returncode != 0:
+        rc2, cnt_out, _ = gitio.run(["rev-list", "--count", f"{sha}..HEAD"], cwd=root, timeout=20)
+        if rc2 != 0:
             return None
-        n = int((cnt.stdout or "0").strip() or 0)
+        n = int(cnt_out or 0)
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return None
     return {"commits": n, "since": sha[:12], "plan_rel": plan_rel} if n else None

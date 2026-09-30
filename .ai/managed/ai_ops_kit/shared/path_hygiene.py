@@ -97,18 +97,21 @@ def _pip_owned_pth(site_dir: Path) -> frozenset:
     return frozenset(owned)
 
 # Родовые каталоги кита, которые пояс подкладывает как top-level имена.
-_KIT_DIRS = ("tools", "validation")
+# v4.0: плоский слой tools/ снят; плоско (top-level) импортируются только модули каталога
+# валидаторов (`ai_ops_kit/validation/` — там `_bootstrap` и `validate_*`), поэтому пояс,
+# скрывающий дефект, подкладывает именно его.
+_KIT_DIRS = ("ai_ops_kit/validation",)
 
 # Из пути пользовательского site достаём версию Python — чтобы подсказка называла ТОТ интерпретатор,
 # которому файл принадлежит, а не тот, которым запущен doctor.
 _PYVER_RE = re.compile(r"(?:Python|python)[/\\]?(3\.\d+)")
 
 
-def _norm(p) -> str:
+def _norm(p: str | Path) -> str:
     return os.path.normpath(str(p))
 
 
-def _user_site_dirs():
+def _user_site_dirs() -> list:
     """Пользовательские site-каталоги: текущего интерпретатора + других версий Python рядом.
 
     Второе — не запас прочности, а условие работоспособности: пояс живёт в user-site той версии,
@@ -145,9 +148,9 @@ def _user_site_dirs():
     return out
 
 
-def _env_site_dirs():
+def _env_site_dirs() -> list:
     """site-каталоги ТЕКУЩЕГО окружения (venv или система). Не user-site."""
-    found = []
+    found: list = []
     getter = getattr(site, "getsitepackages", None)   # отсутствует в некоторых venv старого virtualenv
     if getter is not None:
         try:
@@ -181,7 +184,7 @@ def _looks_like_kit_tree(d: Path) -> bool:
         return False
 
 
-def _injected_kit_paths(text: str, site_dir: Path):
+def _injected_kit_paths(text: str, site_dir: Path) -> list:
     """Пути кита, которые файл подкладывает в sys.path. Разбор текстовый: пояс может ссылаться на
     каталог, которого уже нет (установка из sdist оставляла путь во временный каталог).
 
@@ -222,14 +225,14 @@ def _injected_kit_paths(text: str, site_dir: Path):
     return out
 
 
-def _same_dir(a, b) -> bool:
+def _same_dir(a: str | Path, b: str | Path) -> bool:
     try:
         return os.path.realpath(str(a)) == os.path.realpath(str(b))
     except OSError:
         return _norm(a) == _norm(b)
 
 
-def pip_command(site_dir) -> str:
+def pip_command(site_dir: Path) -> str:
     """Команда, которой снимается установка ИМЕННО из этого site-каталога.
 
     Версию интерпретатора видно из пути (`…/Python/3.9/…`), но БИНАРНИКА с таким именем на машине
@@ -257,7 +260,7 @@ def pip_command(site_dir) -> str:
     return f"<интерпретатор, которому принадлежит {site_dir}>{tail}"
 
 
-def is_pip_owned(pth: Path, pip_owned=frozenset()) -> bool:
+def is_pip_owned(pth: Path, pip_owned: frozenset = frozenset()) -> bool:
     """Файл принадлежит установке, а не поясу: его снимает pip, и удалять его нельзя.
 
     Три независимых признака — форма имени setuptools, общий файл окружения и запись в RECORD:
@@ -269,7 +272,7 @@ def is_pip_owned(pth: Path, pip_owned=frozenset()) -> bool:
             or pth.name in pip_owned)
 
 
-def classify(pth: Path, in_user_site: bool, pip_owned=frozenset()):
+def classify(pth: Path, in_user_site: bool, pip_owned: frozenset = frozenset()) -> dict | None:
     """Находка по одному .pth или None. Отдельная функция — чтобы тест мог подать файл напрямую."""
     try:
         text = pth.read_text(encoding="utf-8", errors="replace")
@@ -320,7 +323,7 @@ def classify(pth: Path, in_user_site: bool, pip_owned=frozenset()):
     return None
 
 
-def assess(user_site_dirs=None, env_site_dirs=None):
+def assess(user_site_dirs: list | None = None, env_site_dirs: list | None = None) -> dict:
     """Read-only снимок: подкладывает ли окружение пути кита. Ничего не меняет.
 
     Каталоги можно передать явно — так тест проверяет РАЗБОР, не машину, на которой запущен."""
@@ -377,7 +380,7 @@ def assess(user_site_dirs=None, env_site_dirs=None):
     }
 
 
-def remove_belts(report=None, dry_run=False):
+def remove_belts(report: dict | None = None, dry_run: bool = False) -> list:
     """Удалить найденные пояса. Только rule=path_belt: editable-установку снимает pip, не мы.
 
     Вызывается ЯВНОЙ командой пользователя. Возвращает список {path, removed, error}."""
@@ -407,7 +410,7 @@ def remove_belts(report=None, dry_run=False):
     return results
 
 
-def summary_line(report=None):
+def summary_line(report: dict | None = None) -> str:
     """Строка для doctor. Про ОКРУЖЕНИЕ, не про репозиторий — поэтому без параметра root.
 
     Готовый отчёт можно передать: doctor уже сделал `assess()`, чтобы решить про блокировку, —
@@ -438,7 +441,7 @@ def summary_line(report=None):
     return "\n".join([head] + lines)
 
 
-def _fmt(rep):
+def _fmt(rep: dict) -> str:
     lines = [f"гигиена путей: {rep['status']}",
              f"просмотрено каталогов: {rep['counts']['scanned_dirs']}"]
     for d in rep["scanned_dirs"]:
@@ -456,7 +459,7 @@ def _fmt(rep):
     return "\n".join(lines)
 
 
-def main(argv):
+def main(argv: list[str]) -> int:
     if "--help" in argv or "-h" in argv:
         # У этой команды есть флаг, который УДАЛЯЕТ файлы. Справка, вместо которой выполняется скан
         # машины, — плохая справка: пользователь просил объяснить, а не сделать.
