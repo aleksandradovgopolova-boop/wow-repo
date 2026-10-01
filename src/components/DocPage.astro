@@ -164,10 +164,13 @@ const pageInSection = inSection.findIndex((p) => p.path === page.path) + 1;
                   <span class="chapter__index">{sectionOrdinal} / {sectionTotalStr}</span>
                 </p>
                 <h1 class="chapter__title">{page.title}</h1>
-                {(page.updated || pageInSection > 0) && (
+                {(page.updated || pageInSection > 0 || page.readingMinutes > 0) && (
                   <p class="doc__meta">
                     {inSection.length > 1 && (
                       <span>Материал {pageInSection} из {inSection.length}</span>
+                    )}
+                    {page.readingMinutes > 0 && (
+                      <span data-reading-time>{page.readingMinutes} мин чтения</span>
                     )}
                     {page.updated && <span>Обновлено {page.updated}</span>}
                   </p>
